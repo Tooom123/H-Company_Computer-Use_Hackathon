@@ -228,7 +228,18 @@ class PushToTalk:
         self._recording = False
         self._listener = None
 
+    paused: bool = False
+
+    def pause(self) -> None:
+        """Ignore the hotkey while a task runs (cheaper and safer than removing the event tap)."""
+        self.paused = True
+
+    def resume(self) -> None:
+        self.paused = False
+
     def _begin(self) -> None:
+        if self.paused:
+            return
         if not self._recording:
             self._recording = True
             self.on_state("recording")
@@ -259,7 +270,7 @@ class PushToTalk:
                             kCGEventFlagMaskCommand, kCGEventFlagMaskControl, kCGEventFlagMaskShift,
                             kCGEventKeyDown, kCGEventKeyUp, kCGKeyboardEventKeycode)
 
-        if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
+        if self.paused or event_type not in (kCGEventKeyDown, kCGEventKeyUp):
             return event
         keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
         if keycode != self._keycode():

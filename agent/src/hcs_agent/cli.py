@@ -253,12 +253,18 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     intent.parameters[name] = val
             request = intent_to_request(intent)
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
-            ptt.stop()
-            code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                            overlay=not args.no_overlay, ov=ov)
+            ptt.pause()
+            try:
+                code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                                overlay=not args.no_overlay, ov=ov)
+            except Exception:  # noqa: BLE001 - never die silently between two requests
+                import traceback
+
+                traceback.print_exc()
+                code = 1
             if args.once:
                 return code
-            ptt.start()
+            ptt.resume()
             if ov is not None:
                 ov.badge(f"⌘H : nouvelle demande" if "cmd" in ptt.key_name else f"{ptt.key_name} : nouvelle demande")
             print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
@@ -530,6 +536,9 @@ def _load_env() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    import faulthandler
+
+    faulthandler.enable()  # a native crash (AppKit, event tap) prints a Python traceback instead of vanishing
     _load_env()
     ap = argparse.ArgumentParser(prog="hcs-agent", description="Customer-success assistant agent (H desktop).")
     sub = ap.add_subparsers(dest="cmd", required=True)
