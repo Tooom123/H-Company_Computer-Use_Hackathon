@@ -395,7 +395,7 @@ class _SketchView(AppKit.NSView):
 
         text, pulsing = self.badge
         bounds = self.bounds()
-        w, h = 210.0, 36.0
+        w, h = max(210.0, 52 + 7.6 * len(text)), 36.0  # pill grows with the text
         x, y = bounds.size.width / 2 - w / 2, 86.0  # ~2 cm above the bottom edge, clear of the Dock
         pill = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(((x, y), (w, h)), h / 2, h / 2)
         AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.08, 0.88).setFill()

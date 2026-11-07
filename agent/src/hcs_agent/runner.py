@@ -268,7 +268,9 @@ class Intervention:
                 break  # escalation rule: a recognised limit is not retried
 
             self._set_state(State.verifying, "Checking the result in the software.")
-            verify = self.backend.verify(bound, self._on_step, self._stop)
+            verify = self._fast_verify(bound) if (guide and not self.takeover) else None
+            if verify is None:
+                verify = self.backend.verify(bound, self._on_step, self._stop)
             self._record_verify(verify)
             if self._stop.is_set():
                 return self._finish_stopped()
@@ -470,6 +472,25 @@ class Intervention:
                 time.sleep(pause_s)
         return False
 
+    def _fast_verify(self, bound: BoundProcedure):
+        """Guide mode: the user is already on the final screen, so each postcondition check is one Holo screen
+        check (~2 s) instead of a full agent session (~15 s). Any doubt -> None, and the agent verifier runs."""
+        check = getattr(self.backend, "screen_matches", None)
+        if check is None or self._stop.is_set():
+            return None
+        results: dict[str, bool] = {}
+        seen: list[str] = []
+        for key, prompt in bound.checks.items():
+            ok, visible = check(f"{prompt} (look at the exact field or area; answer false if it is not visible)")
+            self._trace(f"fast check {key}: {'yes' if ok else 'no'} ({visible[:50]})")
+            results[key] = ok
+            seen.append(visible)
+            if not ok:
+                return None  # let the agent verifier navigate and look properly
+        from .backend import VerifyResult
+
+        return VerifyResult("holo-screen-check", "completed", results, "; ".join(seen)[:400], cost_usd=0.0)
+
     def _trace(self, summary: str) -> None:
         self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))
 
@@ -508,13 +529,16 @@ class Intervention:
         """Backend callback in guide mode: publish the step, wait for the user's `next()` or a stop."""
         self.guidance.append(step)
         if step.last:
-            self._emit("guidance", step.instruction, step=step.model_dump())
+            step.shown_at = _now()
+            self._emit("guidance", step.instruction, step=step.model_dump(mode="json"))
             return None
         self._user_event.clear()
         self._user_reply = None
+        step.shown_at = _now()
         self._set_state(State.awaiting_user, "Your turn: do the step shown, then continue.")
-        self._emit("guidance", step.instruction, step=step.model_dump())
+        self._emit("guidance", step.instruction, step=step.model_dump(mode="json"))
         self._user_event.wait()
+        step.done_s = round((_now() - step.shown_at).total_seconds(), 1)
         if self._stop.is_set():
             return None
         self._set_state(State.running, "Looking at the screen for the next step.")
@@ -604,6 +628,8 @@ class Intervention:
             goal=self.request.goal,
             symptom=self.request.symptom,
             mode=self.request.mode,
+            autonomy=self.autonomy,
+            takeover=self.takeover,
             procedure_id=proc.id if proc else self.request.procedure_id,
             approved_scope=self.plan if self._approved else None,
             guidance=self.guidance,

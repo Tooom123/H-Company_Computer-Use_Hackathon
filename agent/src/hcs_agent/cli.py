@@ -177,6 +177,19 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
         print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
+def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: float = 3.5) -> None:
+    """Short on-screen note outside of a task (routing feedback), then back to the listening hint."""
+    if ov is None:
+        return
+    from .overlay import Scene
+
+    ov.badge(None)
+    ov.show_scene(Scene(text=text, why=why, doodle=doodle))
+    t0 = time.time()
+    ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
+    ov.badge("⌘H : nouvelle demande")
+
+
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     """Closing note on screen: what happened, in one line, then back to listening."""
     from .overlay import Scene
@@ -240,6 +253,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
           f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
+    if ov is not None:
+        ov.badge("Maintiens ⌘H et dis ce que tu veux faire" if "cmd" in ptt.key_name else f"Maintiens {ptt.key_name} et parle")
 
     def next_transcript() -> str:
         """Wait for a transcript while keeping the overlay (badge) alive on the main thread."""
@@ -277,13 +292,18 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 ptt.resume()
                 print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
                 continue
+            if ov is not None:
+                ov.badge("Je réfléchis…", pulsing=True)
             try:
                 intent = router.route(text)
             except Exception as exc:  # noqa: BLE001
                 print(f"  could not understand the request ({exc}); try again.")
+                _flash(ov, "Je n'ai pas compris, redis-le autrement", "question")
                 continue
             if not intent.procedure_id:
                 print("  I don't have a procedure for that yet. Known: " + ", ".join(p.id for p in registry.all()))
+                _flash(ov, "Je ne sais pas encore faire ça", "question",
+                       why="Je sais : créer une opportunité, planifier une relance, mettre une note, qualifier")
                 continue
             proc = registry.get(intent.procedure_id)
             for name in list(intent.missing):

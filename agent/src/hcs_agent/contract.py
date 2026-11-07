@@ -182,6 +182,8 @@ class GuidanceStep(BaseModel):
         description="click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.")
     annotations: list[Annotation] = Field(default_factory=list)
     last: bool = False
+    shown_at: datetime | None = None
+    done_s: float | None = Field(default=None, description="Seconds the user took to do the step.")
 
 
 # --------------------------------------------------------------------------- events
@@ -311,6 +313,8 @@ class InterventionReport(BaseModel):
     goal: str
     symptom: str | None
     mode: Mode = Mode.act
+    autonomy: int = 1
+    takeover: bool = False
     procedure_id: str | None
     approved_scope: ProposedPlan | None
     guidance: list[GuidanceStep] = Field(default_factory=list)
@@ -347,5 +351,10 @@ class InterventionReport(BaseModel):
             "verified": self.verification.satisfied,
             "declared": self.declared.outcome,
             "needs_human": self.needs_human,
+            "autonomy": self.autonomy,
+            "takeover": self.takeover,
+            "guided_steps": len(self.guidance),
+            "duration_s": round(self.timings.duration_s, 1) if self.timings.duration_s is not None else None,
+            "cost_usd": self.cost_usd,
             "simulated": self.simulated,
         }
