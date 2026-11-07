@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from .backend import make_backend
-from .contract import AgentEvent, ApproveCommand, InterventionRequest, StopCommand
+from .contract import AgentEvent, ApproveCommand, InterventionRequest, NextCommand, State, StopCommand
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 
@@ -26,6 +26,13 @@ def _print_event(e: AgentEvent) -> None:
     msg = e.message or ""
     if e.type == "step":
         print(f"  {tag}[{e.data['step']['kind']}] {msg}")
+    elif e.type == "guidance":
+        s = e.data["step"]
+        print(f"\n{tag}>>> STEP {s['index']}: {s['instruction']}\n    where: {s['where']}\n    why: {s['why']}"
+              + (f"\n    pointer: {s['pointer']}" if s.get("pointer") else ""))
+    elif e.type == "knowledge":
+        n = e.data["note"]
+        print(f"{tag}[docs:{n['purpose']}] {msg} ({len(n['sources'])} sources)")
     elif e.type == "finished":
         print(f"{tag}== finished: {msg}")
     else:
@@ -42,7 +49,7 @@ def cmd_procedures(_: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     params = dict(kv.split("=", 1) for kv in args.param or [])
     request = InterventionRequest(software=args.software, role=args.role, goal=args.goal, symptom=args.symptom,
-                                  procedure_id=args.procedure, parameters=params)
+                                  procedure_id=args.procedure, parameters=params, mode=args.mode)
     backend = make_backend(args.mock)
     it = Intervention(request, backend, ProcedureRegistry(), _print_event, Path(args.runs_dir))
     print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'})")
@@ -69,7 +76,21 @@ def cmd_run(args: argparse.Namespace) -> int:
         threading.Thread(target=_stopper, daemon=True).start()
 
     try:
-        it.wait()
+        if args.mode == "guide":
+            while not it.state.terminal:
+                it.wait(0.2)
+                if it.state is State.awaiting_user:
+                    if args.yes:
+                        time.sleep(0.3)
+                        it.next(NextCommand(done=True))
+                    else:
+                        ans = input("\nDid you do it? [Enter = yes / type what you see / q = stop] ").strip()
+                        if ans.lower() == "q":
+                            it.stop(StopCommand(reason="user quit"))
+                        else:
+                            it.next(NextCommand(done=ans == "", note=ans or None))
+        else:
+            it.wait()
     except KeyboardInterrupt:
         print(">> Ctrl+C: stopping")
         it.stop(StopCommand(reason="Ctrl+C"))
@@ -102,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--role")
     run.add_argument("--goal", required=True)
     run.add_argument("--symptom")
+    run.add_argument("--mode", choices=["act", "guide"], default="act",
+                     help="act: the agent does it; guide: the agent explains and points, you do it")
     run.add_argument("-p", "--param", action="append", metavar="KEY=VALUE")
     run.add_argument("--scope-note")
     run.add_argument("-y", "--yes", action="store_true", help="Approve the plan without prompting")

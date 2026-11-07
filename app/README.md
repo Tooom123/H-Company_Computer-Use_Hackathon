@@ -10,6 +10,7 @@ Talks to the local agent API (`hcs-agent serve`, `127.0.0.1:8765`):
 | POST | `/interventions` | `InterventionRequest` → snapshot with `plan` (state `awaiting_approval`) |
 | POST | `/interventions/{id}/approve` | `ApproveCommand` |
 | POST | `/interventions/{id}/stop` | `StopCommand` |
+| POST | `/interventions/{id}/next` | `NextCommand` — guide mode, after a `guidance` event (state `awaiting_user`) |
 | POST | `/interventions/{id}/feedback` | `FeedbackCommand` |
 | GET | `/interventions/{id}` | snapshot |
 | GET | `/interventions/{id}/report` | `InterventionReport` (425 until finished) |
@@ -17,6 +18,10 @@ Talks to the local agent API (`hcs-agent serve`, `127.0.0.1:8765`):
 
 Schemas: `../contracts/`. Run the agent in simulated mode while building: `HCS_MOCK=1 hcs-agent serve`.
 Show a visible "simulated" badge whenever `event.simulated` is true.
+
+Request `mode` is `act` (agent does it) or `guide` (agent explains and points; show each `guidance` event as a
+card with instruction / where / why and a "Done" + "I can't" button that call `/next`). `plan.documentation`
+and `plan.sources` (Linkup) should be displayed with the proposed plan.
 
 ```bash
 npm install

@@ -38,7 +38,14 @@ uv run hcs-agent run --mock -y ... --stop-after 2   # measures stop latency
 uv run pytest
 ```
 
-Environment variables: `HAI_API_KEY`, `HCS_MOCK=1`, `HCS_MODEL` (default `holo4-35b-a3b`),
+Guide mode (the agent explains and points, the user clicks):
+
+```bash
+uv run hcs-agent run --mode guide --procedure odoo_crm_followup_activity --role "new sales rep" \
+  --goal "Show me how to schedule the follow-up on Acme Demo" -p opportunity="Acme Demo" -p due_date=2026-11-14
+```
+
+Environment variables: `HAI_API_KEY`, `LINKUP_API_KEY` (documentation lookups; optional), `HCS_MOCK=1`, `HCS_MODEL` (default `holo4-35b-a3b`),
 `HCS_SCREENSHOT_MAX_WIDTH` (default 1280), `HCS_RUNS_DIR`, `HCS_MOCK_OUTCOME=done|blocked|fail_verify`,
 `HCS_MOCK_PREFLIGHT_FAIL=1`.
 
@@ -47,8 +54,8 @@ Environment variables: `HAI_API_KEY`, `HCS_MOCK=1`, `HCS_MODEL` (default `holo4-
 | Direction | Object | Notes |
 | --- | --- | --- |
 | app → agent | `InterventionRequest` | `session_id`, `software`, `role`, `goal`, `symptom?`, `procedure_id`, `parameters` |
-| app → agent | `ApproveCommand`, `StopCommand`, `FeedbackCommand` | nothing reaches H before `approved: true` |
-| agent → app/backend | `AgentEvent` | `type` ∈ state_changed, plan_proposed, step, attempt_started, attempt_finished, verification, needs_human, stopped, finished, error; `simulated` flag |
+| app → agent | `ApproveCommand`, `StopCommand`, `NextCommand`, `FeedbackCommand` | nothing reaches H before `approved: true`; `NextCommand` answers a guide step |
+| agent → app/backend | `AgentEvent` | `type` ∈ state_changed, plan_proposed, step, attempt_started, attempt_finished, verification, guidance, knowledge, needs_human, stopped, finished, error; `simulated` flag |
 | agent → backend | `InterventionReport` | declared vs verified result, `category`, `status`, `escalation`, `evidence`, `timings.stop_latency_s` |
 
 Categories: `usage, configuration, permissions, data, suspected_product_defect, environment, agent_failure, unknown`.
@@ -61,6 +68,7 @@ Statuses: `resolved, workaround, escalated, abandoned`.
 | POST | `/interventions` | `InterventionRequest` → 201, state `awaiting_approval` + `plan` |
 | POST | `/interventions/{id}/approve` | `{"approved": true, "scope_note": "..."}` |
 | POST | `/interventions/{id}/stop` | `{"reason": "..."}` |
+| POST | `/interventions/{id}/next` | guide mode: `{"done": true, "note": "..."}` after a `guidance` event (state `awaiting_user`) |
 | POST | `/interventions/{id}/feedback` | `{"useful": true, "comment": "...", "allow_screenshots_to_support": false}` |
 | GET | `/interventions/{id}` | snapshot (state, plan, steps, declared, verification) |
 | GET | `/interventions/{id}/report` | `InterventionReport` (425 until finished) |
@@ -68,9 +76,24 @@ Statuses: `resolved, workaround, escalated, abandoned`.
 | WS | `/interventions/{id}/ws` | replays history, then live `AgentEvent`s until `finished` |
 | GET | `/procedures`, `/health` | |
 
+## Modes
+
+- `act` (default): the agent performs the steps in the software, then a separate read-only session verifies.
+- `guide`: the agent only explains and moves the pointer to the control; the user performs each step and
+  answers with `/next`; the state alternates `running ↔ awaiting_user`. Same verification at the end.
+
+## Knowledge (Linkup)
+
+With `LINKUP_API_KEY`, documentation is searched (restricted to the vendor's domains) at three points:
+before the plan (`plan.documentation` + `sources`, so the explanation is grounded), during the H session
+through the custom tool `lookup_docs` the agent may call, and at escalation for the blocker text. Each lookup
+is recorded in `report.knowledge` with `purpose` ∈ explain, agent_lookup, blocker. Without a key, nothing
+is looked up and the run continues.
+
 ## State machine
 
-`created → awaiting_approval → running → verifying → resolved | escalated`, and `stopping → stopped` at any time.
+`created → awaiting_approval → running (↔ awaiting_user in guide mode) → verifying → resolved | escalated`,
+and `stopping → stopped` at any time.
 Rules enforced in `runner.py` (not in the prompt):
 
 - the agent's declared outcome never sets the case status; the observed postcondition does;

@@ -328,6 +328,7 @@ source = { editable = "agent" }
 dependencies = [
     { name = "fastapi" },
     { name = "hai-agents", extra = ["cli", "desktop"] },
+    { name = "linkup-sdk" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
@@ -343,6 +344,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.162.1" },
     { name = "hai-agents", extras = ["cli", "desktop"], specifier = ">=1.4.3" },
+    { name = "linkup-sdk", specifier = ">=0.24.0" },
     { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
@@ -568,6 +570,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/19/74/a633ee74eb36c44aa6d1095e7cc5569bebf04342ee146178e2d36600708b/jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d", size = 32855, upload-time = "2025-09-08T01:34:59.186Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl", hash = "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe", size = 18437, upload-time = "2025-09-08T01:34:57.871Z" },
+]
+
+[[package]]
+name = "linkup-sdk"
+version = "0.24.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/b7/15a553bb06fb9350285cda1feeecd705335949d862333cd7bd668c978e13/linkup_sdk-0.24.0.tar.gz", hash = "sha256:953879a1ebb92b0066523ad868128f1fe2e6d9809b48d5beee415a28bb63b4c2", size = 209315, upload-time = "2026-10-22T09:57:20.516Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/3c/5670dd5f3a0896fe3afea7dce00170874db00b50e45d3a067dcc7ac3c9aa/linkup_sdk-0.24.0-py3-none-any.whl", hash = "sha256:55d4c680e36e2b569a56760b12c93f79a9e51845a70f38406653e7f1b4f10231", size = 22358, upload-time = "2026-10-22T09:57:19.301Z" },
 ]
 
 [[package]]

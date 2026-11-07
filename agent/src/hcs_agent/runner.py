@@ -25,11 +25,15 @@ from .contract import (
     CaseStatus,
     Category,
     DeclaredResult,
+    DocSource,
     Escalation,
     Evidence,
     FeedbackCommand,
+    GuidanceStep,
     InterventionReport,
     InterventionRequest,
+    KnowledgeNote,
+    NextCommand,
     ProposedPlan,
     State,
     Step,
@@ -37,6 +41,7 @@ from .contract import (
     Timings,
     Verification,
 )
+from .knowledge import DocAnswer, blocker_query, explain_query
 from .procedures import BoundProcedure, ProcedureRegistry
 
 EventSink = Callable[[AgentEvent], None]
@@ -74,7 +79,11 @@ class Intervention:
         self.timings = Timings(started_at=_now())
         self.cost_usd = 0.0
         self.attempts = 0
+        self.guidance: list[GuidanceStep] = []
+        self.knowledge: list[KnowledgeNote] = []
         self.error: str | None = None
+        self._user_event = threading.Event()
+        self._user_reply: tuple[bool, str | None] | None = None
         self._bound: BoundProcedure | None = None
         self._stop = threading.Event()
         self._approval = threading.Event()
@@ -120,11 +129,38 @@ class Intervention:
             self._finish()
             return
         self.plan = self._bound.plan()
+        self._ground_plan()
         self._set_state(State.awaiting_approval, "Waiting for the user to approve the proposed scope.")
         self._emit("plan_proposed", self.plan.explanation, plan=self.plan.model_dump(),
                    preconditions=self._bound.preconditions)
         self._thread = threading.Thread(target=self._run, name=f"intervention-{self.request.session_id}", daemon=True)
         self._thread.start()
+
+    def _ground_plan(self) -> None:
+        """Attach a sourced documentation summary (Linkup) to the plan so the explanation is not invented."""
+        assert self._bound is not None and self.plan is not None
+        req = self.request
+        ans = self.backend.knowledge.ask(
+            explain_query(req.software, req.software_version or self._bound.procedure.software_version,
+                          self._bound.objective, req.role), software=req.software)
+        if ans is None:
+            return
+        self.plan.documentation = ans.answer
+        self.plan.sources = [DocSource(**s.model_dump()) for s in ans.sources]
+        self._note("explain", ans)
+
+    def _note(self, purpose: str, ans: DocAnswer) -> None:
+        note = KnowledgeNote(purpose=purpose, query=ans.query, answer=ans.answer,
+                             sources=[DocSource(**s.model_dump()) for s in ans.sources], simulated=ans.simulated)
+        self.knowledge.append(note)
+        self._emit("knowledge", ans.answer[:300], note=note.model_dump())
+
+    def next(self, cmd: NextCommand) -> None:
+        """Guide mode: the user reports on the step they were asked to do."""
+        if self.state is not State.awaiting_user:
+            raise RuntimeError(f"Cannot continue in state {self.state.value}")
+        self._user_reply = (cmd.done, cmd.note)
+        self._user_event.set()
 
     def approve(self, cmd: ApproveCommand) -> None:
         if self.state is not State.awaiting_approval:
@@ -142,6 +178,7 @@ class Intervention:
         self._set_state(State.stopping, (cmd.reason if cmd else None) or "Stop requested by the user.")
         self._stop.set()
         self._approval.set()  # unblock a pending approval wait
+        self._user_event.set()  # unblock a pending guide step
 
     def add_feedback(self, fb: FeedbackCommand) -> None:
         self.feedback = fb
@@ -171,16 +208,24 @@ class Intervention:
         previous_failure: str | None = None
         last_attempt: AttemptResult | None = None
         verify: VerifyResult | None = None
-        self._set_state(State.running, "Intervention approved. Working in the software now.")
+        guide = bound.guide
+        max_attempts = 1 if guide else proc.max_attempts
+        self._set_state(State.running, "Guiding you step by step." if guide
+                        else "Intervention approved. Working in the software now.")
         self._snapshot("before", "Screen before the intervention")
 
-        for attempt in range(1, proc.max_attempts + 1):
+        for attempt in range(1, max_attempts + 1):
             if self._stop.is_set():
                 return self._finish_stopped()
             self.attempts = attempt
-            self._emit("attempt_started", f"Attempt {attempt}/{proc.max_attempts}", attempt=attempt)
+            self._emit("attempt_started", f"Attempt {attempt}/{max_attempts}", attempt=attempt)
             task = bound.task_message(self.scope_note, previous_failure)
-            last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop)
+            on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
+            if guide:
+                last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
+                                                         self._stop, on_lookup)
+            else:
+                last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
             self._record_attempt(last_attempt)
             self._emit("attempt_finished", last_attempt.declared.summary or last_attempt.status,
                        attempt=attempt, h_status=last_attempt.status, declared=last_attempt.declared.model_dump())
@@ -203,13 +248,37 @@ class Intervention:
             self._set_state(State.running, f"Not verified after attempt {attempt}.")
 
         self._snapshot("after", "Screen at escalation")
+        if self.declared.blocker:
+            ans = self.backend.knowledge.ask(
+                blocker_query(self.request.software, self.request.software_version or proc.software_version,
+                              self.declared.blocker), software=self.request.software)
+            if ans:
+                self._note("blocker", ans)
         self._set_state(State.escalated, "The goal could not be verified. Handing over to support.")
         self._emit("needs_human", self._bound.decision_expected)
         self._finish(status=CaseStatus.escalated, last_attempt=last_attempt, verify=verify)
 
+    def _on_guidance(self, step: GuidanceStep) -> tuple[bool, str | None] | None:
+        """Backend callback in guide mode: publish the step, wait for the user's `next()` or a stop."""
+        self.guidance.append(step)
+        if step.last:
+            self._emit("guidance", step.instruction, step=step.model_dump())
+            return None
+        self._user_event.clear()
+        self._user_reply = None
+        self._set_state(State.awaiting_user, "Your turn: do the step shown, then continue.")
+        self._emit("guidance", step.instruction, step=step.model_dump())
+        self._user_event.wait()
+        if self._stop.is_set():
+            return None
+        self._set_state(State.running, "Looking at the screen for the next step.")
+        return self._user_reply or (True, None)
+
     # ------------------------------------------------------------------ bookkeeping
 
     def _record_attempt(self, res: AttemptResult) -> None:
+        if res.guidance and not self.guidance:
+            self.guidance = list(res.guidance)
         if res.h_session_id:
             self.h_session_ids.append(res.h_session_id)
             self.evidence.append(Evidence(ref=res.h_session_id, kind="h_session",
@@ -288,8 +357,11 @@ class Intervention:
             session_type=self.request.session_type,
             goal=self.request.goal,
             symptom=self.request.symptom,
+            mode=self.request.mode,
             procedure_id=proc.id if proc else self.request.procedure_id,
             approved_scope=self.plan if self._approved else None,
+            guidance=self.guidance,
+            knowledge=self.knowledge,
             scope_note=self.scope_note,
             steps=self.steps,
             declared=self.declared,

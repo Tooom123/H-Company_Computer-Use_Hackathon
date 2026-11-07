@@ -53,6 +53,13 @@ class CaseStatus(str, Enum):
     abandoned = "abandoned"
 
 
+class Mode(str, Enum):
+    """`act`: the agent performs the steps. `guide`: the agent explains and points, the user performs."""
+
+    act = "act"
+    guide = "guide"
+
+
 class State(str, Enum):
     """Intervention state machine."""
 
@@ -60,6 +67,7 @@ class State(str, Enum):
     preflight_failed = "preflight_failed"
     awaiting_approval = "awaiting_approval"
     running = "running"
+    awaiting_user = "awaiting_user"
     verifying = "verifying"
     stopping = "stopping"
     stopped = "stopped"
@@ -87,6 +95,7 @@ class InterventionRequest(BaseModel):
     procedure_id: str | None = Field(default=None, description="Procedure to use; otherwise picked by software.")
     parameters: dict[str, str] = Field(default_factory=dict, description="Values injected into the procedure.")
     session_type: SessionType = SessionType.support
+    mode: Mode = Field(default=Mode.act, description="act: agent does it; guide: agent explains, user does it.")
     user_id: str | None = None
     client_id: str | None = None
 
@@ -102,6 +111,13 @@ class StopCommand(BaseModel):
     reason: str | None = None
 
 
+class NextCommand(BaseModel):
+    """Guide mode: the user reports on the step they were asked to perform."""
+
+    done: bool = True
+    note: str | None = Field(default=None, description="What the user saw, or why they could not do it.")
+
+
 class FeedbackCommand(BaseModel):
     """Free-form user feedback. Never inferred by the agent."""
 
@@ -111,6 +127,11 @@ class FeedbackCommand(BaseModel):
 
 
 # --------------------------------------------------------------------------- proposed plan
+class DocSource(BaseModel):
+    name: str
+    url: str
+    snippet: str = ""
+
 
 
 class ProposedPlan(BaseModel):
@@ -123,7 +144,21 @@ class ProposedPlan(BaseModel):
     reversible: bool
     max_attempts: int
     explanation: str = Field(description="Explanation adapted to the declared role.")
+    mode: Mode = Mode.act
+    documentation: str | None = Field(default=None, description="Sourced summary from the vendor documentation.")
+    sources: list[DocSource] = Field(default_factory=list)
     observes: str = "Screenshots of the main display are sent to H during the intervention."
+
+
+class GuidanceStep(BaseModel):
+    """One step explained to the user in guide mode."""
+
+    index: int
+    instruction: str = Field(description="What the user should do now, in plain words.")
+    where: str = Field(default="", description="Where the control is on screen.")
+    why: str = Field(default="", description="What this step achieves.")
+    pointer: tuple[int, int] | None = Field(default=None, description="Screen coordinates the agent pointed at.")
+    last: bool = False
 
 
 # --------------------------------------------------------------------------- events
@@ -136,6 +171,8 @@ EventType = Literal[
     "attempt_started",
     "attempt_finished",
     "verification",
+    "guidance",
+    "knowledge",
     "needs_human",
     "stopped",
     "finished",
@@ -199,6 +236,16 @@ class Evidence(BaseModel):
     shareable_with_support: bool = False
 
 
+class KnowledgeNote(BaseModel):
+    """A sourced documentation lookup (Linkup). Provided information, distinct from observation."""
+
+    purpose: Literal["explain", "agent_lookup", "blocker"]
+    query: str
+    answer: str
+    sources: list[DocSource] = Field(default_factory=list)
+    simulated: bool = False
+
+
 class Escalation(BaseModel):
     """Case file handed to support when the goal was not reached."""
 
@@ -240,8 +287,11 @@ class InterventionReport(BaseModel):
     session_type: SessionType
     goal: str
     symptom: str | None
+    mode: Mode = Mode.act
     procedure_id: str | None
     approved_scope: ProposedPlan | None
+    guidance: list[GuidanceStep] = Field(default_factory=list)
+    knowledge: list[KnowledgeNote] = Field(default_factory=list)
     scope_note: str | None = None
     steps: list[Step]
     declared: DeclaredResult
@@ -267,6 +317,7 @@ class InterventionReport(BaseModel):
             "procedure_id": self.procedure_id,
             "category": self.category.value,
             "status": self.status.value,
+            "mode": self.mode.value,
             "goal": self.goal,
             "symptom": self.symptom,
             "blocked_on": self.escalation.blocked_on if self.escalation else None,

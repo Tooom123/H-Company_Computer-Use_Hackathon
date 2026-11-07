@@ -12,7 +12,7 @@ from typing import Iterator
 import yaml
 from pydantic import BaseModel, Field
 
-from .contract import Category, InterventionRequest, ProposedPlan, SessionType
+from .contract import Category, InterventionRequest, Mode, ProposedPlan, SessionType
 
 PROCEDURES_DIR = Path(__file__).parent / "procedures"
 
@@ -128,32 +128,57 @@ class BoundProcedure(BaseModel):
     def decision_expected(self) -> str:
         return self._r(self.procedure.escalation.decision_expected)
 
+    @property
+    def guide(self) -> bool:
+        return self.request.mode is Mode.guide
+
+    @property
+    def guide_instructions(self) -> str:
+        return GUIDE_INSTRUCTIONS + "\n\nReference procedure (what the user must end up doing):\n" + self.agent_instructions
+
     def plan(self) -> ProposedPlan:
         p = self.procedure
         role = self.request.role or "user"
-        explanation = (
-            f"As a {role}, you asked: \"{self.request.goal}\". "
-            f"I will {self.objective[0].lower() + self.objective[1:]} "
-            f"This change is {'reversible' if p.reversible else 'NOT reversible'}. "
-            f"I will stop and hand over to support if I cannot complete it within {p.max_attempts} attempt(s)."
-        )
+        objective_lc = self.objective[0].lower() + self.objective[1:]
+        if self.guide:
+            explanation = (
+                f"As a {role}, you asked: \"{self.request.goal}\". "
+                f"I will guide you step by step to {objective_lc} "
+                "I will explain each step and point at the control on your screen; you perform the clicks. "
+                "I will not change anything myself."
+            )
+            allowed = ["Move the mouse pointer to show where a control is.",
+                       "Read the screen to explain what is displayed."]
+            forbidden = ["Clicking, typing or changing anything in the software."] + \
+                        [self._r(x) for x in p.forbidden_actions]
+        else:
+            explanation = (
+                f"As a {role}, you asked: \"{self.request.goal}\". "
+                f"I will {objective_lc} "
+                f"This change is {'reversible' if p.reversible else 'NOT reversible'}. "
+                f"I will stop and hand over to support if I cannot complete it within {p.max_attempts} attempt(s)."
+            )
+            allowed = [self._r(x) for x in p.allowed_actions]
+            forbidden = [self._r(x) for x in p.forbidden_actions]
         return ProposedPlan(
             objective=self.objective,
             planned_changes=[self._r(x) for x in p.planned_changes],
-            allowed_actions=[self._r(x) for x in p.allowed_actions],
-            forbidden_actions=[self._r(x) for x in p.forbidden_actions],
+            allowed_actions=allowed,
+            forbidden_actions=forbidden,
             reversible=p.reversible,
             max_attempts=p.max_attempts,
             explanation=explanation,
+            mode=self.request.mode,
         )
 
     def task_message(self, scope_note: str | None = None, previous_failure: str | None = None) -> str:
+        plan = self.plan()
         parts = [
             f"User role: {self.request.role or 'not specified'}.",
             f"User goal: {self.request.goal}",
             f"Task: {self.objective}",
-            "Allowed actions:\n- " + "\n- ".join(self.plan().allowed_actions),
-            "Forbidden actions (never do these):\n- " + "\n- ".join(self.plan().forbidden_actions),
+            "Allowed actions:\n- " + "\n- ".join(plan.allowed_actions),
+            "Forbidden actions (never do these):\n- " + "\n- ".join(plan.forbidden_actions),
         ]
         if self.request.symptom:
             parts.insert(2, f"Reported symptom: {self.request.symptom}")
@@ -161,11 +186,32 @@ class BoundProcedure(BaseModel):
             parts.append(f"Additional constraint from the user: {scope_note}")
         if previous_failure:
             parts.append(f"A previous attempt did not satisfy the expected result: {previous_failure}")
-        parts.append(
-            "When finished, answer with: outcome (done / blocked / unclear), a one-paragraph summary, "
-            "the exact blocker text if blocked, and the list of steps you actually performed."
-        )
+        if self.guide:
+            parts.append(
+                "Start now: look at the screen, point at the first control the user must use, and answer with "
+                "the first step only (instruction, where, why, last=false)."
+            )
+        else:
+            parts.append(
+                "When finished, answer with: outcome (done / blocked / unclear), a one-paragraph summary, "
+                "the exact blocker text if blocked, and the list of steps you actually performed."
+            )
         return "\n\n".join(parts)
+
+
+GUIDE_INSTRUCTIONS = """\
+You are a patient support guide. The user performs every action; you only explain and point.
+Rules:
+- NEVER click, type, scroll, press keys or change anything. The only input you may produce is moving the
+  mouse pointer to the control you are talking about, so the user sees where it is.
+- Work one step at a time. Look at the screen, then answer with exactly one step: what to do, where the
+  control is, why it matters. Set last=true only when the goal is visibly achieved on screen.
+- After each answer you will receive a message from the user saying they did the step (or could not).
+  Look at the screen again before giving the next step; adapt if the screen is not what you expected.
+- If the user cannot do a step because of an error or missing permission, say so in the instruction,
+  quote the message you see, and set last=true with blocked=true.
+- Use the documentation tool when unsure about a menu path or a feature's purpose.
+"""
 
 
 # ---------------------------------------------------------------------- registry

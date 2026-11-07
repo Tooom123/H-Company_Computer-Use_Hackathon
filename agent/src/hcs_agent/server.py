@@ -3,6 +3,7 @@
     POST /interventions                 -> create + start (preflight, plan proposed)
     POST /interventions/{id}/approve    -> ApproveCommand
     POST /interventions/{id}/stop       -> StopCommand
+    POST /interventions/{id}/next       -> NextCommand (guide mode: user did / could not do the step)
     POST /interventions/{id}/feedback   -> FeedbackCommand
     GET  /interventions/{id}            -> state, plan, steps so far
     GET  /interventions/{id}/report     -> InterventionReport (once finished)
@@ -26,7 +27,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from .backend import Backend, make_backend
-from .contract import AgentEvent, ApproveCommand, FeedbackCommand, InterventionRequest, StopCommand
+from .contract import AgentEvent, ApproveCommand, FeedbackCommand, InterventionRequest, NextCommand, StopCommand
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 
@@ -84,6 +85,8 @@ def _snapshot(it: Intervention) -> dict[str, Any]:
         "steps": [s.model_dump(mode="json") for s in it.steps],
         "declared": it.declared.model_dump(),
         "verification": it.verification.model_dump() if it.verification else None,
+        "guidance": [g.model_dump() for g in it.guidance],
+        "knowledge": [k.model_dump() for k in it.knowledge],
         "error": it.error,
         "report_ready": it.report is not None,
     }
@@ -132,6 +135,15 @@ def create_app(backend: Backend | None = None, runs_dir: Path | None = None) -> 
     def stop(session_id: str, cmd: StopCommand | None = None) -> dict[str, Any]:
         it = hub.get(session_id)
         it.stop(cmd or StopCommand())
+        return _snapshot(it)
+
+    @app.post("/interventions/{session_id}/next")
+    def next_step(session_id: str, cmd: NextCommand | None = None) -> dict[str, Any]:
+        it = hub.get(session_id)
+        try:
+            it.next(cmd or NextCommand())
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
         return _snapshot(it)
 
     @app.post("/interventions/{session_id}/feedback")
