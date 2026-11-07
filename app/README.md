@@ -45,8 +45,8 @@ Le modèle par défaut est `holo3-1-35b-a3b`. Définir `HCS_MODEL` pour un autre
    source et l’ajout éventuel d’un aperçu global (largeur maximale 640 px).
 5. Cliquer **Capturer dans 3 s**, puis regarder la partie utile du logiciel. L’image reste
    locale. macOS peut demander la permission d’enregistrement de l’écran au premier essai ;
-   après accord, relancer l’app si nécessaire. Le helper exclut toutes les fenêtres appartenant
-   au processus Electron, dont le panneau et les deux overlays.
+   après accord, relancer l’app si nécessaire. Le helper reçoit les identifiants natifs des
+   fenêtres visibles H-Companion et les exclut, dont le panneau et les deux overlays.
 6. Inspecter l’image, les coordonnées et l’éventuel repli. **Envoyer à Holo** transmet
    exactement les buffers PNG affichés. Le rectangle plein désigne cette frame, figée même
    si le regard bouge pendant l’appel. L’aperçu global, s’il existe, est envoyé aussi.
@@ -140,12 +140,26 @@ un bridge **simulé explicite** et n’accèdent ni à la webcam ni à Holo. Ils
 la précision de WebGazer ni l’exclusion native en conditions réelles : vérifier ces deux
 points sur le Mac avant la démonstration et journaliser les essais réels selon le dépôt.
 
+Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
+
+- Une analyse réelle Holo3.1 d’une image entièrement fictive a répondu correctement
+  « Il reste 2 bouteilles à recevoir » : 544 tokens d’entrée, 10 de sortie, 554 au total,
+  0 en cache, 2 468 ms. Appel visuel unique, sans action desktop et sans capture utilisateur.
+- Une capture locale réelle a produit une image de 1 470 × 956 pixels en 904 ms de préparation.
+  Le panneau et l’overlay visibles ont été vérifiés absents de l’aperçu. Cette image n’a pas
+  été envoyée à Holo. L’essai a révélé puis permis de corriger la recherche d’exclusions
+  basée uniquement sur le PID : elle utilise désormais les identifiants natifs des fenêtres.
+- La précision du regard sur webcam réelle nécessite la calibration de l’utilisateur ;
+  elle n’est pas validée par ces deux contrôles.
+
 ## Limites et dépendances
 
 - Capture : macOS 14+ uniquement ; un écran principal. Pas encore de packaging/signature
   macOS ni de version Windows. Xcode sert à compiler le helper de développement.
-- Le helper ne capture rien s’il ne peut pas identifier l’application à exclure. Il ne
-  s’appuie pas sur `setContentProtection`, insuffisant avec ScreenCaptureKit.
+- Le helper identifie les fenêtres par leur `CGWindowID` fourni par Electron, avec les
+  correspondances de processus en complément. Il refuse la capture si une fenêtre visible
+  demandée n’est pas retrouvée. Il ne s’appuie pas sur `setContentProtection`, insuffisant
+  avec ScreenCaptureKit.
 - L’overlay peut influencer le regard. Le désactiver pour le lot de mesures principales.
 - Aucun entraînement implicite sur les clics du logiciel ou de l’agent. Les profils ne sont
   pas conservés entre sessions. Garder l’éclairage et la position après calibration.

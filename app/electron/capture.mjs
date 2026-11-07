@@ -15,12 +15,12 @@ function encode(image) {
   return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, width, height, sha256: createHash('sha256').update(png).digest('hex') };
 }
 
-export async function captureObservation({ binary, display, settings, selection, signal }) {
+export async function captureObservation({ binary, display, settings, selection, signal, excludeWindowIds }) {
   const start = performance.now();
   const directory = await mkdtemp(path.join(tmpdir(), 'hcompanion-'));
   const output = path.join(directory, 'screen.png');
   try {
-    const { stdout } = await exec(binary, ['--display', String(display.id), '--exclude-pid', String(process.pid), '--output', output], {
+    const { stdout } = await exec(binary, ['--display', String(display.id), '--exclude-pid', String(process.pid), '--exclude-window-ids', excludeWindowIds.join(','), '--output', output], {
       timeout: 30_000, maxBuffer: 64 * 1024, signal,
     });
     signal?.throwIfAborted();

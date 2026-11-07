@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { captureObservation } from './capture.mjs';
 import { runHolo } from './holo.mjs';
 import { boundedRect, screenPointToCapture, captureRectToDisplay, validateSettings } from './geometry.mjs';
+import { windowIdsFromMediaSources } from './window-ids.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -185,6 +186,7 @@ ipcMain.handle('companion:capture', async event => {
     const cursorSnapshot = currentSelection(settings);
     const captured = await captureObservation({
       binary, display, settings, signal: operation.signal,
+      excludeWindowIds: windowIdsFromMediaSources(BrowserWindow.getAllWindows().filter(window => !window.isDestroyed() && window.isVisible() && !window.isMinimized()).map(window => window.getMediaSourceId())),
       selection: () => settings.selection === 'gaze' ? currentSelection(settings, gazeSnapshot) : cursorSnapshot,
     });
     controller.signal.throwIfAborted();
