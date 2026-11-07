@@ -159,11 +159,34 @@ def _clamp(x, y, w, h, W, H, margin=14):
     return min(max(x, margin), W - w - margin), min(max(y, margin), H - h - margin)
 
 
-def _note(x, y, text, rnd, size=19, max_w=340, color=PAPER, underline=True, bounds=None) -> tuple[float, float, float, float]:
+def _overlaps(a, b, pad=8) -> bool:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw + pad and ax + aw + pad > bx and ay < by + bh + pad and ay + ah + pad > by
+
+
+def _place(x, y, w, h, bounds, placed):
+    """Clamp inside the screen, then push the paper down/up until it overlaps no other paper."""
+    W, H = bounds
+    x, y = _clamp(x, y, w, h, W, H)
+    for step in range(0, 12):
+        cand = (x, y - step * (h + 10)) if step % 2 == 0 else (x, y + ((step + 1) // 2) * (h + 10))
+        cx, cy = _clamp(cand[0], cand[1], w, h, W, H)
+        if not any(_overlaps((cx, cy, w, h), r) for r in placed):
+            placed.append((cx, cy, w, h))
+            return cx, cy
+    placed.append((x, y, w, h))
+    return x, y
+
+
+def _note(x, y, text, rnd, size=19, max_w=340, color=PAPER, underline=True, bounds=None, placed=None) -> tuple[float, float, float, float]:
     """Handwritten text on a paper scrap, anchored at its bottom-left. Returns (x, y, width, height) drawn."""
     attrs, s, tw, th = _measure(text, size, max_w)
     if bounds is not None:
-        x, y = _clamp(x, y, tw + 20, th + 12, bounds[0], bounds[1])
+        if placed is not None:
+            x, y = _place(x, y, tw + 20, th + 12, bounds, placed)
+        else:
+            x, y = _clamp(x, y, tw + 20, th + 12, bounds[0], bounds[1])
     _draw_paper(x - 10, y - 6, tw + 20, th + 12, rnd, color)
     _ink().setStroke()
     s.drawInRect_withAttributes_(((x, y), (max_w, th + 4)), attrs)
@@ -196,7 +219,24 @@ class _SketchView(AppKit.NSView):
         W, H = bounds.size.width, bounds.size.height
         _ink().setStroke()
 
-        # Secondary marks first (they sit "under" the main note).
+        placed: list = []
+        main_note = None
+        if sc.target is not None:
+            tx, ty = sc.target
+            label = f"{sc.step}. {sc.text}" if sc.step else sc.text
+            _, _, lw, lh = _measure(label, 19, 340)
+            right = tx + 48 + lw + 40 < W
+            text_x, text_y = (tx + 48 if right else tx - 48 - lw), ty + 40
+            main_note = _place(*_clamp(text_x, text_y, lw + 20, lh + 12, W, H), lw + 20, lh + 12, (W, H), placed) + (lw + 20, lh + 12, right)
+        elif sc.text:
+            _, _, lw, lh = _measure(sc.text, 19, 340)
+            main_note = _place(W / 2 - lw / 2, H - 92, lw + 20, lh + 12, (W, H), placed) + (lw + 20, lh + 12, True)
+        why_rect = None
+        if sc.why and main_note:
+            _, _, ww, wh = _measure(sc.why, 14, 300)
+            why_rect = _place(main_note[0] + 6, main_note[1] - 20 - wh, ww + 20, wh + 12, (W, H), placed)
+
+        # Secondary marks (their labels avoid the papers already placed).
         for m in sc.marks:
             mx, my = m.xy
             if m.shape == "circle":
@@ -212,29 +252,20 @@ class _SketchView(AppKit.NSView):
                 # Small label next to the mark, with a short link stroke.
                 lx = mx + 50 if mx + 300 < W else mx - 50 - 220
                 ly = my + 26
-                lx, ly, lw, lh = _note(lx, ly, m.text, rnd, size=15, max_w=220, color=PAPER_SOFT, underline=False, bounds=(W, H))
-                _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else lw - 24), ly - 2)], rnd, 1.1, 1.0)
+                lx, ly, lw2, lh2 = _note(lx, ly, m.text, rnd, size=15, max_w=220, color=PAPER_SOFT, underline=False, bounds=(W, H), placed=placed)
+                _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else lw2 - 24), ly - 2)], rnd, 1.1, 1.0)
 
-        # Main note + circle + arrow.
-        if sc.target is not None:
-            tx, ty = sc.target
-            _circle(tx, ty, rnd)
-            label = f"{sc.step}. {sc.text}" if sc.step else sc.text
-            _, _, lw, lh = _measure(label, 19, 340)
-            right = tx + 48 + lw + 40 < W
-            text_x = tx + 48 if right else tx - 48 - lw
-            text_y = ty + 40
-            text_x, text_y, w, h = _note(text_x, text_y, label, rnd, bounds=(W, H))
-            if sc.why:
-                _, _, ww, wh = _measure(sc.why, 14, 300)
-                _note(text_x + 6, text_y - 20 - wh, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False, bounds=(W, H))
-            _arrow((text_x + (6 if right else w - 26), text_y - 12), (tx + (46 if right else -46), ty + 16), rnd)
-        elif sc.text:
-            _, _, lw, lh = _measure(sc.text, 19, 340)
-            text_x, text_y, w, h = _note(W / 2 - lw / 2, H - 92, sc.text, rnd, bounds=(W, H))
-            if sc.why:
-                _, _, ww, wh = _measure(sc.why, 14, 300)
-                _note(text_x + 6, text_y - 20 - wh, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False, bounds=(W, H))
+        # Main note + circle + arrow, drawn last so they stay on top.
+        if main_note:
+            nx, ny, w, h, right = main_note
+            label = (f"{sc.step}. {sc.text}" if sc.step else sc.text)
+            _note(nx, ny, label, rnd)
+            if why_rect:
+                _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
+            if sc.target is not None:
+                tx, ty = sc.target
+                _circle(tx, ty, rnd)
+                _arrow((nx + (6 if right else w - 26), ny - 12), (tx + (46 if right else -46), ty + 16), rnd)
 
     def _draw_badge(self):
         import time

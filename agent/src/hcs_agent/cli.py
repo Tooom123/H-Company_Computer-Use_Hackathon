@@ -114,8 +114,28 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         print(json.dumps(it.report.to_support_summary(), indent=2))
         if it.report.timings.stop_latency_s is not None:
             print(f"stop latency: {it.report.timings.stop_latency_s:.2f}s")
+        if ov is not None:
+            _show_outcome(ov, it)
         return 0 if it.report.status.value == "resolved" else 3
     return 1
+
+
+def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
+    """Closing note on screen: what happened, in one line, then back to listening."""
+    from .overlay import Scene
+
+    r = it.report
+    if r.status.value == "resolved":
+        text, why = "Terminé : résultat vérifié dans le logiciel", ""
+    elif r.status.value == "abandoned":
+        text, why = "Arrêté. Rien d'autre ne sera modifié.", ""
+    else:
+        text = "Je n'ai pas pu vérifier le résultat"
+        why = (r.escalation.blocked_on if r.escalation else "") or "Dossier transmis au support."
+    ov.badge(None)
+    ov.show_scene(Scene(text=text, why=why[:120]))
+    t0 = time.time()
+    ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
 
 
 def cmd_talk(args: argparse.Namespace) -> int:
@@ -197,6 +217,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if args.once:
                 return code
             ptt.start()
+            if ov is not None:
+                ov.badge(f"⌘H : nouvelle demande" if "cmd" in ptt.key_name else f"{ptt.key_name} : nouvelle demande")
             print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
     except KeyboardInterrupt:
         print("\nbye")
