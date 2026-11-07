@@ -127,7 +127,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         else:
             ov.badge(None)
 
-    ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "f8"), vocabulary=vocab, on_state=on_state)
+    ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     router = IntentRouter(registry)
     backend = make_backend(args.mock)
     ptt.start()
@@ -293,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(fn=cmd_run)
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
-    talk.add_argument("--key", help="pynput key name (default: HCS_PTT_KEY or f8)")
+    talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
     talk.add_argument("-y", "--yes", action="store_true", help="Approve the plan without prompting")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")
     talk.add_argument("--mock", action="store_true")
