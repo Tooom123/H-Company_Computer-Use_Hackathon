@@ -96,6 +96,8 @@ class InterventionRequest(BaseModel):
     parameters: dict[str, str] = Field(default_factory=dict, description="Values injected into the procedure.")
     session_type: SessionType = SessionType.support
     mode: Mode = Field(default=Mode.act, description="act: agent does it; guide: agent explains, user does it.")
+    autonomy: int = Field(default=1, ge=0, le=2,
+                          description="0: show only, never take over; 1: guide, take over when stuck; 2: do it, narrate.")
     user_id: str | None = None
     client_id: str | None = None
 

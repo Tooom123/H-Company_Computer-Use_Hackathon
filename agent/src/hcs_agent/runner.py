@@ -83,6 +83,7 @@ class Intervention:
         self.cost_usd = 0.0
         self.attempts = 0
         self.takeover = False
+        self.autonomy = request.autonomy
         self.guidance: list[GuidanceStep] = []
         self.knowledge: list[KnowledgeNote] = []
         self.error: str | None = None
@@ -185,6 +186,14 @@ class Intervention:
         self._approval.set()  # unblock a pending approval wait
         self._user_event.set()  # unblock a pending guide step
 
+    def set_autonomy(self, level: int) -> None:
+        """Live change from the slider. Raising to the max while guiding hands the task to the agent."""
+        self.autonomy = max(0, min(2, int(level)))
+        self._emit("state_changed", f"Autonomy set to {self.autonomy}", autonomy=self.autonomy)
+        if self.autonomy >= 2 and self.state is State.awaiting_user:
+            self._user_reply = (False, "autonomy raised to max")
+            self._user_event.set()
+
     def add_feedback(self, fb: FeedbackCommand) -> None:
         self.feedback = fb
         if self.report is not None:
@@ -226,17 +235,23 @@ class Intervention:
             self._emit("attempt_started", f"Attempt {attempt}/{max_attempts}", attempt=attempt)
             task = bound.task_message(self.scope_note, previous_failure)
             on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
-            if guide and bound.guide_script():
+            if guide and bound.guide_script() and self.autonomy < 2:
                 last_attempt = self._scripted_guide(bound)
+                if last_attempt is None and self.autonomy == 0:
+                    # Show-only: never take over; stay with the user until they manage or stop.
+                    self._emit("needs_human", "Autonomy 0: the user asked for explanations only.", fallback="none")
+                    last_attempt = AttemptResult(None, "completed", DeclaredResult(
+                        outcome="unclear", summary="Guided without takeover; outcome to verify."))
                 if last_attempt is None:
                     # The user is stuck: take the controls, finish the task and narrate each action.
                     self.takeover = True
                     self._emit("state_changed", "Je prends la main pour finir la tâche.", takeover=True)
+                    self.takeover = True
                     task = bound.task_message(self.scope_note, "The user started this task by hand and got stuck; "
                                               "continue from the current screen state. Before each action, say in "
                                               "one short French sentence what you do and why.")
                     last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
-            elif guide:
+            elif guide and self.autonomy < 2:
                 last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
                                                          self._stop, on_lookup)
             else:
@@ -290,6 +305,9 @@ class Intervention:
         while i < len(script):
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            if self.autonomy >= 2:
+                self._trace("autonomy raised to max: taking over")
+                return None
             step = script[i]
             t_step = time.time()
             if step.action == "info":
@@ -315,11 +333,16 @@ class Intervention:
                     pre_loc = n
                     continue
                 misses += 1
-                if misses >= 2:
+                if misses >= 2 and self.autonomy >= 1:
                     # Lost: stop explaining, take over (the caller runs the narrated agent).
                     self._emit("needs_human", f"Script lost at step {i + 1}: {step.element} not visible.",
                                fallback="takeover")
                     return None
+                if misses >= 2:
+                    if not self._recover(bound):
+                        return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                    i, misses, pre_loc = 0, 0, None
+                    continue
                 why = step.why
                 doc = self.backend.knowledge.ask(f"In {bound.request.software}, where is: {step.element}?",
                                                  software=bound.request.software, depth="fast")
@@ -338,8 +361,11 @@ class Intervention:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             did, note = reply
             if not did:
-                self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="takeover")
-                return None
+                if self.autonomy >= 1:
+                    self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="takeover")
+                    return None
+                misses += 1
+                continue  # show-only: explain the same step again
 
             # Verify progress on screen before moving on.
             nxt = script[i + 1] if i + 1 < len(script) else None

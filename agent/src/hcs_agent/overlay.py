@@ -46,6 +46,7 @@ class Scene:
     why: str = ""  # secondary explanation (lighter note under the main one)
     marks: list[Mark] = field(default_factory=list)
     step: int | None = None
+    doodle: str | None = None  # "check" | "asterisk" | "question"
 
 
 def mouse_position() -> tuple[float, float]:
@@ -89,8 +90,21 @@ def _wobble_path(points, rnd: random.Random, width: float, jitter: float):
     return paths
 
 
+_REVEAL = {"progress": 1.0, "index": 0, "total": 1}
+
+
 def _stroke(points, rnd, width=1.5, jitter=1.4):
-    for path in _wobble_path(points, rnd, width, jitter):
+    """Draw a pencil stroke, revealed progressively: stroke k appears when progress passes k/total."""
+    i = _REVEAL["index"]
+    _REVEAL["index"] = i + 1
+    total = max(1, _REVEAL["total"])
+    frac = max(0.0, min(1.0, _REVEAL["progress"] * total - i))
+    if frac <= 0:
+        return
+    pts = list(points)
+    if frac < 1 and len(pts) > 2:
+        pts = pts[: max(2, int(len(pts) * frac))]
+    for path in _wobble_path(pts, rnd, width, jitter):
         path.stroke()
 
 
@@ -107,9 +121,75 @@ def _box(x, y, w, h, rnd):
     _stroke(pts, rnd, 1.5, 2.0)
 
 
+def _rounded_box(cx, cy, w, h, rnd):
+    """Loose rounded rectangle drawn in one go, corners overshooting a little."""
+    r = 10
+    pts = []
+    for ang0, (ox, oy) in ((math.pi, (cx - w / 2 + r, cy + h / 2 - r)), (math.pi / 2, (cx + w / 2 - r, cy + h / 2 - r)),
+                           (0, (cx + w / 2 - r, cy - h / 2 + r)), (-math.pi / 2, (cx - w / 2 + r, cy - h / 2 + r))):
+        for k in range(5):
+            a = ang0 - k / 4 * (math.pi / 2)
+            pts.append((ox + r * math.cos(a), oy + r * math.sin(a)))
+    pts.append(pts[0])
+    pts.append((pts[0][0] + 6, pts[0][1] - 3))
+    _stroke(pts, rnd, 1.6, 1.6)
+
+
+def _bracket(cx, cy, w, h, rnd):
+    """Two square brackets framing the control: [  ]."""
+    a = 10
+    left = [(cx - w / 2 + a, cy + h / 2), (cx - w / 2, cy + h / 2), (cx - w / 2, cy - h / 2), (cx - w / 2 + a, cy - h / 2)]
+    right = [(cx + w / 2 - a, cy + h / 2), (cx + w / 2, cy + h / 2), (cx + w / 2, cy - h / 2), (cx + w / 2 - a, cy - h / 2)]
+    _stroke(left, rnd, 1.8, 1.4)
+    _stroke(right, rnd, 1.8, 1.4)
+
+
+def _highlight(cx, cy, w, rnd):
+    """A thick marker squiggle under/through a control, like highlighting a line."""
+    pts = [(cx - w / 2 + i * (w / 10), cy - 12 + (3 if i % 2 else -3)) for i in range(11)]
+    for path in _wobble_path(pts, rnd, 7.0, 1.0):
+        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.98, 0.78, 0.2, 0.45).setStroke()
+        path.stroke()
+    _ink().setStroke()
+
+
+def _doodle(kind, cx, cy, rnd):
+    """Small hand marks: asterisk (warning), check (done), question mark (unsure)."""
+    if kind == "asterisk":
+        for a in (0, math.pi / 3, 2 * math.pi / 3):
+            _stroke([(cx - 9 * math.cos(a), cy - 9 * math.sin(a)), (cx + 9 * math.cos(a), cy + 9 * math.sin(a))], rnd, 1.6, 0.8)
+    elif kind == "check":
+        _stroke([(cx - 12, cy), (cx - 3, cy - 10), (cx + 14, cy + 12)], rnd, 2.4, 1.0)
+    elif kind == "question":
+        pts = [(cx - 6, cy + 10), (cx, cy + 14), (cx + 6, cy + 10), (cx + 5, cy + 4), (cx, cy), (cx, cy - 5)]
+        _stroke(pts, rnd, 1.8, 0.8)
+        _stroke([(cx, cy - 11), (cx + 1, cy - 12)], rnd, 2.2, 0.5)
+
+
+def _frame(cx, cy, rnd, style, w=84, h=68):
+    """Frame the main control with a style picked per step so it does not look stamped."""
+    if style == 0:
+        _circle(cx, cy, rnd)
+    elif style == 1:
+        _rounded_box(cx, cy, w, h, rnd)
+    elif style == 2:
+        _bracket(cx, cy, w, h, rnd)
+    else:
+        _circle(cx, cy, rnd, 44, 32)
+        _circle(cx + 3, cy - 2, rnd, 40, 36)  # a second, more careless loop
+
+
 def _arrow(start, end, rnd, width=1.4):
-    mid = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2 + 10)
-    _stroke([start, mid, end], rnd, width, 1.2)
+    bend = rnd.choice((-26, -12, 10, 24))
+    mid = ((start[0] + end[0]) / 2 + bend * 0.4, (start[1] + end[1]) / 2 + bend)
+    # Curve sampled as a short polyline so it reveals progressively like the other strokes.
+    pts = []
+    for k in range(9):
+        t = k / 8
+        px = (1 - t) ** 2 * start[0] + 2 * (1 - t) * t * mid[0] + t * t * end[0]
+        py = (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * mid[1] + t * t * end[1]
+        pts.append((px, py))
+    _stroke(pts, rnd, width, 1.2)
     ang = math.atan2(end[1] - mid[1], end[0] - mid[0])
     for side in (-1, 1):
         a = ang + math.pi + side * 0.45
@@ -203,6 +283,8 @@ class _SketchView(AppKit.NSView):
         self.scene = None  # Scene with AppKit coords (bottom-left origin)
         self.seed = 1
         self.badge = None  # (text, pulsing) or None: the "listening" indicator
+        self.progress = 1.0  # 0..1 reveal of the current scene
+        self.stroke_total = 40
         return self
 
     def isOpaque(self):
@@ -218,6 +300,10 @@ class _SketchView(AppKit.NSView):
         bounds = self.bounds()
         W, H = bounds.size.width, bounds.size.height
         _ink().setStroke()
+        _REVEAL["progress"] = self.progress
+        _REVEAL["index"] = 0
+        _REVEAL["total"] = max(1, self.stroke_total)
+        style = self.seed % 4
 
         placed: list = []
         main_note = None
@@ -240,12 +326,15 @@ class _SketchView(AppKit.NSView):
         for m in sc.marks:
             mx, my = m.xy
             if m.shape == "circle":
-                _circle(mx, my, rnd, 36, 30)
+                _circle(mx, my, rnd, 36, 30) if (style + len(m.text)) % 2 else _rounded_box(mx, my, 76, 56, rnd)
             elif m.shape == "box":
                 w, h = (m.size[0] or 160), (m.size[1] or 60)
-                _box(mx - w / 2, my - h / 2, w, h, rnd)
+                _box(mx - w / 2, my - h / 2, w, h, rnd) if style % 2 else _bracket(mx, my, w, h, rnd)
             elif m.shape == "underline":
-                _stroke([(mx - 60 + i * 24, my - 10 + (2 if i % 2 else -2)) for i in range(0, 6)], rnd, 1.4, 1.2)
+                _highlight(mx, my, 140, rnd) if style % 2 else \
+                    _stroke([(mx - 60 + i * 24, my - 10 + (2 if i % 2 else -2)) for i in range(0, 6)], rnd, 1.4, 1.2)
+            if m.text and ("!" in m.text or "ttention" in m.text or "Pas " in m.text):
+                _doodle("asterisk", mx - 48, my + 22, rnd)
             elif m.shape == "arrow" and m.to:
                 _arrow(m.xy, m.to, rnd)
             if m.text and m.shape != "arrow":
@@ -264,8 +353,12 @@ class _SketchView(AppKit.NSView):
                 _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
             if sc.target is not None:
                 tx, ty = sc.target
-                _circle(tx, ty, rnd)
+                _frame(tx, ty, rnd, style)
                 _arrow((nx + (6 if right else w - 26), ny - 12), (tx + (46 if right else -46), ty + 16), rnd)
+            if sc.doodle:
+                _doodle(sc.doodle, nx + w - 4, ny + h + 6, rnd)
+        # Remember how many strokes this scene has, so the next frames reveal them in sequence.
+        self.stroke_total = max(self.stroke_total, _REVEAL["index"]) if self.progress < 1 else _REVEAL["index"]
 
     def _draw_badge(self):
         import time
@@ -316,11 +409,14 @@ class Overlay:
         flipped = Scene(
             text=scene.text[:110], target=self._flip(scene.target), why=scene.why[:160], step=scene.step,
             marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to)) for m in scene.marks],
+            doodle=scene.doodle,
         )
 
         def apply() -> None:
             self.view.scene = flipped
             self.view.seed = self._seed
+            self.view.progress = 0.0  # drawn progressively by run_until
+            self.view.stroke_total = 40
             self.view.setNeedsDisplay_(True)
             self.window.orderFrontRegardless()
 
@@ -360,9 +456,12 @@ class Overlay:
         while not done():
             if tick:
                 tick()
+            if self.view.progress < 1.0:
+                self.view.progress = min(1.0, self.view.progress + 0.08)  # ~0.6 s to draw a scene
+                self.view.setNeedsDisplay_(True)
             if self.view.badge is not None and self.view.badge[1]:
                 self.view.setNeedsDisplay_(True)  # pulse
-            until = Foundation.NSDate.dateWithTimeIntervalSinceNow_(interval)
+            until = Foundation.NSDate.dateWithTimeIntervalSinceNow_(min(interval, 0.04) if self.view.progress < 1 else interval)
             while True:
                 event = self.app.nextEventMatchingMask_untilDate_inMode_dequeue_(
                     AppKit.NSEventMaskAny, until, Foundation.NSDefaultRunLoopMode, True)
@@ -371,6 +470,82 @@ class Overlay:
                 self.app.sendEvent_(event)
         if hide_at_end:
             self.hide()
+
+
+AUTONOMY_LABELS = ("Je montre", "J'aide si tu bloques", "Je fais, tu regardes")
+
+
+class _MagnetView(AppKit.NSView):
+    def initWithFrame_(self, frame):
+        self = objc.super(_MagnetView, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        self.level = 1
+        self.on_change = None
+        return self
+
+    def isOpaque(self):
+        return False
+
+    def mouseDown_(self, event):
+        x = self.convertPoint_fromView_(event.locationInWindow(), None).x
+        seg = int(max(0, min(2, (x - 12) / ((self.bounds().size.width - 24) / 3))))
+        if seg != self.level:
+            self.level = seg
+            self.setNeedsDisplay_(True)
+            if self.on_change:
+                self.on_change(seg)
+
+    def drawRect_(self, rect):
+        rnd = random.Random(7)
+        b = self.bounds()
+        W, H = b.size.width, b.size.height
+        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 1
+        _draw_paper(6, 6, W - 12, H - 12, rnd)
+        _ink().setStroke()
+        # Rail with three notches; the active one gets a scribbled knob.
+        y = 22
+        _stroke([(16, y), (W - 16, y)], rnd, 1.6, 1.0)
+        seg_w = (W - 24) / 3
+        for i in range(3):
+            cx = 12 + seg_w * (i + 0.5)
+            _stroke([(cx, y - 6), (cx, y + 6)], rnd, 1.4, 0.8)
+            if i == self.level:
+                for k in range(3):
+                    _circle(cx, y, rnd, 9 - k, 8 - k)
+        attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
+        Foundation.NSString.stringWithString_(f"Magnet : {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
+            ((14, H - 30), (W - 28, 18)), attrs)
+
+
+class MagnetWidget:
+    """Clickable autonomy slider, bottom-left. Visible to the user, hidden from screen capture."""
+
+    def __init__(self, level: int, on_change: Callable[[int], None]) -> None:
+        w, h = 250.0, 62.0
+        self.window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            ((18, 18), (w, h)), AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False)
+        self.window.setOpaque_(False)
+        self.window.setBackgroundColor_(AppKit.NSColor.clearColor())
+        self.window.setLevel_(AppKit.NSScreenSaverWindowLevel)
+        self.window.setSharingType_(AppKit.NSWindowSharingNone)
+        self.window.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces | AppKit.NSWindowCollectionBehaviorStationary)
+        self.view = _MagnetView.alloc().initWithFrame_(((0, 0), (w, h)))
+        self.view.level = level
+        self.view.on_change = on_change
+        self.window.setContentView_(self.view)
+        self.window.orderFrontRegardless()
+
+    def set_level(self, level: int) -> None:
+        def apply() -> None:
+            self.view.level = level
+            self.view.setNeedsDisplay_(True)
+
+        _on_main(apply)
+
+    def close(self) -> None:
+        _on_main(lambda: self.window.orderOut_(None))
 
 
 def _on_main(fn: Callable[[], None]) -> None:

@@ -17,13 +17,34 @@ import time
 from pathlib import Path
 
 from .backend import make_backend
-from .contract import AgentEvent, ApproveCommand, InterventionRequest, NextCommand, State, StopCommand
+from .contract import AgentEvent, ApproveCommand, InterventionRequest, Mode, NextCommand, State, StopCommand
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 
 
 _LAST_LOOKUP_AT = 0.0
 _LAST_ACTION: dict = {}  # latest agent action (summary, pointer) for on-screen narration
+_MAGNET = {"level": int(os.environ.get("HCS_AUTONOMY", "1")), "widget": None, "current": None}
+
+
+def _ensure_magnet():
+    """Bottom-left autonomy slider; clicks change the running intervention and the default for the next ones."""
+    if _MAGNET["widget"] is not None or sys.platform != "darwin":
+        return _MAGNET["widget"]
+    try:
+        from .overlay import AUTONOMY_LABELS, MagnetWidget
+
+        def on_change(level: int) -> None:
+            _MAGNET["level"] = level
+            print(f"\n  [magnet] {AUTONOMY_LABELS[level]}", flush=True)
+            it = _MAGNET["current"]
+            if it is not None and not it.state.terminal:
+                it.set_autonomy(level)
+
+        _MAGNET["widget"] = MagnetWidget(_MAGNET["level"], on_change)
+    except Exception as exc:  # noqa: BLE001
+        print(f"(magnet unavailable: {exc})")
+    return _MAGNET["widget"]
 
 
 def _short(text: str, n: int) -> str:
@@ -81,8 +102,17 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
              scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
              overlay: bool = True, ov=None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
+    request.autonomy = _MAGNET["level"]
+    if request.autonomy >= 2:
+        request.mode = Mode.act
+    elif request.mode is Mode.act and request.autonomy == 0:
+        request.mode = Mode.guide
     it = Intervention(request, backend, ProcedureRegistry(), _print_event, runs_dir)
-    print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, mode: {request.mode.value})")
+    _MAGNET["current"] = it
+    if ov is not None:
+        _ensure_magnet()
+    print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, "
+          f"mode: {request.mode.value}, autonomy: {request.autonomy})")
     it.start()
     if it.state.terminal:
         return 1
@@ -133,15 +163,17 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     from .overlay import Scene
 
     r = it.report
+    doodle = None
     if r.status.value == "resolved":
-        text, why = "Terminé : résultat vérifié dans le logiciel", ""
+        text, why, doodle = "Terminé : résultat vérifié dans le logiciel", "", "check"
     elif r.status.value == "abandoned":
         text, why = "Arrêté. Rien d'autre ne sera modifié.", ""
     else:
         text = "Je n'ai pas pu vérifier le résultat"
         why = (r.escalation.blocked_on if r.escalation else "") or "Dossier transmis au support."
+        doodle = "question"
     ov.badge(None)
-    ov.show_scene(Scene(text=text, why=why[:120]))
+    ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
     t0 = time.time()
     ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
 
@@ -172,6 +204,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
         else:
             ov.badge(None)
 
+    if ov is not None:
+        _ensure_magnet()
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     router = IntentRouter(registry)
     backend = make_backend(args.mock)
@@ -422,6 +456,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     ov.show_scene(Scene(
                         text=g.instruction, target=g.pointer, why=_short(why, 90), step=g.index,
+                        doodle="question" if "je ne le vois" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0))
                                for a in g.annotations if a.pointer]))
             if auto:
