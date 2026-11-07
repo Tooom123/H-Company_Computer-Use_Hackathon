@@ -499,17 +499,13 @@ class HBackend:
 
     def screenshot(self, path: Path) -> Path | None:
         try:
-            from hai_drivers.desktop.local import LocalDesktopDriver
+            from .grounding import grab_screen
 
-            driver = LocalDesktopDriver()
-            try:
-                data = base64.b64decode(driver.screenshot_b64())
-            finally:
-                driver.close()
+            img = grab_screen()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(path, format="PNG")
         except Exception:  # noqa: BLE001 - evidence is optional
             return None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
         return path
 
 

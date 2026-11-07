@@ -229,9 +229,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
     if ov is not None:
         _ensure_magnet()
+    backend = make_backend(args.mock)
+    if hasattr(backend, "_desktop_channel"):
+        # Open the H desktop channel (and its driver) BEFORE any key listener exists: the driver's keyboard
+        # setup and a running listener initialising at the same time abort the process on macOS.
+        print("  preparing the desktop channel…", flush=True)
+        backend._desktop_channel()
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     router = IntentRouter(registry)
-    backend = make_backend(args.mock)
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
           f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
@@ -331,19 +336,11 @@ class _ScreenWatcher:
 
     def _grab(self):
         try:
-            import base64
-            import io
-
             import numpy as np
-            from PIL import Image
-            from hai_drivers.desktop.local import LocalDesktopDriver
 
-            d = LocalDesktopDriver()
-            try:
-                raw = base64.b64decode(d.screenshot_b64())
-            finally:
-                d.close()
-            img = Image.open(io.BytesIO(raw)).convert("L").resize((96, 60))
+            from .grounding import grab_screen
+
+            img = grab_screen().convert("L").resize((96, 60))
             return np.asarray(img, dtype=np.float32)
         except Exception:  # noqa: BLE001
             return None

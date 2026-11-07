@@ -40,9 +40,9 @@ _CHECK = {"type": "function", "function": {
     "name": "screen_check",
     "description": "Report whether the expected screen is displayed.",
     "parameters": {"type": "object", "properties": {
-        "matches": {"type": "boolean", "description": "True if the described screen is what is displayed."},
-        "what_is_visible": {"type": "string", "description": "Which app and which page is displayed, in a few words."}},
-        "required": ["matches", "what_is_visible"]}}}
+        "what_is_visible": {"type": "string", "description": "Which app and which page is in front, in a few words."},
+        "matches": {"type": "boolean", "description": "True only if everything in the expected screen is visible."}},
+        "required": ["what_is_visible", "matches"]}}}
 
 
 @dataclass
@@ -54,19 +54,23 @@ class Located:
     box: tuple[int, int, int, int] | None = None  # (x, y, w, h) of the element, screen points
 
 
+def grab_screen():
+    """Main-display screenshot as a PIL image, without touching pynput.
+
+    Do not use LocalDesktopDriver just to take a screenshot: its constructor builds a pynput keyboard
+    Controller, which calls macOS TIS keyboard APIs; done from a worker thread while the InputHub listener
+    does the same, macOS aborts the whole process (SIGABRT, the "silent exits").
+    """
+    import pyautogui
+
+    return pyautogui.screenshot()
+
+
 def capture(width: int = GROUNDING_WIDTH) -> tuple[str, tuple[int, int], tuple[float, float]]:
     """Screenshot of the main display -> (jpeg base64 scaled to `width`, (img_w, img_h), (screen_w_pts, screen_h_pts))."""
-    from PIL import Image
-    from hai_drivers.desktop.local import LocalDesktopDriver
-
     from .overlay import screen_size_points
 
-    d = LocalDesktopDriver()
-    try:
-        raw = base64.b64decode(d.screenshot_b64())
-    finally:
-        d.close()
-    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    img = grab_screen().convert("RGB")
     scale = width / img.width
     img = img.resize((width, int(img.height * scale)))
     buf = io.BytesIO()
@@ -95,7 +99,12 @@ class Grounder:
             "max_tokens": 200,
             "chat_template_kwargs": {"enable_thinking": False},
         }
-        r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
+        for attempt in range(4):
+            r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
+            if r.status_code != 429 or attempt == 3:
+                break
+            # Rate limited (bursts of locate / screen checks during a guide): back off and retry.
+            time.sleep(float(r.headers.get("retry-after") or 0) or 1.0 * (attempt + 1))
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
@@ -134,5 +143,8 @@ class Grounder:
     def screen_matches(self, expected: str) -> tuple[bool, str]:
         """Is the expected screen displayed? Returns (matches, what is visible)."""
         img_b64, _, _ = capture(768)
-        fn, args = self._call(img_b64, f"Expected screen: {expected}. Is this what is displayed?", [_CHECK])
+        # Describe first, then decide: asked "is it X?" directly, Holo said yes on a terminal (seen live).
+        fn, args = self._call(img_b64, "First say which application and page are in front, then decide. "
+                                       f"Expected screen: {expected}. Answer matches=false if another application is "
+                                       "in front or if any part of the expected screen is missing.", [_CHECK])
         return bool(args.get("matches")), args.get("what_is_visible", "")
