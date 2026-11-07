@@ -171,9 +171,11 @@ par Codex lors de cette vérification du nouveau parcours vocal.
 - Le chemin WAV PCM16 mono 16 kHz se décode directement. Le ffmpeg Homebrew du Mac
   échoue sur une dépendance x265 absente ; l’interface ne dépend pas de ce décodeur
   pour ses enregistrements WAV. Aucun changement Homebrew n’a été effectué.
-- La nouvelle app est ouverte sur le scénario 01, avec Gladia et Holo4 réels prêts,
-  en attente de dictée et d’approbation utilisateur. Le retour vocal d’un humain
-  et les dix scénarios métier restent à réaliser dans ce nouveau parcours.
+- La nouvelle app est ouverte sur le scénario 01. Une première demande humaine
+  de **14,04 secondes** a été enregistrée par le microphone de l’app, transcrite
+  par Gladia et conservée dans le backend privé. Le plan réel a atteint
+  `awaiting_approval`. Cela valide la chaîne demande vocale → plan, pas encore
+  l’action H ni le feedback vocal humain de ce nouveau parcours.
 
 Le feedback du pilote antérieur réussi est conservé comme **non évalué par
 l’utilisateur**, avec utilité inconnue : Edouard n’a pas pu observer l’action.
