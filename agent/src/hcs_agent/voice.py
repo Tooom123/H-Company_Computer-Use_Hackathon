@@ -88,9 +88,29 @@ class Transcriber:
         options: dict = {"model": "solaria-3", "language_config": {"languages": [self.language]}}
         if vocabulary:
             options["custom_vocabulary"] = True
-            options["custom_vocabulary_config"] = {"vocabulary": vocabulary[:50]}
+            options["custom_vocabulary_config"] = {"vocabulary": [_vocab_entry(v) for v in vocabulary[:50]],
+                                                   "default_intensity": 0.7}
         result = self._client.transcribe(wav_path, options)
         return _full_transcript(result)
+
+
+# How French speakers actually say the demo names; Gladia maps these pronunciations back to the spelling.
+_PRONUNCIATIONS = {
+    "Acme Demo": ["acmé démo", "akmé démo", "acme démo", "acmi démo"],
+    "Acme Corp": ["acmé corp", "akmé corp", "acme corpe"],
+    "Acme": ["acmé", "akmé"],
+    "Odoo": ["odou", "odo"],
+    "CRM": ["cé ère ème"],
+    "To Do": ["tou dou"],
+}
+
+
+def _vocab_entry(word: str) -> dict:
+    entry: dict = {"value": word, "intensity": 0.8}
+    if word in _PRONUNCIATIONS:
+        entry["pronunciations"] = _PRONUNCIATIONS[word]
+        entry["intensity"] = 1.0
+    return entry
 
 
 def _full_transcript(result) -> str:

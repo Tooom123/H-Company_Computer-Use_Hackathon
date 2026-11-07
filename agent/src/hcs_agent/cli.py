@@ -469,7 +469,12 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     def advance(done: bool = True, note: str | None = None) -> None:
         if ov:
             ov.hide()
-        it.next(NextCommand(done=done, note=note))
+        if it.state is not State.awaiting_user:
+            return  # stopped or moved on in the meantime: nothing to answer
+        try:
+            it.next(NextCommand(done=done, note=note))
+        except RuntimeError:
+            pass
 
     def status_badge() -> None:
         if ov is None:

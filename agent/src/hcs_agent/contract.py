@@ -120,6 +120,12 @@ class NextCommand(BaseModel):
     note: str | None = Field(default=None, description="What the user saw, or why they could not do it.")
 
 
+class AutonomyCommand(BaseModel):
+    """Live change of the help level (the Magnet): 0 show only, 1 help when stuck, 2 do it and narrate."""
+
+    level: int = Field(ge=0, le=2)
+
+
 class FeedbackCommand(BaseModel):
     """Free-form user feedback. Never inferred by the agent."""
 
