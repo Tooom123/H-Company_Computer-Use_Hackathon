@@ -5,6 +5,7 @@ No human feedback is generated. Reviewers attach separate agent-review.json file
 Desktop workers require the demo in front; isolated browser workers do not use the Mac desktop.
 """
 import argparse
+import fcntl
 from datetime import datetime, timezone
 import json
 import os
@@ -14,6 +15,24 @@ import time
 import urllib.request
 
 TERMINAL = {'resolved', 'escalated', 'stopped', 'failed', 'preflight_failed'}
+
+
+def read_demo_state(command_file, status_command):
+    """Serialize the shared fixture controller, not the browser workers.
+
+    Only this read-only command is retried; a changed baseline still stops the
+    campaign immediately. The lock is beside the private command descriptor.
+    """
+    with command_file.with_suffix('.lock').open('a') as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        for attempt in range(3):
+            try:
+                result = subprocess.run(status_command, capture_output=True, text=True, timeout=45, check=True)
+                return json.loads(result.stdout)
+            except subprocess.CalledProcessError:
+                if attempt == 2:
+                    raise
+                time.sleep(2 * (attempt + 1))
 
 
 def main():
@@ -55,8 +74,7 @@ def main():
         (output / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
 
     def baseline(label):
-        result = subprocess.run(status_command, capture_output=True, text=True, timeout=45, check=True)
-        value = json.loads(result.stdout)
+        value = read_demo_state(args.state_check_command, status_command)
         rich = value['odoo']['rich']
         save(label + '-state.json', value)
         if (value['odoo']['database'] != 'holo_hackathon_rich' or

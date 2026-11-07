@@ -16,6 +16,30 @@ def script(name):
     return module
 
 
+def test_fixture_checks_from_two_workers_never_overlap(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    import time
+    batch = script('run-rich-batch.py')
+    command = tmp_path / 'command.json'
+    active = maximum = 0
+    guard = threading.Lock()
+    def status(*args, **kwargs):
+        nonlocal active, maximum
+        with guard:
+            active += 1
+            maximum = max(maximum, active)
+        time.sleep(0.04)
+        with guard:
+            active -= 1
+        return SimpleNamespace(stdout='{"baseline": "stable"}')
+    monkeypatch.setattr(batch.subprocess, 'run', status)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: batch.read_demo_state(command, ['status']), range(2)))
+    assert maximum == 1
+    assert results == [{'baseline': 'stable'}] * 2
+
+
 @pytest.mark.parametrize('port', [8767, 18767])
 def test_interrupted_episode_remains_in_campaign_index(tmp_path, monkeypatch, port):
     batch = script('run-rich-batch.py')
