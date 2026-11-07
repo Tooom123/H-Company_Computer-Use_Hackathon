@@ -20,3 +20,31 @@ Ces contrôles utilisent réellement l’app et la capture du Mac, mais ne sont 
 Lecture Odoo du 07/11/2026 : fiche `HACK-GING-033` ouverte dans la session démo déjà
 connectée, prix de vente 10 €, coût 4 €, disponible/prévu 10/10, acheté/à recevoir 0/0.
 Aucune commande, réception ou remise à zéro effectuée par ce contrôle ; aucun appel Holo.
+
+### Essai humain avec diagnostics — capture du panneau à 19:20:46
+
+Source : capture fournie par Edouard le 7 novembre 2026 (Europe/Paris), après relance
+de la version `f711c8f`. Tête seule, calibration « Bords étendus », parcours 42,
+30 secondes, cadre Écran. Les dimensions demandées du crop et les métriques de
+calibration ne figurent pas dans cette capture : ne pas les reconstruire par supposition.
+
+| Mesure | Observation |
+| --- | --- |
+| Captures analysées | 30, arrêt à la durée prévue |
+| Images conservées / évincées | 19 / 11 ; les 30 restent dans les métriques |
+| Captures évaluables / exclues | 22 / 8, notamment pendant la stabilisation |
+| Cible entière, toutes captures évaluables | 20/22, soit 91 % arrondi |
+| Cible entière, crops évaluables seulement | 10/12, soit 83 % arrondi |
+| Pleins écrans / replis | 14 / 14 ; 14/30 = 47 % arrondi de toutes les captures |
+| Causes de repli | 10 projections tête trop loin hors écran ; 4 orientations hors domaine de calibration |
+| Centre de cible inclus | 21/22, soit 95 % arrondi |
+| Cible entière aux bords / à l’intérieur | 14/15 / 6/7 |
+| Surface détaillée / écran, moyenne affichée | 64 % ; moyenne des captures évaluables, incluant les pleins écrans |
+
+Ce résultat confirme que la conservation bornée des images n’interrompt plus cet
+essai de 30 secondes. Il ne valide pas une réduction des tokens, une baisse de
+latence Holo ou une tâche Odoo : **aucun appel Holo n’est associé à cette mesure**.
+La présence de la cible dans un plein écran gonfle le score global ; rapporter
+ensemble couverture des crops et taux de repli. Les causes observées motivent un
+bras expérimental de sélection par cinq zones, sans conclure à sa supériorité avant
+un nouveau passage humain. Voir [la suite du protocole](lab-to-odoo-lora.md).
