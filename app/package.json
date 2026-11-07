@@ -1,0 +1,33 @@
+{
+  "name": "h-companion-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "assets": "node scripts/copy-webgazer.mjs",
+    "native": "node scripts/build-native.mjs",
+    "dev": "npm run assets && npm run native && node scripts/dev.mjs",
+    "build": "npm run assets && tsc --noEmit && vite build && npm run native",
+    "start": "electron .",
+    "test": "vitest run",
+    "test:ui": "playwright test",
+    "test:electron": "node scripts/smoke-electron.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "webgazer": "3.5.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "45.2.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
+  }
+}

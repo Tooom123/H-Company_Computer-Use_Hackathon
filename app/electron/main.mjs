@@ -1,0 +1,258 @@
+import { app, BrowserWindow, ipcMain, protocol, net, screen, session } from 'electron';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
+import { setTimeout as delay } from 'node:timers/promises';
+import { captureObservation } from './capture.mjs';
+import { runHolo } from './holo.mjs';
+import { boundedRect, screenPointToCapture, captureRectToDisplay, validateSettings } from './geometry.mjs';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
+if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
+const devURL = process.env.HCS_DEV_URL;
+if (devURL && devURL !== 'http://localhost:5173') throw new Error('Origine de développement non autorisée.');
+const origin = devURL || 'hcompanion://localhost';
+const binary = path.join(root, 'out/capture');
+const model = process.env.HCS_MODEL || 'holo3-1-35b-a3b';
+const MAX_GAZE_AGE_MS = 1500;
+protocol.registerSchemesAsPrivileged([{ scheme: 'hcompanion', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
+
+let panel;
+let overlay;
+let tracker;
+let display;
+let frame = null;
+let gaze = null;
+let operation = null;
+let shuttingDown = false;
+let displayGeneration = 0;
+const state = {
+  tracker: { state: 'off' }, candidate: null, sent: null, busy: null,
+  settings: { selection: 'gaze', roiWidth: 800, roiHeight: 600, includeGlobal: true, overlay: true },
+};
+
+function isOwnURL(url) {
+  try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.host}` === origin; } catch { return false; }
+}
+function authorize(event, target = panel) {
+  if (!target || target.isDestroyed() || event.sender !== target.webContents || event.senderFrame !== event.sender.mainFrame || !isOwnURL(event.senderFrame.url)) {
+    throw new Error('Appel IPC non autorisé.');
+  }
+}
+function broadcast() {
+  for (const window of [panel, overlay, tracker]) {
+    if (window && !window.isDestroyed()) window.webContents.send('companion:state-updated', state);
+  }
+}
+function makeWindow(options, hash) {
+  const window = new BrowserWindow({
+    ...options,
+    webPreferences: { preload: path.join(root, 'electron/preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.on('will-attach-webview', event => event.preventDefault());
+  void window.loadURL(`${origin}/${hash === '#tracker' ? 'tracker.html' : ''}${hash || ''}`);
+  return window;
+}
+function resetTracker() {
+  gaze = null;
+  state.tracker = { state: 'off' };
+  if (tracker && !tracker.isDestroyed()) tracker.close();
+  tracker = undefined;
+  broadcast();
+}
+function setOverlayVisibility() {
+  if (!overlay || overlay.isDestroyed()) return;
+  if (state.settings.overlay) overlay.showInactive(); else overlay.hide();
+}
+function currentSelection(settings = state.settings, snapshot = gaze) {
+  if (settings.selection === 'full') return { point: null, fallbackReason: null, gazeAgeMs: null };
+  if (settings.selection === 'cursor') {
+    const point = screen.getCursorScreenPoint();
+    const b = display.bounds;
+    const valid = point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height;
+    return { point: valid ? point : null, fallbackReason: valid ? null : 'Curseur hors de l’écran principal', gazeAgeMs: null };
+  }
+  const age = snapshot ? performance.now() - snapshot.receivedAt : null;
+  const valid = snapshot && age <= MAX_GAZE_AGE_MS && state.tracker.state === 'tracking';
+  return {
+    point: valid ? { x: display.bounds.x + snapshot.x, y: display.bounds.y + snapshot.y } : null,
+    fallbackReason: valid ? null : 'Regard indisponible, non calibré ou trop ancien : plein écran', gazeAgeMs: age,
+  };
+}
+function updateCandidate() {
+  if (!display) return;
+  if (state.tracker.state === 'tracking' && (!gaze || performance.now() - gaze.receivedAt > MAX_GAZE_AGE_MS)) {
+    state.tracker = { ...state.tracker, state: 'lost', message: 'Suivi interrompu ; repli plein écran.' };
+  }
+  const source = frame
+    ? { width: frame.sourceWidth, height: frame.sourceHeight }
+    : { width: Math.round(display.bounds.width * display.scaleFactor), height: Math.round(display.bounds.height * display.scaleFactor) };
+  const selected = currentSelection();
+  const rect = !selected.point ? { x: 0, y: 0, ...source } : boundedRect(
+    screenPointToCapture(selected.point, display.bounds, source),
+    { width: state.settings.roiWidth, height: state.settings.roiHeight }, source,
+  );
+  state.candidate = captureRectToDisplay(rect, source, display.bounds);
+  broadcast();
+}
+
+ipcMain.handle('companion:status', event => {
+  authorize(event);
+  const captureAvailable = process.platform === 'darwin' && existsSync(binary);
+  return {
+    platform: process.platform, model, apiKeyConfigured: Boolean(process.env.HAI_API_KEY?.trim()), captureAvailable,
+    captureError: captureAvailable ? undefined : 'Capture propre disponible sur macOS 14+, après npm run native (Xcode Command Line Tools).',
+    display: { id: display.id, bounds: display.bounds, scaleFactor: display.scaleFactor },
+  };
+});
+ipcMain.handle('companion:state', event => {
+  if (event.sender === overlay?.webContents) authorize(event, overlay);
+  else if (event.sender === tracker?.webContents) authorize(event, tracker);
+  else authorize(event);
+  return state;
+});
+ipcMain.handle('companion:configure', (event, input) => {
+  authorize(event);
+  if (state.busy) throw new Error('Attendez la fin de l’opération avant de changer le mode.');
+  state.settings = validateSettings(input);
+  setOverlayVisibility();
+  updateCandidate();
+});
+ipcMain.handle('companion:start-tracker', event => {
+  authorize(event);
+  if (state.busy) throw new Error('Une opération est en cours.');
+  resetTracker();
+  state.tracker = { state: 'calibrating', message: 'Autorisez la caméra puis calibrez le regard.' };
+  tracker = makeWindow({ ...display.bounds, title: 'H-Companion · Calibration', frame: false, transparent: true, resizable: false, movable: false, hasShadow: false, alwaysOnTop: true }, '#tracker');
+  tracker.setAlwaysOnTop(true, 'screen-saver');
+  const openedTracker = tracker;
+  openedTracker.on('closed', () => {
+    if (tracker !== openedTracker) return;
+    tracker = undefined; gaze = null; state.tracker = { state: 'off' }; broadcast();
+  });
+  broadcast();
+});
+ipcMain.handle('companion:stop-tracker', event => {
+  authorize(event, event.sender === tracker?.webContents ? tracker : panel);
+  resetTracker();
+});
+ipcMain.handle('companion:finish-calibration', event => {
+  authorize(event, tracker);
+  tracker.setIgnoreMouseEvents(true);
+  tracker.setFocusable(false);
+  panel?.focus();
+  broadcast();
+});
+ipcMain.on('companion:gaze', (event, sample) => {
+  try { authorize(event, tracker); } catch { return; }
+  if (!sample || !Number.isFinite(sample.x) || !Number.isFinite(sample.y) || sample.x < 0 || sample.y < 0 || sample.x >= display.bounds.width || sample.y >= display.bounds.height) {
+    gaze = null;
+    return;
+  }
+  // Receipt clock, NOT a camera-frame capture timestamp. The upstream callback
+  // does not expose a reliable camera timestamp; never call this tracker latency.
+  gaze = { x: sample.x, y: sample.y, receivedAt: performance.now() };
+  if (state.tracker.state === 'lost') state.tracker = { ...state.tracker, state: 'tracking', message: 'Suivi actif' };
+});
+ipcMain.on('companion:tracker-status', (event, status) => {
+  try { authorize(event, tracker); } catch { return; }
+  if (!status || !['off', 'calibrating', 'tracking', 'lost', 'error'].includes(status.state)) return;
+  state.tracker = {
+    state: status.state, message: typeof status.message === 'string' ? status.message.slice(0, 400) : undefined,
+    calibrationErrorPx: Number.isFinite(status.calibrationErrorPx) ? status.calibrationErrorPx : undefined,
+  };
+  broadcast();
+});
+ipcMain.handle('companion:capture', async event => {
+  authorize(event);
+  if (state.busy) throw new Error('Une opération est déjà en cours.');
+  if (process.platform !== 'darwin' || !existsSync(binary)) throw new Error('Capture ScreenCaptureKit indisponible ; lancez npm run native sur Mac.');
+  operation = new AbortController();
+  const controller = operation;
+  const generation = displayGeneration;
+  state.busy = 'capture';
+  state.sent = null;
+  frame = null;
+  broadcast();
+  try {
+    await delay(3000, undefined, { signal: operation.signal });
+    const settings = { ...state.settings };
+    // Freeze a sample BEFORE requesting the screenshot, never from after an action.
+    const gazeSnapshot = gaze ? { ...gaze } : null;
+    const cursorSnapshot = currentSelection(settings);
+    const captured = await captureObservation({
+      binary, display, settings, signal: operation.signal,
+      selection: () => settings.selection === 'gaze' ? currentSelection(settings, gazeSnapshot) : cursorSnapshot,
+    });
+    controller.signal.throwIfAborted();
+    if (generation !== displayGeneration) throw new Error('Écran modifié pendant la capture. Recommencez.');
+    frame = captured;
+    return frame;
+  } finally {
+    operation = null; state.busy = null; updateCandidate();
+  }
+});
+ipcMain.handle('companion:analyze', async (event, input) => {
+  authorize(event);
+  if (state.busy) throw new Error('Une opération est déjà en cours.');
+  if (!frame || input?.frameId !== frame.frameId) throw new Error('Observation expirée. Préparez une nouvelle capture.');
+  if (typeof input.prompt !== 'string' || input.prompt.trim().length === 0 || input.prompt.length > 8000) throw new Error('Saisissez une consigne de 1 à 8 000 caractères.');
+  if (!process.env.HAI_API_KEY?.trim()) throw new Error('Renseignez HAI_API_KEY dans app/.env puis relancez l’app.');
+  const capturedFrame = frame;
+  operation = new AbortController();
+  state.busy = 'inference';
+  state.sent = { frameId: capturedFrame.frameId, rect: captureRectToDisplay(capturedFrame.cropRect, { width: capturedFrame.sourceWidth, height: capturedFrame.sourceHeight }, capturedFrame.screenBounds) };
+  broadcast();
+  try {
+    return await runHolo({ frame: capturedFrame, prompt: input.prompt.trim(), model, apiKey: process.env.HAI_API_KEY, signal: AbortSignal.any([operation.signal, AbortSignal.timeout(60_000)]) });
+  } finally {
+    operation = null; state.busy = null; broadcast();
+  }
+});
+ipcMain.handle('companion:cancel', event => { authorize(event); operation?.abort(); });
+
+app.whenReady().then(() => {
+  protocol.handle('hcompanion', request => {
+    const url = new URL(request.url);
+    if (url.host !== 'localhost') return new Response('Forbidden', { status: 403 });
+    const base = path.join(root, 'dist');
+    let pathname;
+    try { pathname = decodeURIComponent(url.pathname); } catch { return new Response('Bad URL', { status: 400 }); }
+    const file = path.resolve(base, `.${pathname === '/' ? '/index.html' : pathname}`);
+    if (!file.startsWith(`${base}${path.sep}`)) return new Response('Forbidden', { status: 403 });
+    return net.fetch(pathToFileURL(file).toString());
+  });
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const allowed = contents === tracker?.webContents && permission === 'media' && isOwnURL(details.requestingUrl) && details.mediaTypes?.length > 0 && details.mediaTypes.every(type => type === 'video');
+    callback(Boolean(allowed));
+  });
+  session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
+    contents === tracker?.webContents && permission === 'media' && isOwnURL(requestingOrigin) && details.mediaType === 'video');
+  session.defaultSession.on('will-download', event => event.preventDefault());
+  display = screen.getPrimaryDisplay();
+  panel = makeWindow({ width: 1180, height: 850, minWidth: 760, minHeight: 650, title: 'H-Companion · Vision Lab', backgroundColor: '#f4f6f1' }, '');
+  overlay = makeWindow({ ...display.bounds, title: 'H-Companion · Zone', transparent: true, frame: false, focusable: false, resizable: false, movable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, show: false }, '#overlay');
+  overlay.setIgnoreMouseEvents(true);
+  overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.webContents.once('did-finish-load', () => { setOverlayVisibility(); updateCandidate(); });
+  panel.on('closed', () => { if (!shuttingDown) app.quit(); });
+  const invalidateDisplay = () => {
+    displayGeneration += 1;
+    operation?.abort(); resetTracker(); frame = null; state.sent = null;
+    display = screen.getPrimaryDisplay(); overlay?.setBounds(display.bounds);
+    state.tracker = { state: 'off', message: 'Géométrie écran modifiée : relancez la calibration et capturez à nouveau.' };
+    broadcast();
+    panel?.webContents.reload();
+  };
+  screen.on('display-metrics-changed', (_event, _display, metrics) => {
+    if (metrics.some(metric => ['bounds', 'scaleFactor', 'rotation'].includes(metric))) invalidateDisplay();
+  });
+  screen.on('display-removed', invalidateDisplay);
+  screen.on('display-added', invalidateDisplay);
+  const timer = setInterval(updateCandidate, 100);
+  app.on('before-quit', () => { shuttingDown = true; clearInterval(timer); operation?.abort(); resetTracker(); });
+});
+app.on('window-all-closed', () => app.quit());
