@@ -80,9 +80,11 @@ et d’Accessibilité nécessaires à ses actions.
 
 Le serveur accepte `--environment rich`. Il charge dix nouveaux scénarios **R01–R10
 en lecture seule**, avec la société `Holo — Déjà Bu Démo · DONNÉES FICTIVES`,
-sur `http://holo-rich.localhost:18091/odoo/crm`. Le guide de la campagne est
+sur `https://holo-demo.62.83.79.254.sslip.io/odoo/crm`. Le guide de la campagne est
 [ici](../docs/scenarios/odoo-rich-scenarios.md). La démo est hébergée sur Netcup,
-accessible depuis ce Mac via un tunnel SSH ; cette URL n’est pas publique.
+avec un portail HTTPS authentifié puis la connexion Odoo. Préparer cette connexion
+avant de lancer le moteur. L’ancien tunnel 18091 demeure une route privée ; les
+nouveaux scénarios exigent l’origine HTTPS, avec `access_revision=https-20261107`.
 
 Arrêter le pilote précédent lorsqu’aucun essai/feedback n’est en cours, puis :
 
@@ -95,7 +97,9 @@ Le serveur garde le port 8767 ; un seul pilote tourne à la fois. Le dossier pri
 par défaut devient `voice-pilot-rich`, et le profil Electron `rich` conserve un
 état distinct du profil historique `live`. Les anciens essais restent disponibles
 dans leur dossier et ne valident aucune dépendance du nouveau lot. Le serveur
-refuse un dossier déjà associé à une autre démo.
+refuse un dossier déjà associé à une autre démo. Un changement d’adresse de la
+même fixture est permis ; chaque ancien épisode conserve son identité d’accès
+d’origine et chaque nouvel épisode enregistre la nouvelle configuration.
 
 Chaque épisode et sa demande exportée portent l’identité de la démo, sa version,
 et les révisions moteur/backend. Les dates et compteurs dépendent du baseline

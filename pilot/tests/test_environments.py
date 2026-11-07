@@ -36,7 +36,7 @@ def test_rich_rejects_legacy_untagged_episode_directory(tmp_path):
 def test_rich_catalog_plan_and_archive_input_keep_identity(tmp_path):
     with TestClient(make(tmp_path, 'rich')) as client:
         status = client.get('/pilot/status', headers=AUTH).json()
-        assert status['environment']['entry_url'] == 'http://holo-rich.localhost:18091/odoo/crm'
+        assert status['environment']['entry_url'] == 'https://holo-demo.62.83.79.254.sslip.io/odoo/crm'
         assert status['engine_revision'] == 'test-engine'
         cards = client.get('/pilot/scenarios', headers=AUTH).json()
         assert [c['id'] for c in cards] == [f'R{i:02d}' for i in range(1, 11)]
@@ -55,3 +55,34 @@ def test_rich_catalog_plan_and_archive_input_keep_identity(tmp_path):
         assert saved['engine_revision'] == 'test-engine'
         assert saved['support_revision'] == 'test-support'
         assert 'HACKATHON — Boutique Démo' not in json.dumps(made['plan'], ensure_ascii=False)
+
+
+def test_access_route_can_change_without_retagging_past_episodes(tmp_path):
+    from pilot.environments import get_environment
+    previous = get_environment('rich')
+    previous['entry_url'] = 'http://holo-rich.localhost:18091/odoo/crm'
+    previous.pop('access_revision', None)
+    tmp_path.joinpath('environment.json').write_text(json.dumps(previous))
+    old = tmp_path / 'episodes/old'
+    old.mkdir(parents=True)
+    original = {'environment': previous, 'scenario_id': 'R01'}
+    old.joinpath('episode.json').write_text(json.dumps(original))
+    with TestClient(make(tmp_path, 'rich')) as client:
+        assert client.get('/pilot/status', headers=AUTH).json()['environment']['access_revision'] == 'https-20261107'
+    assert json.loads(old.joinpath('episode.json').read_text()) == original
+
+
+def test_agent_review_does_not_become_user_feedback(tmp_path):
+    with TestClient(make(tmp_path, 'rich')) as client:
+        made = client.post('/pilot/episodes', headers=AUTH,
+                           json={'scenario_id': 'R01', 'goal': 'Lire la fiche CRM sans modification.'}).json()
+        sid = made['session_id']
+        directory = tmp_path / 'episodes' / sid
+        review = {'reviewer_type': 'ai', 'task_success_agent': 'partial',
+                  'human_review_required': True, 'ready_for_sft': False}
+        (directory / 'agent-review.json').write_text(json.dumps(review))
+        snap = client.get('/pilot/episodes/' + sid, headers=AUTH).json()
+        assert snap['pilot']['agent_review'] == review
+        assert not snap['pilot'].get('feedback')
+        assert not (directory / 'labels.json').exists()
+        assert snap['state'] == 'awaiting_approval'

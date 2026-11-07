@@ -7,9 +7,10 @@ Ventes, Facturation, Notes de frais, Maintenance et Calendrier.
 
 ## Préparer la séance
 
-- Ouvrir **http://holo-rich.localhost:18091/odoo/crm**. Le tunnel est propre au poste ;
-  ce n’est pas une adresse publique. Se connecter auparavant avec le compte privé
-  prévu par l’opérateur, sans communiquer son secret au modèle.
+- Ouvrir **https://holo-demo.62.83.79.254.sslip.io/odoo/crm**. Cette itération utilise
+  uniquement cette origine HTTPS publique, vérifiée dans la passation actualisée.
+  Se connecter auparavant avec le compte privé prévu par l’opérateur, sans
+  communiquer son secret au modèle. L’acteur ne doit pas changer d’origine.
 - Vérifier la société **Holo — Déjà Bu Démo · DONNÉES FICTIVES**. L’ancien laboratoire
   sur `holo.localhost:18090` est une autre base et reste hors de cette campagne.
 - Utiliser le profil `rich` et son stockage distinct. Enregistrer environnement,
@@ -35,6 +36,10 @@ Les références `DEMO-*` sont des références métier, pas les numéros natifs
 Les numéros `P`, `S`, `WH/IN` et les IDs de fiches ne doivent pas être déduits du
 laboratoire initial. Aucune réponse ne doit être inventée si une recherche échoue.
 
+Le passage à l’origine publique et les précisions R02 ci-dessous constituent une
+nouvelle version des consignes. Les épisodes déjà enregistrés gardent leurs
+procédures et leur origine d’exécution initiales ; ils ne sont pas réécrits.
+
 ## R01 — Comprendre une opportunité et sa prochaine action
 
 > Dans CRM, retrouve exactement « Coffrets de fin d’année — Maison Aube · Démo ». Ouvre cette opportunité et indique le client, son étape, le revenu espéré et la prochaine activité avec son échéance. Ne change rien et laisse la fiche ouverte.
@@ -47,13 +52,13 @@ laboratoire initial. Aucune réponse ne doit être inventée si une recherche é
 
 ## R02 — Retrouver les tâches en retard d’un projet
 
-> Dans Projet, ouvre « Ouverture boutique Bruxelles · Démo ». Montre les tâches dont l’échéance est strictement antérieure au 7 novembre 2026 et indique leur nom, leur échéance et leur étape. Ne modifie ni tâche ni date.
+> Dans Projet, ouvre « Ouverture boutique Bruxelles · Démo ». Montre toutes les tâches dont l’échéance est strictement antérieure au 7 novembre 2026, y compris les tâches terminées si elles correspondent. Indique leur nom, leur échéance et leur étape Kanban, c’est-à-dire leur colonne, pas la pastille de statut individuel. Ne modifie ni tâche ni date.
 
 **Procédure :** `odoo_rich_project_read_overdue`. **Statut :** prête à tester, lecture seule.
 
-**Revue opérateur :** Le seed crée trois tâches avant le 7 novembre : Préparer le cahier des charges (4), Comparer trois propositions (5), Confirmer les quantités (6). Relire l’état avant passage. Une liste de tâches seule ne prouve pas que l’explication orale/écrite est complète.
+**Revue opérateur :** Le seed crée trois tâches avant le 7 novembre : Préparer le cahier des charges (4, colonne À préparer), Comparer trois propositions (5, colonne En cours), Confirmer les quantités (6, colonne À valider). La lecture ORM indépendante du 7 novembre confirme ces étapes, alors que leur statut individuel est identique ; ne pas confondre les deux champs. Relire l’état avant passage. Retirer les filtres par défaut qui masquent les tâches terminées, en conservant le projet, avant de conclure sur l’ensemble des échéances. Une liste filtrée ni une pastille seule ne prouve l’exhaustivité ou l’étape Kanban. La fidélité de la réponse exige aussi une revue distincte.
 
-**Critères :** Le projet visible est Ouverture boutique Bruxelles · Démo. La liste ou les fiches consultées permettent d’établir les échéances strictement antérieures au 7 novembre 2026, sans inclure le 7 novembre. Les tâches Préparer le cahier des charges, Comparer trois propositions et Confirmer les quantités ont respectivement des échéances au 4, 5 et 6 novembre 2026. L’étape courante de chacune de ces trois tâches a été lue sur sa fiche ou une liste affichant ce champ.
+**Critères :** Le projet visible est Ouverture boutique Bruxelles · Démo. Toutes les tâches pertinentes sont examinées, sans filtre cachant les tâches terminées et sans inclure le 7 novembre. Les tâches Préparer le cahier des charges, Comparer trois propositions et Confirmer les quantités ont respectivement des échéances au 4, 5 et 6 novembre 2026 et des étapes Kanban À préparer, En cours et À valider. Les étapes sont lues sur les bandeaux de colonnes ou un champ Étape explicite, jamais déduites des pastilles de statut individuel.
 
 ## R03 — Diagnostiquer un achat partiellement reçu
 

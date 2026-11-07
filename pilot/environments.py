@@ -11,7 +11,8 @@ ENVIRONMENTS = {
     'rich': {
         'id': 'odoo-rich-v2.1',
         'label': 'Odoo · démo enrichie',
-        'entry_url': 'http://holo-rich.localhost:18091/odoo/crm',
+        'entry_url': 'https://holo-demo.62.83.79.254.sslip.io/odoo/crm',
+        'access_revision': 'https-20261107',
         'company': 'Holo — Déjà Bu Démo · DONNÉES FICTIVES',
         'fixture_version': '20261107-v2.1',
     },

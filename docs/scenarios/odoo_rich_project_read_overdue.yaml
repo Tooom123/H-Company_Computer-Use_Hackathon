@@ -1,4 +1,3 @@
-# Rich Odoo v2.1: candidate read-only scenario, not evidence of a completed H run.
 id: odoo_rich_project_read_overdue
 software: odoo
 software_version: '20.0'
@@ -10,8 +9,8 @@ max_steps_per_attempt: 35
 max_time_s_per_attempt: 300
 parameters: []
 preconditions:
-- L’opérateur a ouvert et authentifié la démo enrichie v2.1 sur http://holo-rich.localhost:18091 ; aucun autre onglet
-  Odoo ne doit être utilisé.
+- L’opérateur a ouvert et authentifié la démo enrichie v2.1 sur https://holo-demo.62.83.79.254.sslip.io ; aucun
+  autre onglet Odoo ne doit être utilisé.
 - La société visible est exactement Holo — Déjà Bu Démo · DONNÉES FICTIVES.
 - Un seul acteur contrôle le Mac ; l’opérateur a relu l’identité des documents et leur état de référence.
 - Ce cas est une lecture seule, indépendante des autres cas R01–R10 ; un manque de preuve doit être signalé, jamais
@@ -24,42 +23,90 @@ allowed_actions:
 - Naviguer dans les menus de la démo enrichie et ouvrir les fiches existantes nécessaires à cette seule question.
 - Utiliser la recherche, les filtres temporaires, les liens entre documents et le défilement pour lire les valeurs.
 forbidden_actions:
-- Quitter l’onglet holo-rich.localhost:18091, ouvrir une autre origine Odoo, saisir des identifiants ou changer
-  de société.
+- Quitter l’onglet https://holo-demo.62.83.79.254.sslip.io, ouvrir une autre origine Odoo, saisir des identifiants
+  ou changer de société.
 - Créer, modifier, supprimer, archiver, confirmer, valider, réserver ou clôturer un enregistrement métier.
 - Déplacer une carte ou un événement par glisser-déposer ; enregistrer un filtre partagé.
 - Envoyer un message, une invitation, une facture ou un paiement ; soumettre ou approuver une note de frais.
 - Exécuter une commande, un reset, une API de mutation, ou modifier les accès et paramètres.
-agent_instructions: "Reste uniquement dans l’onglet Odoo déjà ouvert sur holo-rich.localhost:18091 et dans la société\
-  \ Holo — Déjà Bu Démo · DONNÉES FICTIVES. Si l’origine, la société ou le document est ambigu, arrête-toi sans\
-  \ saisir d’identifiant. Les clics de navigation et les filtres temporaires sont autorisés ; toute modification\
-  \ métier est interdite. \n\nOuvre Projet puis le projet exact Ouverture boutique Bruxelles · Démo. Recherche ou\
-  \ filtre les tâches dont l’échéance est strictement antérieure au 7 novembre 2026 ; la date de référence est fixe,\
-  \ pas la date courante de l’ordinateur. Lis nom, échéance et étape de chaque tâche correspondante. N’inclus pas\
-  \ celles datées du 7 novembre ou après. Tu peux ouvrir les fiches pour lire les champs puis revenir à la liste\
-  \ filtrée. N’enregistre pas de filtre partagé et ne déplace aucune carte."
+agent_instructions: 'Reste uniquement dans l’onglet Odoo déjà ouvert sur https://holo-demo.62.83.79.254.sslip.io
+
+  et dans la société Holo — Déjà Bu Démo · DONNÉES FICTIVES. Si l’origine, la société
+
+  ou le document est ambigu, arrête-toi sans saisir d’identifiant. Les clics de
+
+  navigation et les filtres temporaires sont autorisés ; toute modification métier est interdite.
+
+
+  Ouvre Projet puis le projet exact Ouverture boutique Bruxelles · Démo. Avant de
+
+  chercher les échéances, examine les filtres actifs et retire les filtres par défaut
+
+  qui masquent les tâches terminées ; conserve le périmètre de ce seul projet.
+
+  Recherche ou filtre ensuite toutes ses tâches dont l’échéance est strictement
+
+  antérieure au 7 novembre 2026. Cette date de référence est fixe, indépendamment
+
+  de la date courante de l’ordinateur. Lis nom, échéance et étape Kanban de chaque
+
+  tâche correspondante, y compris si son statut individuel indique qu’elle est terminée.
+
+  N’inclus pas celles datées du 7 novembre ou après.
+
+
+  L’étape Kanban est le nom de la colonne où se trouve la carte, visible dans le
+
+  bandeau de cette colonne, ou le champ Étape explicitement affiché. Elle est
+
+  distincte de la pastille de statut individuel de la tâche. Ne remplace jamais
+
+  l’étape par cette pastille. Si nécessaire, relève la colonne en vue Kanban puis
+
+  ouvre la fiche pour lire l’échéance. Ne déduis ni le nombre total de tâches
+
+  correspondantes ni une étape absente d’une liste dont les filtres cachent des
+
+  tâches. Signale toute impossibilité de vérifier l’exhaustivité. N’enregistre pas
+
+  de filtre partagé et ne déplace aucune carte.
+
+  '
 postcondition:
   description: La bonne fiche ou liste est accessible et les critères ont été relus dans la seule démo enrichie.
   checks:
   - key: correct_environment
-    prompt: Le navigateur est sur holo-rich.localhost:18091 et la société Holo — Déjà Bu Démo · DONNÉES FICTIVES
-      est identifiable.
+    prompt: Le navigateur est sur https://holo-demo.62.83.79.254.sslip.io et la société Holo — Déjà Bu Démo · DONNÉES
+      FICTIVES est identifiable.
   - key: correct_project
     prompt: Le projet visible est Ouverture boutique Bruxelles · Démo.
   - key: deadline_filter
     prompt: La liste ou les fiches consultées permettent d’établir les échéances strictement antérieures au 7 novembre
-      2026, sans inclure le 7 novembre.
+      2026, sans inclure le 7 novembre. Les filtres par défaut qui masquent les tâches terminées ont été retirés
+      avant le relevé, en conservant le périmètre du seul projet ; l’exhaustivité ne repose pas sur une liste filtrée
+      qui cache une partie des tâches pertinentes.
   - key: tasks_and_dates
     prompt: Les tâches Préparer le cahier des charges, Comparer trois propositions et Confirmer les quantités ont
       respectivement des échéances au 4, 5 et 6 novembre 2026.
   - key: task_stages
-    prompt: L’étape courante de chacune de ces trois tâches a été lue sur sa fiche ou une liste affichant ce champ.
-  verification_instructions: 'Vérifie en lecture seule l’origine holo-rich.localhost:18091 et la société Holo —
-    Déjà Bu Démo · DONNÉES FICTIVES, puis les critères ci-dessous dans les écrans correspondants. Les attentes ne
-    sont pas des preuves : toute donnée absente, illisible ou différente produit false. Tu peux naviguer pour relire
-    mais jamais modifier un champ ou un état. Ne déduis pas la réussite du résumé de l’acteur. Ces contrôles portent
-    sur les écrans ; une revue humaine de la trace reste nécessaire pour évaluer la fidélité et l’utilité de la
-    réponse, ainsi que l’absence de mutation sur tout le parcours.'
+    prompt: Les étapes Kanban de Préparer le cahier des charges, Comparer trois propositions et Confirmer les quantités
+      sont respectivement À préparer, En cours et À valider. Elles sont établies par les bandeaux des colonnes Kanban
+      ou un champ Étape explicitement affiché, pas par les pastilles de statut individuel des tâches.
+  verification_instructions: 'Vérifie en lecture seule l’origine https://holo-demo.62.83.79.254.sslip.io et la société
+    Holo — Déjà Bu Démo · DONNÉES FICTIVES, puis les critères ci-dessous dans les écrans correspondants. Les attentes
+    ne sont pas des preuves : toute donnée absente, illisible ou différente produit false. Tu peux naviguer pour
+    relire mais jamais modifier un champ ou un état. Ne déduis pas la réussite du résumé de l’acteur. Ces contrôles
+    portent sur les écrans ; une revue humaine de la trace reste nécessaire pour évaluer la fidélité et l’utilité
+    de la réponse, ainsi que l’absence de mutation sur tout le parcours. Avant le relevé, retire les filtres par
+    défaut qui masquent les tâches terminées, tout en conservant le projet exact. Distingue l’étape Kanban (bandeau
+    de colonne ou champ Étape) du statut individuel représenté par une pastille. Une pastille En cours ne prouve
+    pas que la carte est dans la colonne En cours. Ne conclus pas sur le nombre total de tâches pertinentes à partir
+    d’une liste dont des filtres cachent les tâches terminées.
+
+    Ne conclus pas qu’une valeur est absente simplement parce qu’elle est hors de la vue courante. Fais défiler
+    la fiche et ouvre les vues de consultation nécessaires, sans édition. Vérifie les champs sur plusieurs captures
+    en conservant l’identité de la même fiche. Si un champ reste inaccessible après cette recherche, indique le
+    blocage et conserve false.'
 escalation:
   when:
   - L’origine, la société, la référence, une permission ou un champ ne peut pas être identifié sans ambiguïté.

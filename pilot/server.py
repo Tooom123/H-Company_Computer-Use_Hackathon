@@ -165,7 +165,8 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
     os.chmod(root, 0o700)
     identity_path = root / 'environment.json'
     if identity_path.exists():
-        if read_json(identity_path) != demo:
+        previous_demo = read_json(identity_path)
+        if any(previous_demo.get(key) != demo.get(key) for key in ('id', 'company', 'fixture_version')):
             raise ValueError('This private directory belongs to another demo environment.')
     elif environment != 'minimal' and any((root / 'episodes').glob('*/episode.json')):
         raise ValueError('Existing untagged episodes belong to the initial demo; use a new private directory.')
@@ -358,6 +359,8 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
         result['pilot'] = meta
         if (directory / 'labels.json').exists():
             result['pilot']['feedback'] = read_json(directory / 'labels.json')
+        if (directory / 'agent-review.json').exists():
+            result['pilot']['agent_review'] = read_json(directory / 'agent-review.json')
         return result
 
     @app.get('/pilot/status')

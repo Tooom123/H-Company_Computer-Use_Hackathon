@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean; rich?: boolean } = {}) {
+async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean; rich?: boolean; restored?: 'resolved' | 'escalated' } = {}) {
   await page.addInitScript(({ failFeedback, options }) => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     // This mock represents durable backend state, independent of a renderer reload.
@@ -10,9 +10,24 @@ async function mockPilot(page: Page, failFeedback = false, options: { longPlan?:
       { id: '01', title: 'Lire le prix et le stock', prompt: 'Retrouve le gingembre et lis son prix et son stock.', procedure_id: 'odoo_inventory_read_product', requires_reference: false },
       { id: '02', title: 'Comparer les stocks', prompt: 'Quel produit a le moins de stock ?', procedure_id: 'odoo_inventory_compare_stock', requires_reference: false },
     ].map(card => options.rich ? { ...card, id: `R${card.id}` } : card);
+    if (options.restored && !snapshot) {
+      snapshot = { session_id: 'restored-episode', state: options.restored, restored_read_only: true,
+        simulated: true, report_ready: true, request: { goal: 'Lire les informations du premier scénario.' },
+        declared: { outcome: 'done', summary: 'Informations retrouvées.' },
+        verification: { satisfied: true, observed: 'Critères écran contrôlés par le moteur.' },
+        pilot: { scenario_id: scenarios[0].id, export_status: 'complete',
+          agent_review: { reviewer_type: 'ai', task_success_agent: 'partial', scope_compliance_agent: 'failure' } } };
+      localStorage.setItem('hcompanion.voice-pilot.v1', JSON.stringify({ session: 'restored-episode', scenario: scenarios[0].id }));
+      persist();
+    }
     Object.defineProperty(window, '__vpCalls', { value: calls });
     Object.defineProperty(window, '__vpReportReady', { value: () => { snapshot = { ...snapshot, report_ready: true }; persist(); } });
     Object.defineProperty(window, '__vpSetState', { value: (state: string, reportReady: boolean) => { snapshot = { ...snapshot, state, report_ready: reportReady }; persist(); } });
+    Object.defineProperty(window, '__vpSetReview', { value: (verdict: string) => {
+      const pilot = snapshot?.pilot as Record<string, unknown>;
+      snapshot = { ...snapshot, pilot: { ...pilot, agent_review: { ...(pilot.agent_review as Record<string, unknown>), reviewer_type: 'ai', task_success_agent: verdict } } };
+      persist();
+    } });
     Object.defineProperty(window, 'voicePilot', { value: {
       request: async (method: string, path: string, body?: Record<string, unknown>) => {
         calls.push({ method, path, body });
@@ -196,3 +211,47 @@ test('retries a stopped restored episode without labels or automatic approval, b
   expect((await calls()).filter(call => call.method === 'APPROVE')).toHaveLength(1);
   expect((await calls()).filter(call => call.method === 'POST' && call.path.endsWith('/feedback'))).toEqual([]);
 });
+
+for (const state of ['resolved', 'escalated'] as const) {
+  test(`keeps an AI review separate and retries a restored ${state} episode without losing a human draft`, async ({ page }) => {
+    await mockPilot(page, false, { rich: true, restored: state });
+    await page.goto('/#voice');
+    await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Verdict IA : Réussite partielle');
+    await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Périmètre du parcours : Non respecté');
+    await expect(page.getByText('Critères écran contrôlés par le moteur.', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('unknown');
+    await expect(page.getByLabel('L’aide était-elle utile ?')).toHaveValue('unknown');
+    await expect(page.getByLabel('J’autorise la réutilisation', { exact: false })).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Enregistrer mon retour', exact: true })).toHaveCount(0);
+
+    const comment = 'Brouillon personnel : la réponse manque de précision.';
+    await page.getByLabel('Votre retour · transcription à relire').fill(comment);
+    await page.getByLabel('Selon vous, la tâche est…').selectOption('partial');
+    await page.evaluate(() => (window as unknown as { __vpSetReview: (verdict: string) => void }).__vpSetReview('success'));
+    await expect(page.getByRole('region', { name: 'Revue IA' }).getByText('Verdict IA : Réussite', { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Périmètre du parcours : Non respecté');
+    await expect(page.getByLabel('Votre retour · transcription à relire')).toHaveValue(comment);
+    await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('partial');
+    await expect(page.getByLabel('L’aide était-elle utile ?')).toHaveValue('unknown');
+    await page.getByRole('button', { name: 'Conserver mon brouillon local' }).click();
+    await page.reload();
+    await expect(page.getByLabel('Votre retour · transcription à relire')).toHaveValue(comment);
+    await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('partial');
+
+    await page.getByRole('button', { name: 'Conserver cet essai et retenter' }).click();
+    await expect(page.getByRole('button', { name: 'R01 Lire le prix et le stock' })).toHaveAttribute('aria-current', 'step');
+    await expect(page.getByLabel('Votre demande · transcription à relire')).toHaveValue('');
+    const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('hcompanion.voice-pilot.feedback-draft.v1:restored-episode') || '{}'));
+    expect(draft).toMatchObject({ comment, outcome: 'partial', useful: 'unknown', allowTraining: false });
+    const oldEpisode = await page.evaluate(() => JSON.parse(localStorage.getItem('vp-test-backend') || '{}'));
+    expect(oldEpisode.state).toBe(state);
+    expect(oldEpisode.pilot.feedback).toBeUndefined();
+    const writes = () => page.evaluate(() => (window as unknown as { __vpCalls: { method: string; path: string; body?: unknown }[] }).__vpCalls.filter(call => call.method !== 'GET'));
+    expect(await writes()).toEqual([]);
+
+    await page.getByLabel('Votre demande · transcription à relire').fill('Relis les informations du premier scénario.');
+    await page.getByRole('button', { name: 'Préparer le plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+    expect(await writes()).toEqual([expect.objectContaining({ method: 'POST', path: '/pilot/episodes', body: expect.objectContaining({ scenario_id: 'R01' }) })]);
+  });
+}
