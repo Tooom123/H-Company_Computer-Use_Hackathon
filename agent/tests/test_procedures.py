@@ -28,3 +28,14 @@ def test_agent_names_follow_h_rules():
 
     assert _agent_name("hcs-odoo_crm_followup_activity") == "hcs-odoo-crm-followup-activity"
     assert _agent_name("Hcs Verify__X-") == "hcs-verify-x"
+
+
+def test_answer_without_result_falls_back_on_session_outcome():
+    from hcs_agent.backend import InterventionAnswer, _lenient
+
+    raw = {"blocker": "Opportunity not found", "summary": "no record", "steps_taken": ["opened CRM"]}
+    ans = _lenient(InterventionAnswer, raw)
+    assert ans is not None
+    assert ans.to_declared("blocked").outcome == "blocked"
+    assert ans.to_declared("success").outcome == "done"
+    assert ans.to_declared(None).outcome == "unclear"

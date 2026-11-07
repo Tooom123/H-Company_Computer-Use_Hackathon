@@ -193,7 +193,7 @@ class BoundProcedure(BaseModel):
             )
         else:
             parts.append(
-                "When finished, answer with: outcome (done / blocked / unclear), a one-paragraph summary, "
+                "When finished, answer with: result (done / blocked / unclear), a one-paragraph summary, "
                 "the exact blocker text if blocked, and the list of steps you actually performed."
             )
         return "\n\n".join(parts)

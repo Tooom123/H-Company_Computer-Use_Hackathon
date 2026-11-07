@@ -19,6 +19,8 @@ from typing import Any, Callable, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+from hai_agents.polling import AnswerValidationError
+
 from .contract import Category, DeclaredResult, GuidanceStep, Step
 from .knowledge import DocAnswer, Knowledge, NoKnowledge
 from .procedures import BoundProcedure
@@ -33,24 +35,46 @@ GuidanceCallback = Callable[[GuidanceStep], "tuple[bool, str | None] | None"]
 
 
 class InterventionAnswer(BaseModel):
-    """Structured final answer requested from the H agent for an intervention attempt."""
+    """Structured final answer requested from the H agent for an intervention attempt.
 
-    outcome: Literal["done", "blocked", "unclear"]
-    summary: str
+    The field is named `result`, not `outcome`: H reserves `outcome` at session level and strips it
+    from the answer payload.
+    """
+
+    result: Literal["done", "blocked", "unclear"] | None = Field(
+        default=None, description="done if the task was completed, blocked if something prevented it, else unclear.")
+    summary: str = ""
     blocker: str | None = Field(default=None, description="Exact text of the error or limit encountered.")
     blocker_category: Literal[
         "usage", "configuration", "permissions", "data", "suspected_product_defect", "environment", "unknown"
     ] | None = None
     steps_taken: list[str] = Field(default_factory=list)
 
-    def to_declared(self) -> DeclaredResult:
+    def to_declared(self, session_outcome: str | None = None) -> DeclaredResult:
+        outcome = self.result or _OUTCOME_MAP.get(session_outcome or "", "unclear")
         return DeclaredResult(
-            outcome=self.outcome,
+            outcome=outcome,
             summary=self.summary,
             blocker=self.blocker,
             blocker_category=Category(self.blocker_category) if self.blocker_category else None,
             steps_taken=self.steps_taken,
         )
+
+
+# H's self-assessed session outcome -> our declared outcome, used when the answer omits `result`.
+_OUTCOME_MAP = {"success": "done", "blocked": "blocked", "infeasible": "blocked", "partial": "unclear"}
+
+
+def _lenient(model: type[BaseModel], raw: Any) -> BaseModel | None:
+    """Parse a possibly incomplete answer: unknown keys ignored, missing ones defaulted when possible."""
+    if raw is None:
+        return None
+    try:
+        if isinstance(raw, str):
+            return model.model_validate_json(raw)
+        return model.model_validate(raw)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class GuideAnswer(BaseModel):
@@ -67,8 +91,8 @@ class GuideAnswer(BaseModel):
 class VerificationAnswer(BaseModel):
     """Structured answer of the read-only verification session."""
 
-    checks: dict[str, bool] = Field(description="One boolean per check key, as observed on screen.")
-    observed: str = Field(description="Plain description of what is visible, including any discrepancy.")
+    checks: dict[str, bool] = Field(default_factory=dict, description="One boolean per check key, as observed on screen.")
+    observed: str = Field(default="", description="Plain description of what is visible, including any discrepancy.")
 
 
 # --------------------------------------------------------------------------- results
@@ -236,14 +260,23 @@ class HBackend:
             sid = handle.id
             threading.Thread(target=self._watch_stop, args=(handle, stop_event, done), daemon=True).start()
             result, _, _ = self._turn(handle, 0, attempt, on_step, 0)
+        except AnswerValidationError as exc:
+            # The session finished; only the answer shape is off. Keep what the agent said.
+            status = self._client.sessions.get_session_status(sid)
+            ans = _lenient(InterventionAnswer, exc.raw)
+            declared = (ans.to_declared(status.outcome) if ans
+                        else DeclaredResult(outcome=_OUTCOME_MAP.get(status.outcome or "", "unclear"),
+                                            summary=str(exc.raw)[:500]))
+            return AttemptResult(sid, status.status, declared, cost_usd=None)
         except Exception as exc:  # noqa: BLE001 - surfaced in the report as agent_failure
             return AttemptResult(sid, "failed", DeclaredResult(outcome="not_run"), error=_error_text(exc))
         finally:
             done.set()
         if stop_event.is_set() or result.status == "interrupted":
             return AttemptResult(sid, "interrupted", DeclaredResult(outcome="not_run"))
-        declared = (result.answer.to_declared() if isinstance(result.answer, InterventionAnswer)
-                    else DeclaredResult(outcome="unclear", summary=str(result.answer or "")))
+        declared = (result.answer.to_declared(result.outcome) if isinstance(result.answer, InterventionAnswer)
+                    else DeclaredResult(outcome=_OUTCOME_MAP.get(result.outcome or "", "unclear"),
+                                        summary=str(result.answer or "")))
         return AttemptResult(sid, result.status, declared, error=result.error, cost_usd=_total_cost(result.events))
 
     def run_guidance(self, bound, task, on_step, on_guidance, stop_event, on_lookup=None) -> AttemptResult:
@@ -328,17 +361,20 @@ class HBackend:
             sid = handle.id
             threading.Thread(target=self._watch_stop, args=(handle, stop_event, done), daemon=True).start()
             result, _, _ = self._turn(handle, 0, 0, on_step, 0)
+            answer, status, events = result.answer, result.status, result.events
+        except AnswerValidationError as exc:
+            answer, status, events = _lenient(VerificationAnswer, exc.raw), "completed", []
         except Exception as exc:  # noqa: BLE001
             return VerifyResult(sid, "failed", error=_error_text(exc))
         finally:
             done.set()
-        if stop_event.is_set() or result.status == "interrupted":
+        if stop_event.is_set() or status == "interrupted":
             return VerifyResult(sid, "interrupted")
-        if not isinstance(result.answer, VerificationAnswer):
-            return VerifyResult(sid, result.status, error=result.error or "no structured verification answer")
+        if not isinstance(answer, VerificationAnswer):
+            return VerifyResult(sid, status, error="no structured verification answer")
         # Only keep the keys we asked for; a missing key counts as not verified.
-        observed = {k: bool(result.answer.checks.get(k, False)) for k in checks}
-        return VerifyResult(sid, result.status, observed, result.answer.observed, cost_usd=_total_cost(result.events))
+        observed = {k: bool(answer.checks.get(k, False)) for k in checks}
+        return VerifyResult(sid, status, observed, answer.observed, cost_usd=_total_cost(events))
 
     def screenshot(self, path: Path) -> Path | None:
         try:

@@ -79,8 +79,8 @@ postcondition:
     - key: type_todo
       prompt: That activity's type is "To Do".
   verification_instructions: |
-    You are a read-only verifier. In the visible Odoo tab, reload the page, open the CRM pipeline and
-    open the opportunity "{opportunity}". Do not create, edit or delete anything. Only navigate and read.
+    You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the
+    browser window and do not reload the page. Open the CRM pipeline from the Odoo app menu and open the opportunity "{opportunity}". Do not create, edit or delete anything. Only navigate and read.
     Report exactly what you observe for each check.
 
 escalation:

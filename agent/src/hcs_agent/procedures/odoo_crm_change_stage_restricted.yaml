@@ -56,7 +56,8 @@ postcondition:
     - key: won_ribbon
       prompt: A "Won" ribbon is displayed on the opportunity.
   verification_instructions: |
-    You are a read-only verifier. In the visible Odoo tab, reload the page and open the opportunity
+    You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the
+    browser window and do not reload the page. Open the CRM pipeline from the Odoo app menu and open the opportunity
     "{opportunity}". Do not click any button other than navigation. Report exactly what you observe.
 
 escalation:
