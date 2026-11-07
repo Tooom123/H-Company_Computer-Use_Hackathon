@@ -109,9 +109,22 @@ Le chemin d'import effectivement décrit par H est :
    d'ouvrir la concurrence. Seule une ouverture réussie de la session de
    démonstration valide l'authentification ; l'existence du profil ne suffit pas.
 
-Au contrôle du 8 novembre, Docker est installé sur le Mac mais son daemon est
-arrêté. Aucun conteneur de connexion ni profil Linux connecté n'a encore été
-préparé. Les campagnes emploieront `browser_profile_id` explicitement,
+Le 8 novembre, un navigateur Linux dédié a été préparé dans le conteneur
+`h-companion-h-sso-20261108`, avec l'image figée recommandée par H. La version
+réellement exécutée est `150.0.7871.124`. Son interface interactive est accessible
+uniquement sur `http://127.0.0.1:3003` ; le profil est hors Git, dans le dossier
+privé `HCompanionResearch/h-platform-linux-sso`. La page de connexion H est
+visible à l'intérieur de ce navigateur ; le propriétaire doit y effectuer son
+SSO lui-même, sans synchronisation Chrome ni enregistrement de mot de passe.
+La connexion et l'import ne sont pas encore validés.
+
+Même neuf, ce profil peut contenir des cookies Google après le SSO. Ne pas
+envoyer directement son répertoire brut : vérifier les domaines et stockages,
+préparer une copie limitée à H et valider qu'elle conserve l'accès nécessaire.
+Si cette réduction n'est pas vérifiable, rester bloqué sur l'import. Les écrans
+de connexion et ce profil restent exclus des traces et du portail.
+
+Les campagnes emploieront `browser_profile_id` explicitement,
 `use_default_browser_profile=false` et `persist_browser_profile=false` :
 plusieurs lecteurs pourront charger le profil sans sauvegardes concurrentes.
 L'expiration de la connexion restera un blocage explicite.
