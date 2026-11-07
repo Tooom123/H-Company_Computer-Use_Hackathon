@@ -46,6 +46,7 @@ from .contract import (
 )
 from .knowledge import DocAnswer, blocker_query, explain_query
 from .procedures import BoundProcedure, ProcedureRegistry
+from .support import SupportUplink, shared_uplink
 
 EventSink = Callable[[AgentEvent], None]
 
@@ -64,10 +65,13 @@ class Intervention:
         registry: ProcedureRegistry,
         sink: EventSink,
         runs_dir: Path = Path("runs"),
+        uplink: SupportUplink | None | bool = True,
     ) -> None:
         self.request = request
         self.backend = backend
         self.sink = sink
+        # support backend uplink: True = from the environment (off unless HCS_BACKEND_URL is set)
+        self.uplink = shared_uplink() if uplink is True else (uplink or None)
         self.runs_dir = runs_dir / request.session_id
         self.state = State.created
         self.plan: ProposedPlan | None = None
@@ -101,8 +105,11 @@ class Intervention:
     # ------------------------------------------------------------------ events
 
     def _emit(self, type_: str, message: str | None = None, **data) -> None:
-        self.sink(AgentEvent(session_id=self.request.session_id, type=type_, state=self.state,
-                             message=message, data=data, simulated=self.backend.simulated))
+        event = AgentEvent(session_id=self.request.session_id, type=type_, state=self.state,
+                           message=message, data=data, simulated=self.backend.simulated)
+        self.sink(event)
+        if self.uplink:
+            self.uplink.send_event(event)
 
     def _set_state(self, state: State, message: str | None = None) -> None:
         with self._lock:
@@ -599,3 +606,5 @@ class Intervention:
             return
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         (self.runs_dir / "report.json").write_text(self.report.model_dump_json(indent=2), encoding="utf-8")
+        if self.uplink:  # also sent to the support dashboard (re-sent when feedback is added)
+            self.uplink.send_report(self.report)
