@@ -15,6 +15,9 @@ Ce pilote Electron n'intègre pas automatiquement toute l'interface CLI de Matte
 Pendant la recette, `main` a avancé jusqu'à `877ad90` avec des ajouts de support,
 d'autofix et de réponse aux questions Devin. Ces ajouts ne sont pas chargés dans
 les versions épinglées du pilote ; leur intégration devra être validée séparément.
+Un dernier fetch a aussi récupéré **`8bd8db6`**, nouvelle fusion des évolutions de
+Matteo dans `main`. Les essais décrits ici restent sur `b59ef01` ; ils ne valident
+donc pas cette nouvelle fusion.
 
 Les dix cas R01–R10 couvrent CRM, Projet, Achats, Reliquats, Nomenclatures, Devis,
 Factures, Notes de frais, Maintenance et Calendrier. Ce sont des consultations :
