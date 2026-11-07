@@ -117,6 +117,9 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         print(">> Ctrl+C: stopping")
         it.stop(StopCommand(reason="Ctrl+C"))
         it.wait(60)
+    if it.uplink:  # the CLI exits right after: let the support backend receive the report first
+        it.uplink.flush(10)
+        print(f"support backend: {it.uplink.sent} sent, {it.uplink.failed} failed ({it.uplink.url})")
     if it.report:
         print(f"\nreport: {it.runs_dir / 'report.json'}")
         print(json.dumps(it.report.to_support_summary(), indent=2))
