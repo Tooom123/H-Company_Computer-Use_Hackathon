@@ -128,8 +128,10 @@ def _full_transcript(result) -> str:
 
 class Intent(BaseModel):
     procedure_id: str | None = Field(description="One of the known procedure ids, or null if none fits.")
+    question: str | None = Field(default=None, description="One short English question to ask the user when the "
+                                                           "task or a required value is unclear; null otherwise.")
     mode: str | None = Field(default="act", description="'guide' if the user wants to be shown/explained how, else 'act'.")
-    parameters: dict[str, str] | None = Field(default_factory=dict)
+    parameters: dict[str, str | int | float | None] | None = Field(default_factory=dict)
     role: str | None = None
     goal: str = Field(default="", description="The user's request, cleaned up, in their language.")
     missing: list[str] | None = Field(default_factory=list, description="Required parameters not said by the user.")
@@ -140,22 +142,30 @@ class Intent(BaseModel):
         self.missing = list(self.missing or [])
 
 
-def _intent_prompt(transcript: str, procedures: list[Procedure]) -> str:
+def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[str] | None = None) -> str:
     cat = []
     for p in procedures:
         params = ", ".join(f"{x.name}{'' if x.required else '?'} ({x.description})" for x in p.parameters)
         cat.append(f"- id={p.id} | software={p.software} | {p.title} | parameters: {params or 'none'}")
+    convo = ""
+    if history:
+        convo = ("Earlier turns of this conversation, oldest first (assistant lines start with 'Assistant:'):\n"
+                 + "\n".join(history[-8:]) + "\n\n"
+                 "The new sentence may answer the assistant's question, correct a value ('actually 15000'), or "
+                 "change the task. Merge it with the earlier turns: keep every value still valid, replace what the "
+                 "user corrects.\n\n")
     return (
-        "You route a spoken support request to a procedure.\n"
+        "You are the ears of a support assistant: route a spoken request to a procedure, or ask what is unclear.\n"
         f"Today is {date.today().isoformat()}.\n"
-        "Known procedures:\n" + "\n".join(cat) + "\n\n"
-        f"User said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
+        "Known procedures:\n" + "\n".join(cat) + "\n\n" + convo +
+        f"User just said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
         "Return ONLY a JSON object with keys: procedure_id (string or null), mode ('act' if the user wants it done "
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
-        "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say, list it in "
-        "missing instead), role (string or null, if the user mentions who "
-        "they are), goal (one clean sentence in English, whatever language the user spoke), missing (required parameters the user did not "
-        "give). No prose."
+        "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say), "
+        "role (string or null), goal (one clean sentence in English, whatever language the user spoke), "
+        "missing (required parameters the user did not give), question (string or null: when the request could "
+        "match several procedures, or a required value is missing, or the sentence is too garbled, ONE short "
+        "friendly English question that gets exactly the missing piece; null when everything is clear). No prose."
     )
 
 
@@ -169,10 +179,10 @@ class IntentRouter:
         self.api_key = api_key or default_api_key()
         self.model = model or os.environ.get("HCS_MODEL", "holo4-35b-a3b")
 
-    def route(self, transcript: str) -> Intent:
+    def route(self, transcript: str, history: list[str] | None = None) -> Intent:
         body = {
             "model": self.model,
-            "messages": [{"role": "user", "content": _intent_prompt(transcript, self.registry.all())}],
+            "messages": [{"role": "user", "content": _intent_prompt(transcript, self.registry.all(), history)}],
             "max_tokens": 600,
             "temperature": 0,
             # Routing is a lookup, not a puzzle: skipping the thinking phase gives the JSON in ~1 s instead of ~10 s.
@@ -189,7 +199,13 @@ class IntentRouter:
             intent.procedure_id = None
         if intent.procedure_id:
             proc = self.registry.get(intent.procedure_id)
-            intent.missing = [p.name for p in proc.parameters if p.required and p.name not in intent.parameters]
+            intent.missing = [p.name for p in proc.parameters if p.required and p.name not in intent.parameters
+                              and p.default is None]
+            if intent.missing and not intent.question:
+                descs = [next(p.description for p in proc.parameters if p.name == n) for n in intent.missing]
+                intent.question = "Which " + " and which ".join(d.split(",")[0].lower() for d in descs) + "?"
+        elif not intent.question:
+            intent.question = "I did not catch what you want to do. Which task should I help with?"
         return intent
 
 

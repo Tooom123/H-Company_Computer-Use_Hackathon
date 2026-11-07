@@ -354,6 +354,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         return box["text"]
 
     last_request = None
+    history: list[str] = []  # the current clarification conversation (user turns + assistant questions)
     try:
         while True:
             text = next_transcript()
@@ -372,28 +373,27 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             if ov is not None:
                 ov.badge("Thinking…", pulsing=True)
+            history.append(f"User: {text}")
             try:
-                intent = router.route(text)
+                intent = router.route(text, history[:-1])
             except Exception as exc:  # noqa: BLE001
                 print(f"  could not understand the request ({exc}); try again.")
                 _flash(ov, "I did not get that, please rephrase", "question")
                 continue
-            if not intent.procedure_id:
-                print("  I don't have a procedure for that yet. Known: " + ", ".join(p.id for p in registry.all()))
-                _flash(ov, "I cannot do that yet", "question",
-                       why="I can: create an opportunity, schedule a follow-up, log a note, qualify")
+            if not intent.procedure_id or intent.missing:
+                # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
+                q = intent.question or "What exactly should I help with?"
+                print(f"  ? {q}")
+                history.append(f"Assistant: {q}")
+                if len([h for h in history if h.startswith("Assistant:")]) >= 4:
+                    history.clear()  # too many rounds: start fresh rather than loop
+                _say(q)
+                _flash(ov, q, "question", seconds=6.0)
                 continue
-            proc = registry.get(intent.procedure_id)
-            for name in list(intent.missing):
-                param = next((p for p in proc.parameters if p.name == name), None)
-                if param is None or param.default is not None:
-                    intent.missing.remove(name)  # the procedure default applies (e.g. due date in one week)
-                    continue
-                val = input(f"  {param.description}? ").strip()
-                if val:
-                    intent.parameters[name] = val
+            history.clear()
             request = intent_to_request(intent)
             last_request = request
+            history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
