@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean } = {}) {
+async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean; rich?: boolean } = {}) {
   await page.addInitScript(({ failFeedback, options }) => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     // This mock represents durable backend state, independent of a renderer reload.
@@ -9,14 +9,16 @@ async function mockPilot(page: Page, failFeedback = false, options: { longPlan?:
     const scenarios = [
       { id: '01', title: 'Lire le prix et le stock', prompt: 'Retrouve le gingembre et lis son prix et son stock.', procedure_id: 'odoo_inventory_read_product', requires_reference: false },
       { id: '02', title: 'Comparer les stocks', prompt: 'Quel produit a le moins de stock ?', procedure_id: 'odoo_inventory_compare_stock', requires_reference: false },
-    ];
+    ].map(card => options.rich ? { ...card, id: `R${card.id}` } : card);
     Object.defineProperty(window, '__vpCalls', { value: calls });
     Object.defineProperty(window, '__vpReportReady', { value: () => { snapshot = { ...snapshot, report_ready: true }; persist(); } });
     Object.defineProperty(window, '__vpSetState', { value: (state: string, reportReady: boolean) => { snapshot = { ...snapshot, state, report_ready: reportReady }; persist(); } });
     Object.defineProperty(window, 'voicePilot', { value: {
       request: async (method: string, path: string, body?: Record<string, unknown>) => {
         calls.push({ method, path, body });
-        if (path === '/pilot/status') return { model: 'holo4-test', simulated: true, busy: false, transcription: { provider: 'test', ready: false } };
+        if (path === '/pilot/status') return { model: 'holo4-test', simulated: true, busy: false, transcription: { provider: 'test', ready: false },
+          ...(options.rich ? { engine_revision: 'b59ef01', support_revision: 'bd3b2ca',
+            environment: { id: 'odoo-rich-v2.1', label: 'Odoo enrichi · v2.1', entry_url: 'http://holo-rich.localhost:18091/odoo/crm', company: 'Boutique Démo', fixture_version: '2.1' } } : {}) };
         if (path === '/pilot/scenarios') return scenarios;
         if (path === '/pilot/episodes' && method === 'POST') {
           snapshot = { session_id: snapshot ? crypto.randomUUID() : 'test-episode', state: 'awaiting_approval', simulated: true, request: { goal: body?.goal }, report_ready: false,
@@ -70,6 +72,30 @@ test('requires approval and saves unknown human labels separately before unlocki
   await page.getByRole('button', { name: 'Préparer le scénario 02' }).click();
   await expect(page.getByRole('heading', { name: 'Comparer les stocks', exact: true })).toBeVisible();
   await expect(page.getByLabel('Votre demande · transcription à relire')).toHaveValue('');
+});
+
+test('selects the rich catalog first card and restores a later episode without returning to the first card', async ({ page }) => {
+  await mockPilot(page, false, { rich: true });
+  await page.goto('/#voice');
+  await expect(page.getByRole('button', { name: 'R01 Lire le prix et le stock' })).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByRole('heading', { name: 'Lire le prix et le stock', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Environnement du test')).toContainText('Odoo enrichi · v2.1');
+  await expect(page.getByLabel('Environnement du test')).toContainText('Moteur b59ef01');
+  await expect(page.getByText('http://holo-rich.localhost:18091/odoo/crm', { exact: true })).toBeVisible();
+  await expect(page.getByText('Lecture seule · CRM, achats, stock, projets et activités métier.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Les scénarios 05 à 10', { exact: false })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'R02 Comparer les stocks' }).click();
+  await page.getByLabel('Votre demande · transcription à relire').fill('Compare les stocks sans rien modifier.');
+  await page.getByRole('button', { name: 'Préparer le plan', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'R02 Comparer les stocks' })).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByRole('heading', { name: 'Comparer les stocks', exact: true })).toBeVisible();
+  await expect(page.getByText('Compare les stocks sans rien modifier.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+  const approvals = await page.evaluate(() => (window as unknown as { __vpCalls: { method: string }[] }).__vpCalls.filter(call => call.method === 'APPROVE'));
+  expect(approvals).toEqual([]);
 });
 
 test('a failed feedback write does not claim saved or unlock another scenario', async ({ page }) => {

@@ -281,3 +281,65 @@ La fenêtre a été relancée et le scénario 03 remis au formulaire de demande.
 La reprise sans feedback ne soumet aucun label ni approbation. Validation : suite
 du pilote hors ligne passée (62 tests, puis un test additionnel de rapport
 terminal passé), quatre tests UI, TypeScript et build de production réussis.
+
+### Reprise du scénario 03 — 7 novembre 2026, 21:17–21:18 Europe/Paris
+
+Après redémarrage avec `pilot-bridge-health-v1`, le parcours fournisseur se termine
+en **52,12 s**, statut `resolved`, trois critères vérifiés. La fiche du fournisseur
+de démonstration est ouverte et son adresse fictive retrouvée. L’export est complet.
+Le retour confirmé est **réussite / utile**, commentaire « nickel ». L’autorisation
+d’entraînement est distincte de la revue : `reviewed=false` et
+`include_for_training=false` restent en place.
+
+Ce passage confirme une exécution réussie avec l’adaptateur après redémarrage ;
+il ne démontre pas encore la récupération automatique d’un futur canal périmé
+sans redémarrer le serveur.
+
+### Préparation de la démo enrichie — 7 novembre 2026, 21:28–21:32 Europe/Paris
+
+Le handoff Odoo actualisé et le contrôleur Netcup confirment la démo
+`holo_hackathon_rich`, fixture `20261107-v2.1`, sur le tunnel local 18091. La société
+est **Holo — Déjà Bu Démo · DONNÉES FICTIVES**. Les compteurs et l’empreinte métier
+correspondent au baseline : 252 fiches du catalogue importées (176 actives),
+36 achats, 48 ventes, 74 opérations de stock, 36 opportunités, 12 factures.
+Aucun passage réservé, une session web connectée. Aucun reset effectué.
+
+Nouvelle campagne `rich`, dix cas **R01–R10** de lecture et diagnostic, avec
+procédures explicites adaptées à cette société et origine. Aucun ancien ID de
+fiche n’est réutilisé. Le serveur, les demandes archivées et les épisodes portent
+l’identité de démo et les révisions. Dossier `voice-pilot-rich`, profil Electron
+`rich`, indépendants des essais historiques. Les mutations métier du tutoriel
+05–10 ne font pas partie de ce premier lot enrichi.
+
+Moteur mis à jour de `343e393` à **`b59ef01`**, backend Tom **`bd3b2ca`** conservé,
+modèle **`holo4-35b-a3b`**, mode `act`, images plein écran. Les nouveaux overlays
+de la CLI Matteo ne sont pas chargés par le runner du pilote Electron. La nouvelle
+narration française peut modifier durée et usage : ne pas agréger les versions
+comme des répétitions à configuration identique.
+
+Validation hors ligne : **71 tests Python passés, un sauté**, cinq tests UI
+passés, TypeScript et build réussis. Les dix YAML ont été chargés et liés aux
+classes réelles du moteur ; ces contrôles ne constituent pas des succès Odoo.
+Le serveur et le client ont été relancés ; l’utilisateur a démarré R01 sur le CRM.
+
+### Premier R01 enrichi — 7 novembre 2026, 21:32–21:33 Europe/Paris
+
+Demande saisie sans audio associé, approuvée depuis l’app à 21:32:25. Fin à
+21:33:58, environ **93 s**. L’acteur retrouve l’opportunité Maison Aube, annonce
+Premier contact, 350 EUR et une activité en retard de trois jours. Il ne donne
+pas de date absolue pour cette activité. Le vérificateur confirme origine/société,
+fiche et étape, mais pas le montant ni l’échéance exacte, non lisibles dans ses
+observations. Statut **`escalated`**, trois critères vrais sur cinq ; ne pas
+transformer ce résultat en réussite automatique parce que le résumé semble bon.
+
+L’archive action/vérification est **complète**. Le contrôle Netcup après passage
+retrouve les mêmes compteurs et la même empreinte que le baseline riche : aucune
+altération détectée par ce contrôle. Le feedback utilisateur est encore à
+recueillir au moment de cette entrée. Une revue des images et de la navigation
+du vérificateur est nécessaire avant de qualifier un éventuel faux négatif.
+
+Lors du changement de campagne, l’ancienne fenêtre du pilote était restée ouverte.
+Elle a été fermée après la fin de R01. Un correctif préventif réserve désormais
+le raccourci d’arrêt avant d’exposer l’IPC d’approbation ; si une autre instance
+possède ce raccourci, la nouvelle ne peut pas démarrer un passage. Deux tests
+simulés passent. Aucun conflit effectif du raccourci pendant R01 n’est établi.

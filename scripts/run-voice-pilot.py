@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE_REV = '343e393'
+ENGINE_REV = 'b59ef01'
 SUPPORT_REV = 'bd3b2ca'
 
 
@@ -27,7 +27,8 @@ def extract(ref: str, part: str, destination: Path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--private-root', type=Path, default=Path.home() / 'Library/Application Support/HCompanionResearch/voice-pilot')
+    parser.add_argument('--private-root', type=Path)
+    parser.add_argument('--environment', choices=['minimal', 'rich'], default='minimal')
     parser.add_argument('--model-path', type=Path, default=Path.home() / 'Library/Application Support/HCompanionResearch/models/whisper-base-mlx')
     parser.add_argument('--mock', action='store_true')
     parser.add_argument('--port', type=int, choices=[8767], default=8767)
@@ -37,7 +38,8 @@ def main():
     os.environ['HCS_AUTO_CLEANUP'] = '0'
     os.environ['HCS_GROUND_PLAN'] = '0'
     os.environ['HCS_MODEL'] = 'holo4-35b-a3b'
-    private = args.private_root.resolve()
+    default_name = 'voice-pilot-rich' if args.environment == 'rich' else 'voice-pilot'
+    private = (args.private_root or Path.home() / 'Library/Application Support/HCompanionResearch' / default_name).resolve()
     private.mkdir(parents=True, exist_ok=True, mode=0o700)
     if any((parent / '.git').exists() for parent in (private, *private.parents)):
         raise SystemExit('Private pilot data must stay outside Git repositories.')
@@ -50,8 +52,8 @@ def main():
         raise SystemExit('A voice pilot already uses this private directory.') from None
     runtime = private / 'runtime'
     for ref, part in [(ENGINE_REV, 'agent'), (SUPPORT_REV, 'backend')]:
-        extract(ref, part, runtime)
-    sys.path[:0] = [str(ROOT), str(runtime / 'agent/src'), str(runtime / 'backend/src')]
+        extract(ref, part, runtime / ref)
+    sys.path[:0] = [str(ROOT), str(runtime / ENGINE_REV / 'agent/src'), str(runtime / SUPPORT_REV / 'backend/src')]
     from dotenv import dotenv_values
     from hcs_agent.backend import MockBackend
     from hcs_agent.knowledge import NoKnowledge
@@ -59,6 +61,7 @@ def main():
     from pilot.server import create_app
     from pilot.desktop_backend import PilotHBackend
     from pilot.local_speech import LocalSpeech
+    from pilot.environments import get_environment
     import uvicorn
     config = dotenv_values(ROOT / 'app/.env')
     key = config.get('HAI_API_KEY')
@@ -90,10 +93,12 @@ def main():
         transcriber = LocalSpeech(args.model_path)
     app = create_app(private_root=private, token=token, backend=backend, transcriber=transcriber,
                      exporter=export, store=store, model='holo4-35b-a3b',
-                     scenarios_path=ROOT / 'docs/scenarios/odoo-scenarios.md', procedures_dir=ROOT / 'docs/scenarios')
+                     scenarios_path=ROOT / 'docs/scenarios/odoo-scenarios.md', procedures_dir=ROOT / 'docs/scenarios',
+                     environment=args.environment, engine_revision=ENGINE_REV, support_revision=SUPPORT_REV)
     (private / 'runtime.json').write_text(json.dumps({'engine_revision': ENGINE_REV, 'support_revision': SUPPORT_REV,
                                                    'desktop_adapter': 'pilot-bridge-health-v1',
                                                    'simulated': args.mock, 'model': 'holo4-35b-a3b',
+                                                   'environment': get_environment(args.environment),
                                                    'transcription_provider': transcriber.provider, 'port': args.port}, indent=2) + '\n')
     print(f'Voice pilot ready on 127.0.0.1:{args.port}; token file: {token_path}; simulated={args.mock}', flush=True)
     uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='warning')

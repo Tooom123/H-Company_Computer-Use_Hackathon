@@ -34,6 +34,7 @@ from hcs_agent.procedures import ProcedureRegistry
 from hcs_agent.server import create_app as engine_app, _snapshot
 
 from .catalog import load_catalog
+from .environments import get_environment
 
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
 MAX_AUDIO_SECONDS = 90
@@ -146,7 +147,9 @@ class LocalAuth:
 
 def create_app(*, private_root: Path, token: str, backend=None, transcriber=None,
                exporter=None, store=None, model: str = 'holo4-35b-a3b',
-               scenarios_path: Path | None = None, procedures_dir: Path | None = None):
+               scenarios_path: Path | None = None, procedures_dir: Path | None = None,
+               environment: str = 'minimal', engine_revision: str | None = None,
+               support_revision: str | None = None):
     """Wrap Matteo's app. Callbacks: STT(path,mime), export(report_path,archive_dir).
 
     STT returns a string or {transcript, provider}; optional .provider/.ready/.message
@@ -155,13 +158,25 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
     """
     if len(token) < 16:
         raise ValueError('Use a randomly generated local bearer token of at least 16 characters')
+    demo = get_environment(environment)
     os.umask(0o077)
     root = Path(private_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
+    identity_path = root / 'environment.json'
+    if identity_path.exists():
+        if read_json(identity_path) != demo:
+            raise ValueError('This private directory belongs to another demo environment.')
+    elif environment != 'minimal' and any((root / 'episodes').glob('*/episode.json')):
+        raise ValueError('Existing untagged episodes belong to the initial demo; use a new private directory.')
+    atomic_json(identity_path, demo)
     for folder in ('audio', 'episodes', 'archives'):
         (root / folder).mkdir(exist_ok=True, mode=0o700)
-    cards = load_catalog(scenarios_path or REPO / 'docs/scenarios/odoo-scenarios.md')
+    if environment == 'rich':
+        from .rich_catalog import load_rich_catalog
+        cards = load_rich_catalog()
+    else:
+        cards = load_catalog(scenarios_path or REPO / 'docs/scenarios/odoo-scenarios.md')
     catalog = {card['id']: card for card in cards}
     app = engine_app(backend=backend, runs_dir=root / 'episodes')
     hub = app.state.hub
@@ -350,6 +365,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
         provider = getattr(transcriber, 'provider', 'configured' if transcriber else 'none')
         ready = transcriber is not None and bool(getattr(transcriber, 'ready', True))
         return {'model': model, 'simulated': bool(hub.backend.simulated), 'busy': busy(),
+                'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision,
                 'transcription': {'provider': provider, 'ready': ready,
                                   'message': getattr(transcriber, 'message', 'Prêt' if ready else 'Transcription non configurée')}}
 
@@ -419,6 +435,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                 for previous_path in (root / 'episodes').glob('*/episode.json'):
                     previous = read_json(previous_path)
                     if (previous.get('scenario_id') == card['depends_on'] and
+                            previous.get('environment', {}).get('id', 'odoo-minimal-v1') == demo['id'] and
                             previous.get('workflow_id') == workflow and previous.get('run_reference') == body.run_reference):
                         report_path = previous_path.parent / 'report.json'
                         if report_path.is_file() and previous.get('finished_at'):
@@ -439,12 +456,14 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                        'procedure_id': card['procedure_id'], 'workflow_id': workflow, 'run_reference': body.run_reference,
                        'created_at': now(), 'state': 'created', 'simulated': bool(hub.backend.simulated),
                        'model': model, 'mode': 'act', 'image_policy': 'full_screen',
+                       'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision,
                        'desktop_adapter': getattr(hub.backend, 'adapter_revision', None),
                        'request_audio_id': body.request_audio_id, 'export_status': 'pending',
                        'store_status': 'pending' if store is not None else 'not_configured'}
             atomic_json(directory / 'episode.json', initial)
             atomic_json(directory / 'request.json', {'intervention': req.model_dump(mode='json'),
-                        'goal_raw': body.goal, 'audio': audio, 'scenario': card, 'workflow_id': workflow})
+                        'goal_raw': body.goal, 'audio': audio, 'scenario': card, 'workflow_id': workflow,
+                        'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision})
             procedure = hub.registry.get(card['procedure_id'])
             atomic_json(directory / 'procedure.json', procedure.model_dump(mode='json'))
             it = hub.create(req)

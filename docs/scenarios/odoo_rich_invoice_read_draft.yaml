@@ -1,0 +1,65 @@
+# Rich Odoo v2.1: candidate read-only scenario, not evidence of a completed H run.
+id: odoo_rich_invoice_read_draft
+software: odoo
+software_version: '20.0'
+session_type: onboarding
+title: Comprendre une facture encore en brouillon
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 35
+max_time_s_per_attempt: 300
+parameters: []
+preconditions:
+- L’opérateur a ouvert et authentifié la démo enrichie v2.1 sur http://holo-rich.localhost:18091 ; aucun autre onglet
+  Odoo ne doit être utilisé.
+- La société visible est exactement Holo — Déjà Bu Démo · DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a relu l’identité des documents et leur état de référence.
+- Ce cas est une lecture seule, indépendante des autres cas R01–R10 ; un manque de preuve doit être signalé, jamais
+  réparé.
+objective: Lire la facture existante liée à DEMO-VENTE-029 sans la comptabiliser.
+planned_changes:
+- Aucune modification métier ; navigation, filtres temporaires et lecture uniquement.
+allowed_actions:
+- Naviguer dans les menus de la démo enrichie et ouvrir les fiches existantes nécessaires à cette seule question.
+- Utiliser la recherche, les filtres temporaires, les liens entre documents et le défilement pour lire les valeurs.
+forbidden_actions:
+- Quitter l’onglet holo-rich.localhost:18091, ouvrir une autre origine Odoo, saisir des identifiants ou changer
+  de société.
+- Créer, modifier, supprimer, archiver, confirmer, valider, réserver ou clôturer un enregistrement métier.
+- Déplacer une carte ou un événement par glisser-déposer ; enregistrer un filtre partagé.
+- Envoyer un message, une invitation, une facture ou un paiement ; soumettre ou approuver une note de frais.
+- Exécuter une commande, un reset, une API de mutation, ou modifier les accès et paramètres.
+agent_instructions: "Reste uniquement dans l’onglet Odoo déjà ouvert sur holo-rich.localhost:18091 et dans la société\
+  \ Holo — Déjà Bu Démo · DONNÉES FICTIVES. Si l’origine, la société ou le document est ambigu, arrête-toi sans\
+  \ saisir d’identifiant. Les clics de navigation et les filtres temporaires sont autorisés ; toute modification\
+  \ métier est interdite. \n\nRetrouve la commande de vente par sa Référence client exacte DEMO-VENTE-029. Ouvre\
+  \ la facture déjà liée via le bouton de consultation ; ne clique pas sur une création de facture. Si aucun document\
+  \ lié n’est visible, arrête-toi. Lis client, état, lignes et total. Explique à partir de l’état visible que le\
+  \ document est encore préparatoire si c’est un brouillon. Une facture brouillon peut ne pas avoir de numéro définitif\
+  \ : ne l’invente pas. Ne confirme ni ne comptabilise et ne touche pas aux paiements. Laisse la facture existante\
+  \ ouverte."
+postcondition:
+  description: La bonne fiche ou liste est accessible et les critères ont été relus dans la seule démo enrichie.
+  checks:
+  - key: correct_environment
+    prompt: Le navigateur est sur holo-rich.localhost:18091 et la société Holo — Déjà Bu Démo · DONNÉES FICTIVES
+      est identifiable.
+  - key: correct_sale_link
+    prompt: La facture ouverte est reliée à la vente de référence client DEMO-VENTE-029.
+  - key: draft_invoice
+    prompt: La facture est une facture client existante à l’état brouillon.
+  - key: customer_total
+    prompt: Son client et son total sont lisibles sur la facture ; ne déduis pas une valeur absente.
+  verification_instructions: 'Vérifie en lecture seule l’origine holo-rich.localhost:18091 et la société Holo —
+    Déjà Bu Démo · DONNÉES FICTIVES, puis les critères ci-dessous dans les écrans correspondants. Les attentes ne
+    sont pas des preuves : toute donnée absente, illisible ou différente produit false. Tu peux naviguer pour relire
+    mais jamais modifier un champ ou un état. Ne déduis pas la réussite du résumé de l’acteur. Ces contrôles portent
+    sur les écrans ; une revue humaine de la trace reste nécessaire pour évaluer la fidélité et l’utilité de la
+    réponse, ainsi que l’absence de mutation sur tout le parcours.'
+escalation:
+  when:
+  - L’origine, la société, la référence, une permission ou un champ ne peut pas être identifié sans ambiguïté.
+  - Une action interdite serait nécessaire ou la postcondition reste non vérifiée après cet essai.
+  decision_expected: L’opérateur doit vérifier la fiche, l’accès ou le critère manquant ; aucune réparation ni changement
+    de périmètre automatique.
+  default_category: unknown

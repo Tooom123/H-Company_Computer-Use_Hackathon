@@ -8,6 +8,8 @@ export type Scenario = {
 export type AudioTranscript = { audio_id: string; transcript: string; provider: string };
 export type PilotStatus = {
   model: string; simulated: boolean; busy: boolean;
+  environment?: { id: string; label: string; entry_url: string; company: string; fixture_version: string };
+  engine_revision?: string; support_revision?: string;
   transcription: { provider: string; ready: boolean; message?: string };
 };
 export type PilotPlan = { objective?: string; explanation?: string; allowed_actions?: string[]; forbidden_actions?: string[]; planned_changes?: string[] };

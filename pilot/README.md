@@ -1,6 +1,6 @@
 # Pilote vocal H-Companion
 
-Le pilote relie l’interface Electron `#voice`, le moteur de Matteo **`343e393`** et
+Le pilote relie l’interface Electron `#voice`, le moteur de Matteo **`b59ef01`** et
 le stockage support de Tom **`bd3b2ca`**. Le lanceur extrait ces deux révisions Git
 dans son dossier privé, sans fusionner leurs fichiers avec la branche de travail.
 Il utilise **`holo4-35b-a3b`**, le mode **`act`** et des captures **plein écran**.
@@ -28,7 +28,7 @@ source "$HOME/Library/Application Support/HCompanionResearch/voice-venv/bin/acti
 python -m pip install 'hai-agents[desktop]==1.4.3' fastapi pydantic uvicorn python-dotenv pyyaml jsonschema httpx
 ```
 
-Les révisions `343e393` et `bd3b2ca` doivent être présentes dans le clone local.
+Les révisions `b59ef01` et `bd3b2ca` doivent être présentes dans le clone local.
 Configurer **`HAI_API_KEY`** dans `app/.env`. Pour la voix, configurer aussi
 **`GLADIA_API_KEY`** dans ce fichier : le lanceur sélectionne alors Gladia, qui
 reçoit les enregistrements et les transcrit en français. Ne pas commiter `.env`.
@@ -75,6 +75,40 @@ nouvelle application ; le moteur doit disposer des permissions de capture d’é
 et d’Accessibilité nécessaires à ses actions.
 
 ## Faire un passage
+
+### Démo enrichie : une campagne séparée
+
+Le serveur accepte `--environment rich`. Il charge dix nouveaux scénarios **R01–R10
+en lecture seule**, avec la société `Holo — Déjà Bu Démo · DONNÉES FICTIVES`,
+sur `http://holo-rich.localhost:18091/odoo/crm`. Le guide de la campagne est
+[ici](../docs/scenarios/odoo-rich-scenarios.md). La démo est hébergée sur Netcup,
+accessible depuis ce Mac via un tunnel SSH ; cette URL n’est pas publique.
+
+Arrêter le pilote précédent lorsqu’aucun essai/feedback n’est en cours, puis :
+
+```sh
+python scripts/run-voice-pilot.py --environment rich
+HCS_PILOT_MODE=1 HCS_PILOT_PROFILE=rich HCS_PILOT_TOKEN_FILE="$HOME/Library/Application Support/HCompanionResearch/voice-pilot-rich/pilot-token" /private/tmp/HCompanionVoice.app/Contents/MacOS/Electron "$PWD/app"
+```
+
+Le serveur garde le port 8767 ; un seul pilote tourne à la fois. Le dossier privé
+par défaut devient `voice-pilot-rich`, et le profil Electron `rich` conserve un
+état distinct du profil historique `live`. Les anciens essais restent disponibles
+dans leur dossier et ne valident aucune dépendance du nouveau lot. Le serveur
+refuse un dossier déjà associé à une autre démo.
+
+Chaque épisode et sa demande exportée portent l’identité de la démo, sa version,
+et les révisions moteur/backend. Les dates et compteurs dépendent du baseline
+enrichi v2.1 du 7 novembre ; contrôler l’état avant les tests, sans reset implicite.
+La nouvelle version du moteur demande une narration française avant les actions :
+enregistrer cette révision dans les comparaisons de latence. Les overlays natifs
+de la CLI Matteo ne sont pas activés par ce pilote Electron utilisant son runner.
+
+Pour une simulation isolée, combiner `--environment rich --mock --private-root
+/private/tmp/hcompanion-rich-smoke` et le profil client `rich-mock`. Les résultats
+simulés ne prouvent aucune réussite Odoo.
+
+### Déroulement commun
 
 1. Ouvrir la société fictive Odoo et sélectionner explicitement un scénario.
 2. **Dicter ma demande → Terminer**, puis relire et corriger le texte. Le micro ne

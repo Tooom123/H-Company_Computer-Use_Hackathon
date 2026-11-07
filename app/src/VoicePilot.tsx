@@ -13,7 +13,7 @@ export default function VoicePilot() {
   const initial = useRef(stored());
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [status, setStatus] = useState<PilotStatus | null>(null);
-  const [scenarioId, setScenarioId] = useState(initial.current.scenario || '01');
+  const [scenarioId, setScenarioId] = useState(initial.current.scenario || '');
   const [reference, setReference] = useState(initial.current.reference || '');
   const [workflow] = useState(initial.current.workflow || crypto.randomUUID());
   const [sessionId, setSessionId] = useState<string | null>(initial.current.session || null);
@@ -53,7 +53,13 @@ export default function VoicePilot() {
     mounted.current = true;
     if (!api) { setError('Ouvrez cet écran depuis l’application H-Companion.'); return; }
     void Promise.all([api.request<PilotStatus>('GET', '/pilot/status'), api.request<Scenario[]>('GET', '/pilot/scenarios')])
-      .then(([info, list]) => { if (mounted.current) { setStatus(info); setScenarios(list); } })
+      .then(([info, list]) => {
+        if (!mounted.current) return;
+        setStatus(info); setScenarios(list);
+        // A restored episode owns its selection. For a fresh profile (or an old
+        // saved selection outside this catalog), use the first available card.
+        if (!initial.current.session) setScenarioId(current => list.some(item => item.id === current) ? current : list[0]?.id || '');
+      })
       .catch(cause => { if (mounted.current) setError(`Le moteur n’est pas joignable. ${errorText(cause)}`); });
     return () => {
       mounted.current = false;
@@ -198,7 +204,14 @@ export default function VoicePilot() {
 
   return <main className="vp-shell">
     <header className="vp-header">
-      <div><span className="vp-brand">H-Companion</span><span className="vp-subtitle">Recette vocale · Odoo</span></div>
+      <div><span className="vp-brand">H-Companion</span><span className="vp-subtitle">Recette vocale · Odoo</span>
+        {(status?.environment || status?.engine_revision) && <p className="vp-small" aria-label="Environnement du test">
+          {status.environment && <strong>{status.environment.label}</strong>}
+          {status.environment && status.engine_revision && ' · '}
+          {status.engine_revision && <>Moteur <code>{status.engine_revision}</code></>}
+        </p>}
+        {status?.environment?.entry_url && <p className="vp-small">Odoo : <code>{status.environment.entry_url}</code></p>}
+      </div>
       <div className="vp-header-tags"><span className={`vp-tag ${status?.simulated ? 'vp-tag-warning' : ''}`}>{status ? status.simulated ? 'SIMULATION' : status.model : 'Connexion au moteur…'}</span><span className="vp-tag">Écran complet</span></div>
     </header>
     <div className="vp-layout">
@@ -207,10 +220,14 @@ export default function VoicePilot() {
         <nav>{scenarios.map(item => <button key={item.id} className={`vp-scenario ${item.id === scenarioId ? 'vp-selected' : ''}`}
           disabled={blockedSelection || Boolean(busy) || Boolean(recording)} aria-current={item.id === scenarioId ? 'step' : undefined}
           onClick={() => chooseScenario(item.id)}><span>{item.id}</span><span>{item.title}</span></button>)}</nav>
-        <p className="vp-small">Les scénarios 05 à 10 suivent la même commande. Passez au suivant après avoir contrôlé l’étape précédente.</p>
+        <p className="vp-small">{scenarios.some(item => item.depends_on)
+          ? 'Certains scénarios suivent le même parcours. Passez au suivant après avoir contrôlé l’étape précédente.'
+          : 'Vérifiez la situation de départ de chaque scénario, puis donnez votre retour avant de passer au suivant.'}</p>
       </aside>
       <section className="vp-main" aria-label="Scénario et demande">
-        <div className="vp-intro"><p className="vp-eyebrow">SCÉNARIO {scenario?.id || '—'} / 10</p><h1>{scenario?.title || 'Votre assistant se prépare.'}</h1><p>Parlez, relisez, puis observez H-Companion dans Odoo.</p><p className="vp-small">Ces essais servent de référence avec l’écran complet. Le recadrage du Vision Lab n’est pas activé pour ces essais.</p></div>
+        <div className="vp-intro"><p className="vp-eyebrow">SCÉNARIO {scenario?.id || '—'} / 10</p><h1>{scenario?.title || 'Votre assistant se prépare.'}</h1><p>Parlez, relisez, puis observez H-Companion dans Odoo.</p>
+          {status?.environment?.id === 'odoo-rich-v2.1' && <p className="vp-small">Lecture seule · CRM, achats, stock, projets et activités métier.</p>}
+          <p className="vp-small">Ces essais servent de référence avec l’écran complet. Le recadrage du Vision Lab n’est pas activé pour ces essais.</p></div>
         {error && <div className="vp-alert vp-error" role="alert">{error}</div>}
         {notice && <div className="vp-alert" role="status">{notice}</div>}
         {busy === 'audio-transcription' && <div className="vp-alert" role="status">Transcription en cours… Le microphone est arrêté.</div>}
@@ -268,7 +285,7 @@ export default function VoicePilot() {
             <div className="vp-actions vp-end"><button className="vp-button vp-primary" disabled={speaking || Boolean(busy)} onClick={() => void saveFeedback()}>{busy === 'feedback' ? 'Enregistrement…' : 'Enregistrer mon retour'}</button></div>
           </> : <div className="vp-saved" role="status"><strong>Retour enregistré avec cet essai.</strong><p>Les scénarios de la liste sont à nouveau disponibles.</p><div className="vp-actions"><button className="vp-button" onClick={() => chooseScenario(scenarioId)}>Refaire ce scénario</button>{nextScenario > 0 && nextScenario < scenarios.length && <button className="vp-button vp-primary" onClick={() => chooseScenario(scenarios[nextScenario].id)}>Préparer le scénario {scenarios[nextScenario].id}</button>}</div></div>}
         </section>}
-        <footer className="vp-footer">Cette recette constitue un premier lot de tests utilisateurs. Les dix demandes ne sont pas dix tâches indépendantes ; les étapes 05–10 forment un même parcours d’achat.</footer>
+        <footer className="vp-footer">Cette recette constitue un premier lot de tests utilisateurs.{scenarios.some(item => item.depends_on) && ' Les étapes liées d’un même parcours ne sont pas des tâches indépendantes.'}</footer>
       </section>
     </div>
   </main>;
