@@ -1,0 +1,202 @@
+{
+  "case_id": "case_73a6ffef6b8d",
+  "session_id": "sess_45e83c0c7d77",
+  "software": "odoo",
+  "software_version": "19.0",
+  "os": "Linux 7.0.0-38-generic",
+  "role": "new sales rep",
+  "session_type": "support",
+  "goal": "test odoo_crm_change_stage_restricted",
+  "symptom": null,
+  "mode": "guide",
+  "procedure_id": "odoo_crm_change_stage_restricted",
+  "approved_scope": {
+    "objective": "Mark the opportunity \"Acme Demo\" as Won in Odoo CRM.",
+    "planned_changes": [
+      "Open the opportunity \"Acme Demo\" and click the \"Won\" button."
+    ],
+    "allowed_actions": [
+      "Move the mouse pointer to show where a control is.",
+      "Read the screen to explain what is displayed."
+    ],
+    "forbidden_actions": [
+      "Clicking, typing or changing anything in the software.",
+      "Sending any email or external message.",
+      "Deleting or archiving any record.",
+      "Changing any other field.",
+      "Retrying after an access error, or trying another user, another menu or developer mode.",
+      "Entering credentials."
+    ],
+    "reversible": false,
+    "max_attempts": 1,
+    "explanation": "As a new sales rep, you asked: \"test odoo_crm_change_stage_restricted\". I will guide you step by step to mark the opportunity \"Acme Demo\" as Won in Odoo CRM. I will explain each step and point at the control on your screen; you perform the clicks. I will not change anything myself.",
+    "mode": "guide",
+    "documentation": null,
+    "sources": [],
+    "observes": "Screenshots of the main display are sent to H during the intervention."
+  },
+  "guidance": [
+    {
+      "index": 1,
+      "instruction": "Open the CRM app from the main menu.",
+      "where": "Top-left app switcher, 'CRM'",
+      "why": "This is where opportunities live.",
+      "pointer": [
+        650,
+        320
+      ],
+      "box": null,
+      "kind": "click",
+      "annotations": [],
+      "last": false
+    },
+    {
+      "index": 2,
+      "instruction": "Click the card named 'Acme Demo' in the pipeline.",
+      "where": "Pipeline column, card with that title",
+      "why": "Opens its form.",
+      "pointer": [
+        660,
+        340
+      ],
+      "box": null,
+      "kind": "click",
+      "annotations": [],
+      "last": false
+    },
+    {
+      "index": 3,
+      "instruction": "An 'Access Error' dialog appeared: you are not allowed to do this.",
+      "where": "Right side, clock icon",
+      "why": "Creates the follow-up.",
+      "pointer": [
+        670,
+        360
+      ],
+      "box": null,
+      "kind": "click",
+      "annotations": [],
+      "last": true
+    }
+  ],
+  "knowledge": [
+    {
+      "purpose": "blocker",
+      "query": "In odoo 19.0, what causes this message and which access right or setting fixes it: \"Access Error: You are not allowed to modify 'Lead/Opportunity' records.\"",
+      "answer": "[simulated] Documentation summary for: In odoo 19.0, what causes this message and which access right or setting fixes it: \"Access Error: You are not allowed to modify 'Lead/Opportunity' records.\"",
+      "sources": [
+        {
+          "name": "Odoo docs (simulated)",
+          "url": "https://www.odoo.com/documentation/19.0/",
+          "snippet": ""
+        }
+      ],
+      "simulated": true
+    }
+  ],
+  "scope_note": null,
+  "steps": [
+    {
+      "index": 0,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:15.184135Z",
+      "kind": "observation",
+      "summary": "[simulated] screen observed",
+      "detail": {}
+    },
+    {
+      "index": 1,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:15.584598Z",
+      "kind": "action",
+      "summary": "[simulated] mouse moved to the control",
+      "detail": {}
+    },
+    {
+      "index": 2,
+      "attempt": 2,
+      "timestamp": "2026-11-07T21:30:16.304581Z",
+      "kind": "observation",
+      "summary": "[simulated] screen observed",
+      "detail": {}
+    },
+    {
+      "index": 3,
+      "attempt": 2,
+      "timestamp": "2026-11-07T21:30:16.705009Z",
+      "kind": "action",
+      "summary": "[simulated] mouse moved to the control",
+      "detail": {}
+    },
+    {
+      "index": 4,
+      "attempt": 3,
+      "timestamp": "2026-11-07T21:30:17.405898Z",
+      "kind": "observation",
+      "summary": "[simulated] screen observed",
+      "detail": {}
+    },
+    {
+      "index": 5,
+      "attempt": 3,
+      "timestamp": "2026-11-07T21:30:17.806300Z",
+      "kind": "action",
+      "summary": "[simulated] mouse moved to the control",
+      "detail": {}
+    }
+  ],
+  "declared": {
+    "outcome": "blocked",
+    "summary": "An 'Access Error' dialog appeared: you are not allowed to do this.",
+    "blocker": "Access Error: You are not allowed to modify 'Lead/Opportunity' records.",
+    "blocker_category": "permissions",
+    "steps_taken": [
+      "Open the CRM app from the main menu.",
+      "Click the card named 'Acme Demo' in the pipeline.",
+      "An 'Access Error' dialog appeared: you are not allowed to do this."
+    ]
+  },
+  "verification": {
+    "performed": false,
+    "satisfied": null,
+    "postcondition": "After reopening the opportunity \"Acme Demo\", it displays the \"Won\" ribbon and its stage is \"Won\".",
+    "observed": "",
+    "checks": {},
+    "evidence_refs": [],
+    "user_confirmed": null
+  },
+  "status": "escalated",
+  "category": "permissions",
+  "suspected_cause": "Access Error: You are not allowed to modify 'Lead/Opportunity' records.",
+  "needs_human": true,
+  "escalation": {
+    "blocked_on": "Access Error: You are not allowed to modify 'Lead/Opportunity' records.",
+    "attempts": 1,
+    "decision_expected": "Support must decide whether to grant the user the \"Sales / Administrator\" right for this action, or to perform the change on the user's behalf.",
+    "suggested_next_step": "Grant or confirm the user's access rights, then let the user retry."
+  },
+  "evidence": [
+    {
+      "ref": "sim_sess_45e83c0c7d77",
+      "kind": "h_session",
+      "description": "H session trace (steps and screenshots)",
+      "path": null,
+      "url": null,
+      "shareable_with_support": false
+    }
+  ],
+  "feedback": null,
+  "h_session_ids": [
+    "sim_sess_45e83c0c7d77"
+  ],
+  "timings": {
+    "started_at": "2026-11-07T21:30:14.783008Z",
+    "approved_at": "2026-11-07T21:30:14.783563Z",
+    "finished_at": "2026-11-07T21:30:17.806991Z",
+    "stop_requested_at": null,
+    "stop_effective_at": null
+  },
+  "cost_usd": 0.0,
+  "simulated": true,
+  "demo_data": true
+}

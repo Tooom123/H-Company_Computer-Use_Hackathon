@@ -6,6 +6,7 @@ from html import escape
 from typing import Any
 
 from .escalation import build_escalation
+from .timeline import attempts, build_timeline, duration_s, had_takeover, stop_latency_s
 from .grouping import Group
 from .store import StoredCase
 
@@ -35,7 +36,14 @@ padding:0 5px;margin-left:6px;font-weight:600;letter-spacing:.03em}
 .hide-sm{display:none}}
 dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:4px 14px}dt{color:var(--muted)}dd{margin:0}
 .decision{border-left:4px solid var(--bad)}.muted{color:var(--muted)}ol{margin:0;padding-left:20px}
-.wrap{overflow-x:auto}.fixcard{margin-top:12px;border-left:4px solid var(--accent)}.devin-ask{margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--chip)}.devin-ask textarea{width:100%;margin:6px 0;font:inherit;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.fixbtn{margin-top:4px;padding:8px 14px;border-radius:8px;border:0;background:var(--fg);color:var(--bg);font-weight:600;cursor:pointer}.card>b{display:block;margin:0 0 8px}
+.wrap{overflow-x:auto}
+.timeline{list-style:none;margin:0;padding:0}.tl{display:grid;grid-template-columns:64px 104px 1fr;gap:10px;
+padding:7px 8px;border-left:4px solid var(--line);margin:3px 0;border-radius:4px}.tl-when{color:var(--muted);
+font-variant-numeric:tabular-nums}.tl-tag{font-size:12px;font-weight:600}.tl-explain{border-color:#7c4dff}
+.tl-stuck{border-color:var(--warn);background:rgba(179,92,0,.06)}.tl-takeover{border-color:var(--bad)}
+.tl-action,.tl-observe{border-color:var(--accent)}.tl-verify{border-color:var(--ok);background:rgba(43,138,62,.06)}
+.tl-error{border-color:var(--bad)}.tl-system{border-color:var(--line)}
+@media (max-width:720px){.tl{grid-template-columns:1fr}}.fixcard{margin-top:12px;border-left:4px solid var(--accent)}.devin-ask{margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--chip)}.devin-ask textarea{width:100%;margin:6px 0;font:inherit;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.fixbtn{margin-top:4px;padding:8px 14px;border-radius:8px;border:0;background:var(--fg);color:var(--bg);font-weight:600;cursor:pointer}.card>b{display:block;margin:0 0 8px}
 """
 
 
@@ -75,24 +83,26 @@ def _v(value: Any) -> str:
 
 
 def index_page(groups: list[Group], cases: list[StoredCase]) -> str:
-    reports = [c.report for c in cases]
-    n_users = len({c.user_key for c in cases})
-    resolved = sum(1 for r in reports if r.get("status") == "resolved")
+    # metrics count real sessions only: simulated reports are flagged and listed, never counted
+    real = [c for c in cases if not c.simulated]
+    reports = [c.report for c in real]
+    n_sim = len(cases) - len(real)
     verified = sum(1 for r in reports if (r.get("verification") or {}).get("satisfied") is True)
     escalated = sum(1 for r in reports if r.get("status") == "escalated")
     any_sim = any(c.simulated for c in cases)
     any_demo = any(c.demo_data for c in cases)
     kpis = [
-        (len(cases), "assisted sessions"),
-        (n_users, "distinct users"),
+        (len(real), "real assisted sessions"),
+        (len({c.user_key for c in real}), "distinct users"),
         (len(groups), "difficulty groups"),
-        (f"{verified}/{len(cases)}" if cases else "0", "verified resolved"),
+        (f"{verified}/{len(real)}" if real else "0", "verified resolved"),
         (escalated, "escalated to support"),
     ]
     body = [
         f"<h1>Support dashboard{_flags(any_sim, any_demo)}</h1>",
         '<p class="sub">Describes assisted sessions only — not all usage of the software. '
-        "Auto-refreshes every 10 s.</p>",
+        + (f"<b>{n_sim} simulated session(s) excluded from the numbers</b> (listed below with their flag). " if n_sim else "")
+        + 'Auto-refreshes every 10 s. <a href="/dashboard/metrics">Reliability metrics →</a></p>',
         '<div class="kpis">' + "".join(f'<div class="kpi"><b>{escape(str(v))}</b><span>{escape(k)}</span></div>' for v, k in kpis) + "</div>",
         "<h2>Difficulty groups</h2>",
     ]
@@ -216,6 +226,51 @@ def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
     return f'<div class="card fixcard"><b>Fix with Devin{sim}</b><dl>{dl}</dl>{ask}{replies}</div>'
 
 
+PHASE_LABEL = {
+    "explain": "Explained", "stuck": "Stuck", "takeover": "Takeover", "action": "Agent action",
+    "observe": "Agent saw", "verify": "Verifier", "error": "Error", "system": "Detail",
+}
+
+
+def _timeline_html(report: dict) -> str:
+    """Steps explained -> where the user got stuck -> takeover -> agent actions -> verifier (PRD: keep the agent's
+    claims and the verifier's observations visually apart)."""
+    tl = build_timeline(report)
+    if not tl:
+        return "<h2>Timeline</h2><div class='card muted'>No step recorded.</div>"
+    rows, detail = [], []
+    for ev in tl:
+        when = escape(str(ev.get("at") or "")[11:19])
+        extra = ""
+        if ev.get("seconds") is not None:
+            extra += f' <span class="muted">· shown after {ev["seconds"]:.1f} s</span>'
+        if ev.get("detail"):
+            extra += f'<div class="muted">{escape(str(ev["detail"]))}</div>'
+        line = (f'<li class="tl tl-{escape(ev["phase"])}"><span class="tl-when">{when}</span>'
+                f'<span class="tl-tag">{escape(PHASE_LABEL.get(ev["phase"], ev["phase"]))}</span>'
+                f'<span class="tl-text">{escape(str(ev["text"]))}{extra}</span></li>')
+        (detail if ev["phase"] == "system" else rows).append(line)
+    more = (f"<details><summary class='muted'>{len(detail)} grounding / screen-check detail(s)</summary>"
+            f"<ol class='timeline'>{''.join(detail)}</ol></details>") if detail else ""
+    return ("<h2>Timeline</h2><div class='card'><p class='muted'>Purple: the assistant explains · amber: the user "
+            "got stuck · blue: the agent acts (its claims) · green: the separate verifier (observed).</p>"
+            f"<ol class='timeline'>{''.join(rows)}</ol>{more}</div>")
+
+
+def _knowledge_html(report: dict) -> str:
+    notes = report.get("knowledge") or []
+    if not notes:
+        return ""
+    items = []
+    for n in notes:
+        src = "".join(f'<li><a href="{escape(x.get("url") or "")}">{escape(x.get("name") or x.get("url") or "")}</a></li>'
+                      for x in n.get("sources") or [])
+        items.append(f'<div class="card" style="margin-bottom:8px"><span class="chip">{escape(n.get("purpose") or "")}</span>'
+                     f'{_flags(bool(n.get("simulated")), False)}<p><b>{escape(n.get("query") or "")}</b></p>'
+                     f'<p>{escape(n.get("answer") or "")}</p><ul>{src}</ul></div>')
+    return "<h2>Documentation looked up (Linkup)</h2>" + "".join(items)
+
+
 def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, fix_repo: str | None = None) -> str:
     e = build_escalation(case)
     ctx, user, agent, obs = e["context"], e["user_declared"], e["agent_declared"], e["observed"]
@@ -230,10 +285,6 @@ def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, f
             f"<dt>Suggested next step</dt><dd>{_v(e['suggested_next_step'])}</dd></dl></div>"
         )
     checks = "".join(f"<li><code>{escape(k)}</code>: {'ok' if v else 'FAILED'}</li>" for k, v in obs["checks"].items())
-    steps = "".join(
-        f"<li><span class='chip'>try {escape(str(s['attempt']))} · {escape(str(s['kind']))}</span> {escape(str(s['summary']))}</li>"
-        for s in e["attempted_steps"]
-    )
     evidence = "".join(
         f"<li><code>{escape(ev['ref'])}</code> ({escape(ev['kind'])}) {escape(ev['description'])}</li>" for ev in e["evidence"]
     )
@@ -241,12 +292,25 @@ def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, f
         evidence += f"<li class='muted'>{e['evidence_withheld']} screenshot(s) withheld — not allowed by the user.</li>"
     fb = user["feedback"] or {}
     group_link = f' · <a href="/dashboard/groups/{escape(group_id)}">group</a>' if group_id else ""
+    r = case.report
+    dur, stop = duration_s(r), stop_latency_s(r)
+    facts = [
+        ("mode", r.get("mode") or "act"),
+        ("takeover", "yes" if had_takeover(r) else "no") if r.get("mode") == "guide" else None,
+        ("attempts", attempts(r)),
+        ("duration", f"{dur:.0f} s" if dur is not None else None),
+        ("stop latency", f"{stop:.2f} s" if stop is not None else None),
+        ("cost", f"${r['cost_usd']:.2f}" if r.get("cost_usd") is not None else None),
+    ]
+    facts_html = "".join(f'<span class="chip">{escape(k)}: <b>{escape(str(v))}</b></span>'
+                         for f in facts if f and f[1] is not None for k, v in [f])
     body = (
         '<p><a href="/dashboard">← Dashboard</a></p>'
         f"<h1>Case {escape(e['case_id'])}{_flags(e['simulated'], e['demo_data'])}</h1>"
         f'<p class="sub">{_status(e["status"])} · <span class="chip">{escape(e["category"] or "")}</span> · '
         f'{escape(str(ctx["software"]))} {escape(str(ctx["software_version"] or ""))} · {escape(str(ctx["os"]))}{group_link} · '
         f'<a href="/cases/{escape(e["case_id"])}/escalation.md">escalation file (.md)</a></p>'
+        f'<p>{facts_html}</p>'
         + decision
         + _fix_card(case, fix, fix_repo)
         + '<div class="grid2" style="margin-top:12px">'
@@ -266,6 +330,7 @@ def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, f
         f"<ul>{checks}</ul></div>"
         f'<div class="card"><b>Evidence</b><ul>{evidence or "<li class=muted>none</li>"}</ul>'
         f"<b>H sessions</b><div>{_chips(e['h_session_ids'])}</div></div></div>"
-        f"<h2>Steps attempted</h2><div class='card'><ol>{steps or '<li class=muted>none</li>'}</ol></div>"
+        + _timeline_html(r)
+        + _knowledge_html(r)
     )
     return _page(f"Case {e['case_id']}", body)

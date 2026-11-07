@@ -1,0 +1,252 @@
+{
+  "case_id": "case_f15d38b1ee30",
+  "session_id": "sess_2a203a9c37ad",
+  "software": "odoo",
+  "software_version": "19.0",
+  "os": "Linux 7.0.0-38-generic",
+  "role": "new sales rep",
+  "session_type": "support",
+  "goal": "test odoo_crm_create_opportunity",
+  "symptom": null,
+  "mode": "guide",
+  "procedure_id": "odoo_crm_create_opportunity",
+  "approved_scope": {
+    "objective": "Create an opportunity named \"Acme Demo\" in the \"New\" column of the Odoo CRM pipeline.",
+    "planned_changes": [
+      "Add one opportunity card titled \"Acme Demo\" in the pipeline. Nothing else is modified."
+    ],
+    "allowed_actions": [
+      "Move the mouse pointer to show where a control is.",
+      "Read the screen to explain what is displayed."
+    ],
+    "forbidden_actions": [
+      "Clicking, typing or changing anything in the software.",
+      "Sending any email or external message.",
+      "Deleting, archiving or editing any existing record.",
+      "Leaving the Odoo browser tab or opening other applications.",
+      "Entering credentials. If a login screen appears, stop and report it."
+    ],
+    "reversible": true,
+    "max_attempts": 2,
+    "explanation": "As a new sales rep, you asked: \"test odoo_crm_create_opportunity\". I will guide you step by step to create an opportunity named \"Acme Demo\" in the \"New\" column of the Odoo CRM pipeline. I will explain each step and point at the control on your screen; you perform the clicks. I will not change anything myself.",
+    "mode": "guide",
+    "documentation": null,
+    "sources": [],
+    "observes": "Screenshots of the main display are sent to H during the intervention."
+  },
+  "guidance": [
+    {
+      "index": 1,
+      "instruction": "Clique sur New",
+      "where": "the purple New button at the top-left of the pipeline, next to Generate",
+      "why": "Ça ouvre une petite carte pour créer une opportunité directement dans la colonne New.",
+      "pointer": [
+        520,
+        380
+      ],
+      "box": [
+        460,
+        366,
+        120,
+        28
+      ],
+      "kind": "click",
+      "annotations": [],
+      "last": false
+    },
+    {
+      "index": 2,
+      "instruction": "Tape « Acme Demo » dans le champ Opportunity",
+      "where": "the Opportunity title text field inside the quick-create card in the New column",
+      "why": "C'est le nom que ton équipe verra dans le pipeline.",
+      "pointer": [
+        580,
+        420
+      ],
+      "box": [
+        520,
+        406,
+        120,
+        28
+      ],
+      "kind": "type",
+      "annotations": [],
+      "last": false
+    },
+    {
+      "index": 3,
+      "instruction": "Clique sur Add",
+      "where": "the purple Add button at the bottom of the quick-create card",
+      "why": "Ça enregistre la carte ; elle reste modifiable ensuite.",
+      "pointer": [
+        640,
+        460
+      ],
+      "box": [
+        580,
+        446,
+        120,
+        28
+      ],
+      "kind": "click",
+      "annotations": [],
+      "last": false
+    },
+    {
+      "index": 4,
+      "instruction": "C'est fait, je vérifie le résultat",
+      "where": "",
+      "why": "",
+      "pointer": null,
+      "box": null,
+      "kind": "info",
+      "annotations": [],
+      "last": true
+    }
+  ],
+  "knowledge": [],
+  "scope_note": null,
+  "steps": [
+    {
+      "index": 0,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:10.683449Z",
+      "kind": "action",
+      "summary": "screen check: ok ([simulated] expected screen displayed)",
+      "detail": {}
+    },
+    {
+      "index": 1,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:11.083732Z",
+      "kind": "observation",
+      "summary": "locate (1/1): the CRM app icon or menu entry -> not found",
+      "detail": {
+        "latency_s": 0.0
+      }
+    },
+    {
+      "index": 2,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:11.484080Z",
+      "kind": "observation",
+      "summary": "locate (1/3): the purple New button at the top-left of the pipeline, next to Generate -> found",
+      "detail": {
+        "latency_s": 0.01
+      }
+    },
+    {
+      "index": 3,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:11.484294Z",
+      "kind": "action",
+      "summary": "step 1 shown after 0.4s: Clique sur New",
+      "detail": {}
+    },
+    {
+      "index": 4,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:12.198589Z",
+      "kind": "observation",
+      "summary": "locate (1/3): the Opportunity title text field inside the quick-create card in the New column -> found",
+      "detail": {
+        "latency_s": 0.01
+      }
+    },
+    {
+      "index": 5,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:12.198853Z",
+      "kind": "action",
+      "summary": "step 2 shown after 0.0s: Tape « Acme Demo » dans le champ Opportunity",
+      "detail": {}
+    },
+    {
+      "index": 6,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:12.899481Z",
+      "kind": "observation",
+      "summary": "locate (1/3): the purple Add button at the bottom of the quick-create card -> found",
+      "detail": {
+        "latency_s": 0.01
+      }
+    },
+    {
+      "index": 7,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:30:12.899726Z",
+      "kind": "action",
+      "summary": "step 3 shown after 0.0s: Clique sur Add",
+      "detail": {}
+    },
+    {
+      "index": 8,
+      "attempt": 0,
+      "timestamp": "2026-11-07T21:30:13.600724Z",
+      "kind": "observation",
+      "summary": "[simulated] reload page",
+      "detail": {}
+    },
+    {
+      "index": 9,
+      "attempt": 0,
+      "timestamp": "2026-11-07T21:30:14.001032Z",
+      "kind": "action",
+      "summary": "[simulated] open opportunity",
+      "detail": {}
+    },
+    {
+      "index": 10,
+      "attempt": 0,
+      "timestamp": "2026-11-07T21:30:14.401287Z",
+      "kind": "observation",
+      "summary": "[simulated] read activities",
+      "detail": {}
+    }
+  ],
+  "declared": {
+    "outcome": "done",
+    "summary": "User completed the scripted steps.",
+    "blocker": null,
+    "blocker_category": null,
+    "steps_taken": [
+      "Clique sur New",
+      "Tape « Acme Demo » dans le champ Opportunity",
+      "Clique sur Add"
+    ]
+  },
+  "verification": {
+    "performed": true,
+    "satisfied": true,
+    "postcondition": "The CRM pipeline shows a card titled \"Acme Demo\" in the \"New\" column.",
+    "observed": "[simulated] all checks visible",
+    "checks": {
+      "pipeline_displayed": true,
+      "card_present": true
+    },
+    "evidence_refs": [
+      "sim_verify_sess_2a203a9c37ad"
+    ],
+    "user_confirmed": null
+  },
+  "status": "resolved",
+  "category": "usage",
+  "suspected_cause": null,
+  "needs_human": false,
+  "escalation": null,
+  "evidence": [],
+  "feedback": null,
+  "h_session_ids": [
+    "sim_verify_sess_2a203a9c37ad"
+  ],
+  "timings": {
+    "started_at": "2026-11-07T21:30:10.682383Z",
+    "approved_at": "2026-11-07T21:30:10.682970Z",
+    "finished_at": "2026-11-07T21:30:14.401646Z",
+    "stop_requested_at": null,
+    "stop_effective_at": null
+  },
+  "cost_usd": 0.0,
+  "simulated": true,
+  "demo_data": true
+}
