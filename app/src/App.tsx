@@ -7,6 +7,7 @@ import type {
   LiveState,
   RuntimeStatus,
   Settings,
+  ObservationOptions,
 } from "./lib/types";
 
 const defaults: Settings = {
@@ -235,7 +236,7 @@ export default function App() {
     setFrame(next);
     setResult(null);
   };
-  const startObservation = (options: { durationSeconds: 15 | 30 | 60; showOverlay: boolean }) =>
+  const startObservation = (options: ObservationOptions) =>
     void run("observation-start", async () => {
       clearPreparedFrame();
       await applyVisibleSettings();

@@ -142,6 +142,54 @@ comparer des parcours annotés à taille de région, cadre de fenêtre et tâche
 Références d’implémentation : [FaceMesh dans WebGazer](https://github.com/brownhci/WebGazer/blob/master/src/facemesh.mjs)
 et [coordonnées du modèle TensorFlow](https://github.com/tensorflow/tfjs-models/tree/master/face-landmarks-detection#how-to-run-it).
 
+## Calibration des bords et score automatique
+
+Avant d’activer la caméra, choisir **Bords étendus** (défaut) ou **Standard**. Le nouveau
+profil place les cibles des coins à **48 pixels logiques** des bords de la fenêtre couvrant
+l’écran : assez près des coins pour entraîner ces zones, avec une marge qui garde le disque
+et son anneau entièrement visibles. Neuf cibles yeux et cinq cibles tête, comme auparavant.
+Les quatre positions de validation sont distinctes et proches des bords ; elles ne servent
+jamais à entraîner les modèles. Le profil reste attaché à chaque observation.
+
+Les erreurs médianes Standard et Bords étendus portent sur des positions de validation
+différentes : leur comparaison seule ne démontre donc pas un progrès. Utiliser le même
+parcours indépendant ci-dessous. Cette séparation apprentissage/validation suit le principe
+décrit dans la [documentation de calibration Tobii](https://www.developer.tobiipro.com/commonconcepts/calibration.html).
+
+1. Calibrer **Regard + tête**, puis **Commencer le suivi**. Garder position et éclairage.
+2. Préparer une page de démo ; choisir **Écran**, une région fixe (par exemple 800 × 600)
+   et **60 secondes**. Le cadre fenêtre sera un second facteur à tester ensuite.
+3. Cocher **Cible rouge — score automatique**, laisser le **Numéro du parcours** à **42**,
+   puis **Observer et masquer le panneau**. Suivre la cible sans cliquer : avec les yeux
+   en mode Regard, en orientant le visage en mode Tête, avec les deux en mode combiné.
+4. La cible saute vers une nouvelle position environ toutes les trois secondes. Il ne
+   s’agit pas encore d’une poursuite fluide. Chaque bloc de douze positions mélange quatre
+   coins, quatre bords et quatre points intérieurs, avec une petite variation reproductible.
+   La cible ne bouge jamais pendant une capture. Une capture lente peut allonger un palier :
+   le numéro reproduit les positions, pas une chronologie matérielle exacte.
+5. Après retour du panneau, relever **cible entière · images recadrées seules**, **images
+   plein écran**, **surface conservée**, **captures exclues** et le détail bords/intérieur.
+   Refaire avec le même parcours, taille, cadre et durée dans les trois modes. Noter les
+   résultats avant le prochain essai, qui remplace la série conservée en mémoire.
+
+Le score utilise les coordonnées connues de la cible, converties vers les dimensions réelles
+de la capture, et le rectangle effectivement produit. Le sélecteur de région ne reçoit
+**jamais les coordonnées de la cible**. Le centre et le disque entier sont évalués séparément.
+Le contour du crop est masqué pour ne pas guider le participant. Les captures sans acquittement
+de rendu ou dans les 800 premières millisecondes suivant cet acquittement sont exclues.
+L’acquittement arrive après deux frames du renderer, sur une horloge monotone du processus
+principal ; ce n’est pas un timestamp matériel de présentation. La première cible bénéficie
+aussi des trois secondes de préparation. Aucun apprentissage ne se produit pendant l’essai.
+
+Notre overlay rouge est exclu des captures natives comme les autres fenêtres H-Companion.
+Les marqueurs de la revue sont des annotations locales, ajoutées au-dessus des aperçus :
+les PNG préparés pour Holo restent inchangés. Ce test mesure la couverture d’une **fixation
+demandée**, sans prouver que la personne a réellement fixé cette cible. Un plein écran peut
+faire 100 % sans économiser quoi que ce soit ; son score est donc séparé de celui des crops.
+La surface conservée ne mesure ni tokens, ni latence Holo, ni réussite métier. Aucun appel
+Holo n’est déclenché par ce test. Le contrôle positif Écran complet doit couvrir toutes les
+cibles évaluables ; il valide le câblage du score, pas la précision de la webcam.
+
 ## Ce qui est mesuré
 
 - `detail.dataUrl` et `global.dataUrl` sont les buffers utilisés par `buildRequest()`, sans
@@ -183,6 +231,8 @@ mais pas encore les coûts et performances de plusieurs essais Holo.
 | `src/lib/head-pose.ts`, `electron/attention-selection.mjs` | Orientation approximative, calibration tête et sélection/fusion des signaux |
 | `src/Overlay.tsx` | Rectangle candidate / envoyé, sans interception de clics |
 | `src/ObservationPanel.tsx`, `electron/observation-session.mjs` | Sessions locales bornées, revue et annotations |
+| `src/lib/calibration-targets.ts` | Profils de calibration et validation distincte, jusqu’aux bords |
+| `electron/target-benchmark.mjs`, `target-sequence.mjs` | Parcours indépendant reproductible, synchronisation et score géométrique |
 | `electron/main.mjs`, `preload.cjs` | Fenêtres, permissions, IPC borné, orchestration et annulation |
 | `native/capture.swift`, `electron/capture.mjs` | ScreenCaptureKit, exclusion du processus, PNG et recadrage |
 | `electron/geometry.mjs` | Transformations capture / écran / coordonnées Holo |

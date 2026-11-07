@@ -162,7 +162,30 @@ async function installFixture(page: Page, keyConfigured = true) {
             global: state.settings.includeGlobal ? makeImage(480, 300) : null,
             preparationMs: 34, gazeAgeMs: 22, simulated: true, captureMethod: "explicit-browser-fixture", annotation: null,
           }));
-          state.observation = { ...state.observation, status: "stopped", sampleCount: 2, stopReason: "duration" };
+          if (fixtureWindow.__labFixture.observationOptions?.benchmark) {
+            const seed = Number(fixtureWindow.__labFixture.observationOptions.seed);
+            const first = observationFrames[0];
+            const score = {
+              target: { id: "fixture-target-0", index: 0, seed: String(seed), x: 100, y: 150, radius: 12, zone: "edge" },
+              targetPixels: { x: 200, y: 300, radiusX: 24, radiusY: 24 }, mode: state.settings.selection, signalUsed: state.settings.selection,
+              scorable: true, reason: null, centerContained: true, fullContained: true,
+              areaFraction: 0.1, fullFrame: false, fullFallback: false,
+              presentedAt: 100, selectionAt: 1000, captureCompletedAt: 1200, settleMs: 800,
+            };
+            const zero = { total: 0, scored: 0, unscored: 0, centerHits: 0, fullHits: 0, croppedScored: 0, croppedFullHits: 0, fullFrames: 0, fullFallbacks: 0, meanAreaFraction: null };
+            const total = { total: 3, scored: 2, unscored: 1, centerHits: 2, fullHits: 2, croppedScored: 1, croppedFullHits: 1, fullFrames: 1, fullFallbacks: 1, meanAreaFraction: 0.55 };
+            observationFrames = [
+              { ...first, calibrationProfile: "wide", benchmark: score },
+              { ...first, frameId: "observed-fixture-2", cropRect: {x: 0, y: 0, width: 2880, height: 1800}, detail: makeImage(2880, 1800), global: null,
+                regionDisposition: "full-fallback", fallbackReason: "Signal absent : plein écran", signalUsed: "full", calibrationProfile: "wide",
+                benchmark: { ...score, areaFraction: 1, fullFrame: true, fullFallback: true, signalUsed: "full" } },
+              { ...first, frameId: "observed-fixture-3", calibrationProfile: "wide",
+                benchmark: { ...score, scorable: false, reason: "transition", centerContained: null, fullContained: null, selectionAt: 300 } },
+            ];
+            state.observation.benchmark = { seed };
+            state.observation.benchmarkSummary = { ...total, byMode: {[state.settings.selection]: total}, bySignal: {}, edge: total, interior: zero };
+          }
+          state.observation = { ...state.observation, status: "stopped", sampleCount: observationFrames.length, stopReason: "duration" };
           emit();
         },
       };
@@ -263,6 +286,7 @@ async function installFixture(page: Page, keyConfigured = true) {
         },
         reportGaze: () => {},
         reportHead: () => {},
+        reportTargetPresented: () => {},
         reportTracker: () => {},
         finishCalibration: async () => {},
         requestCamera: async () => {},
@@ -270,7 +294,7 @@ async function installFixture(page: Page, keyConfigured = true) {
           fixtureWindow.__labFixture.observationOptions = { ...options, settings: structuredClone(state.settings) };
           observationFrames = [];
           latestFrame = null;
-          state.observation = { ...state.observation, status: "running", sampleCount: 0, startedAt: "2026-11-07T10:00:00.000Z", durationSeconds: options.durationSeconds };
+          state.observation = { ...state.observation, status: "running", sampleCount: 0, startedAt: "2026-11-07T10:00:00.000Z", durationSeconds: options.durationSeconds, benchmark: options.benchmark ? {seed: options.seed} : undefined, benchmarkSummary: undefined };
           emit();
         },
         stopObservation: async () => { fixtureWindow.__labFixture.finishObservation(); },
@@ -289,7 +313,7 @@ async function installFixture(page: Page, keyConfigured = true) {
         clearObservations: async () => {
           observationFrames = [];
           latestFrame = null;
-          state.observation = { ...state.observation, status: "idle", sampleCount: 0 };
+          state.observation = { ...state.observation, status: "idle", sampleCount: 0, benchmark: undefined, benchmarkSummary: undefined };
           emit();
         },
       };
@@ -304,6 +328,53 @@ async function finishFixture(page: Page, outcome: "completed" | "failed") {
     outcome,
   );
 }
+
+test("scores a seeded target session separately from full-screen fallback and keeps review markers out of the payload", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("checkbox", {name: "Montrer le contour pendant l’essai"}).check();
+  await page.getByRole("checkbox", {name: "Cible rouge — score automatique"}).check();
+  await expect(page.getByRole("checkbox", {name: "Montrer le contour pendant l’essai"})).not.toBeChecked();
+  await expect(page.getByRole("checkbox", {name: "Montrer le contour pendant l’essai"})).toBeDisabled();
+  await page.getByRole("spinbutton", {name: "Numéro du parcours"}).fill("42");
+  await page.getByRole("combobox", {name: "Durée de l’essai"}).selectOption("15");
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toMatchObject({benchmark: true, seed: 42, durationSeconds: 15, showOverlay: false});
+  await page.getByRole("button", {name: "Arrêter l’observation"}).click();
+  const score = page.getByRole("region", {name: "Score automatique de la cible"});
+  await expect(score).toContainText("Score automatique · parcours 42");
+  await expect(score).toContainText("2 / 2 (100 %)");
+  await expect(score).toContainText("1 / 1 (100 %)");
+  await expect(score).toContainText("dont 1 repli(s)");
+  await expect(score).toContainText("55 %");
+  await expect(score).toContainText("1 capture(s) exclue(s)");
+  await expect(score).toContainText("Bords étendus");
+  await expect(page.getByRole("img", {name: "Position connue de la cible rouge — annotation locale"})).toHaveCount(2);
+  await expect(page.getByRole("button", {name: "Cible présente", exact: true})).toHaveCount(0);
+  const exactImage = await page.getByRole("img", {name: "Région retenue pendant l’essai"}).getAttribute("src");
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+  await page.getByRole("button", {name: "Envoyer à Holo"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.requests[0].detailDataUrl)).toBe(exactImage);
+  await finishFixture(page, "completed");
+  await page.getByRole("button", {name: "Capture suivante"}).click();
+  await expect(page.getByText("Signal absent : plein écran", {exact: false}).first()).toBeVisible();
+  await page.getByRole("button", {name: "Capture suivante"}).click();
+  await expect(page.getByLabel("Résultat automatique de cette capture")).toContainText("Capture exclue du score");
+  await expect(page.getByLabel("Résultat automatique de cette capture")).toContainText("Délai de stabilisation");
+  expect(await page.evaluate(() => (window as any).__labFixture.annotationCalls)).toHaveLength(0);
+});
+
+test("rejects invalid target sequence numbers before starting a session", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("checkbox", {name: "Cible rouge — score automatique"}).check();
+  await page.getByRole("spinbutton", {name: "Numéro du parcours"}).fill("-1");
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await expect(page.getByRole("alert")).toContainText("numéro de parcours entier");
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
 
 test("starts a local hidden-panel observation with applied dimensions and locks competing actions", async ({ page }) => {
   await installFixture(page);

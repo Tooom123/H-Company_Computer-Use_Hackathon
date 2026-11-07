@@ -57,8 +57,30 @@ try {
   await panel.evaluate(() => window.companion.stopObservation());
   assert.equal(await panel.evaluate(() => window.companion.listObservations()).then(frames => frames.length), 0);
   assert.equal(await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL() === 'hcompanion://localhost/')?.isVisible()), true);
+  // Exercise the actual benchmark overlay and its presentation callback, still
+  // stopping in the lead-in before any physical screenshot can be requested.
+  await panel.getByRole('checkbox', { name: 'Cible rouge — score automatique' }).check();
+  await panel.getByRole('button', { name: 'Observer et masquer le panneau' }).click();
+  const targetOverlay = instance.windows().find(page => page.url().endsWith('#overlay'));
+  assert.ok(targetOverlay);
+  await targetOverlay.getByTestId('benchmark-target').waitFor({ timeout: 1500 });
+  const benchmarkState = await panel.evaluate(() => window.companion.getState());
+  assert.equal(benchmarkState.observation.benchmark.seed, 42);
+  assert.equal(benchmarkState.benchmarkTarget.index, 0);
+  assert.deepEqual(await instance.evaluate(({ BrowserWindow }) => {
+    const windows = BrowserWindow.getAllWindows();
+    return {
+      panelVisible: windows.find(w => w.webContents.getURL() === 'hcompanion://localhost/')?.isVisible(),
+      overlayVisible: windows.find(w => w.webContents.getURL().endsWith('#overlay'))?.isVisible(),
+      overlayFocusable: windows.find(w => w.webContents.getURL().endsWith('#overlay'))?.isFocusable(),
+    };
+  }), { panelVisible: false, overlayVisible: true, overlayFocusable: false });
+  await panel.evaluate(() => window.companion.stopObservation());
+  assert.equal((await panel.evaluate(() => window.companion.getState())).benchmarkTarget, null);
+  assert.equal(await panel.evaluate(() => window.companion.listObservations()).then(frames => frames.length), 0);
+  await targetOverlay.getByTestId('benchmark-target').waitFor({ state: 'detached' });
   assert.deepEqual(errors, []);
-  console.log('Electron smoke passed: isolated IPC, local WebGazer/WASM, synthetic camera, hidden-panel observation start/stop. No physical webcam, capture or Holo call.');
+  console.log('Electron smoke passed: isolated IPC, local WebGazer/WASM, synthetic camera, hidden-panel observation and red-target start/stop. No physical webcam, capture or Holo call.');
 } finally {
   await instance.close();
   await rm(profile, { recursive: true, force: true });

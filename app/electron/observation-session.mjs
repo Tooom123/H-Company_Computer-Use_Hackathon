@@ -5,7 +5,10 @@ export function validateObservationOptions(input) {
   if (!input || ![15, 30, 60].includes(input.durationSeconds) || typeof input.showOverlay !== 'boolean') {
     throw new Error('Choisissez une durée de 15, 30 ou 60 secondes et le mode du contour.');
   }
-  return { durationSeconds: input.durationSeconds, showOverlay: input.showOverlay };
+  if (input.benchmark !== undefined && typeof input.benchmark !== 'boolean') throw new Error('Mode de test cible invalide.');
+  if (input.benchmark === true && (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 0xffff_ffff)) throw new Error('La graine doit être un entier entre 0 et 4 294 967 295.');
+  return { durationSeconds: input.durationSeconds, showOverlay: input.benchmark ? false : input.showOverlay,
+    ...(input.benchmark ? { benchmark: true, seed: input.seed } : {}) };
 }
 
 /** Serial local sampling. Images stay in bounded memory and never enter state broadcasts. */
@@ -32,7 +35,8 @@ export class ObservationSession {
     this.samples = []; this.bytes = 0;
     const controller = new AbortController();
     this.controller = controller;
-    this.state = { status: 'running', sampleCount: 0, startedAt: new Date().toISOString(), durationSeconds: options.durationSeconds, intervalMs: 1000 };
+    this.state = { status: 'running', sampleCount: 0, startedAt: new Date().toISOString(), durationSeconds: options.durationSeconds, intervalMs: 1000,
+      ...(options.benchmark ? { benchmark: { seed: options.seed } } : {}) };
     this.publish();
     this.finished = this.run(controller, options);
   }
@@ -91,6 +95,7 @@ export class ObservationSession {
       gazeAgeMs: f.gazeAgeMs, fallbackReason: f.fallbackReason, regionDisposition: f.regionDisposition,
       selectedWindow: f.selectedWindow, annotation,
       signalUsed: f.signalUsed, signalReason: f.signalReason, headAgeMs: f.headAgeMs,
+      benchmark: f.benchmark, calibrationProfile: f.calibrationProfile,
     }));
   }
   select(id) {

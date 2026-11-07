@@ -1,12 +1,22 @@
 export type Rect = { x: number; y: number; width: number; height: number };
 export type DisplayInfo = { id: number; bounds: Rect; scaleFactor: number };
+export type ObservationOptions = { durationSeconds: 15 | 30 | 60; showOverlay: boolean; benchmark?: boolean; seed?: number };
+export type BenchmarkTarget = { id: string; index: number; x: number; y: number; radius: number; zone: 'edge' | 'interior'; seed: string };
+export type BenchmarkScore = {
+  target: BenchmarkTarget; targetPixels: { x: number; y: number; radiusX: number; radiusY: number };
+  scorable: boolean; reason: null | 'unpresented' | 'transition' | 'unstable' | 'invalid-timing';
+  centerContained: boolean | null; fullContained: boolean | null; areaFraction: number; fullFrame: boolean; fullFallback: boolean;
+  mode: string; signalUsed?: string; presentedAt: number | null; selectionAt: number; captureCompletedAt: number; settleMs: number;
+};
+export type BenchmarkCounts = { total: number; scored: number; unscored: number; centerHits: number; fullHits: number; croppedScored: number; croppedFullHits: number; fullFrames: number; fullFallbacks: number; meanAreaFraction: number | null };
+export type BenchmarkSummary = BenchmarkCounts & { byMode: Record<string, BenchmarkCounts>; bySignal: Record<string, BenchmarkCounts>; edge: BenchmarkCounts; interior: BenchmarkCounts };
 export type Settings = { selection: 'gaze' | 'head' | 'hybrid' | 'cursor' | 'full'; roiWidth: number; roiHeight: number; includeGlobal: boolean; overlay: boolean; regionScope?: 'screen' | 'window' };
 export type RuntimeStatus = { platform: string; model: string; models?: string[]; apiKeyConfigured: boolean; captureAvailable: boolean; captureError?: string; display: DisplayInfo; observationShortcutAvailable?: boolean };
-export type TrackerStatus = { state: 'off' | 'calibrating' | 'tracking' | 'lost' | 'error'; message?: string; calibrationErrorPx?: number; gazeCalibrated?: boolean; headCalibrated?: boolean; headCalibrationErrorPx?: number; headMessage?: string };
-export type ObservationStatus = { status: 'idle' | 'running' | 'stopping' | 'stopped'; sampleCount: number; startedAt: string | null; durationSeconds: number; intervalMs: number; error?: string; stopReason?: string };
+export type TrackerStatus = { state: 'off' | 'calibrating' | 'tracking' | 'lost' | 'error'; message?: string; calibrationErrorPx?: number; gazeCalibrated?: boolean; headCalibrated?: boolean; headCalibrationErrorPx?: number; headMessage?: string; calibrationProfile?: 'standard' | 'wide' };
+export type ObservationStatus = { status: 'idle' | 'running' | 'stopping' | 'stopped'; sampleCount: number; startedAt: string | null; durationSeconds: number; intervalMs: number; error?: string; stopReason?: string; benchmark?: { seed: number }; benchmarkSummary?: BenchmarkSummary };
 export type SelectedWindow = { id: number; appName: string; bounds: Rect };
 export type ObservationLabel = 'present' | 'absent' | 'uncertain';
-export type LiveState = { tracker: TrackerStatus; candidate: Rect | null; sent: { frameId: string; rect: Rect } | null; observed?: { frameId: string; rect: Rect } | null; busy: 'capture' | 'inference' | null; settings: Settings; observation?: ObservationStatus; head?: { available: boolean; yaw: number | null; pitch: number | null; roll: number | null; ageMs: number | null } };
+export type LiveState = { tracker: TrackerStatus; candidate: Rect | null; sent: { frameId: string; rect: Rect } | null; observed?: { frameId: string; rect: Rect } | null; busy: 'capture' | 'inference' | null; settings: Settings; observation?: ObservationStatus; head?: { available: boolean; yaw: number | null; pitch: number | null; roll: number | null; ageMs: number | null }; benchmarkTarget?: (BenchmarkTarget & { runId: string }) | null };
 export type EncodedImage = { dataUrl: string; width: number; height: number; sha256: string };
 export type CaptureFrame = {
   frameId: string; capturedAt: string; sourceWidth: number; sourceHeight: number;
@@ -18,10 +28,11 @@ export type CaptureFrame = {
   selectedWindow?: SelectedWindow;
   windowFallbackReason?: string;
   signalUsed?: Settings['selection']; signalReason?: string; headAgeMs?: number | null;
+  benchmark?: BenchmarkScore; calibrationProfile?: 'standard' | 'wide';
   detail: EncodedImage; global: EncodedImage | null; preparationMs: number; gazeAgeMs: number | null;
   simulated: boolean; captureMethod: string;
 };
-export type ObservationSample = Pick<CaptureFrame, 'frameId' | 'capturedAt' | 'cropRect' | 'sourceWidth' | 'sourceHeight' | 'preparationMs' | 'gazeAgeMs' | 'fallbackReason' | 'regionDisposition' | 'selectedWindow' | 'signalUsed' | 'signalReason' | 'headAgeMs'> & { annotation: ObservationLabel | null };
+export type ObservationSample = Pick<CaptureFrame, 'frameId' | 'capturedAt' | 'cropRect' | 'sourceWidth' | 'sourceHeight' | 'preparationMs' | 'gazeAgeMs' | 'fallbackReason' | 'regionDisposition' | 'selectedWindow' | 'signalUsed' | 'signalReason' | 'headAgeMs' | 'benchmark' | 'calibrationProfile'> & { annotation: ObservationLabel | null };
 export type InferenceResult = {
   frameId: string; requestId: string | null; startedAt: string; latencyMs: number;
   usage: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null; cachedInputTokens: number | null };
@@ -39,7 +50,7 @@ export interface CompanionBridge {
   capture(): Promise<CaptureFrame>;
   analyze(input: { frameId: string; prompt: string; model?: string }): Promise<InferenceResult>;
   cancel(): Promise<void>;
-  startObservation(options: { durationSeconds: 15 | 30 | 60; showOverlay: boolean }): Promise<void>;
+  startObservation(options: ObservationOptions): Promise<void>;
   stopObservation(): Promise<void>;
   listObservations(): Promise<ObservationSample[]>;
   selectObservation(frameId: string): Promise<CaptureFrame>;
@@ -49,6 +60,7 @@ export interface CompanionBridge {
   // Restricted by main process to the tracker window; viewport coordinates on the primary display.
   reportGaze(sample: GazeSample | null): void;
   reportHead(sample: HeadSample | null): void;
+  reportTargetPresented(sample: { runId: string; index: number }): void;
   reportTracker(status: TrackerStatus): void;
   finishCalibration(): Promise<void>;
   requestCamera(): Promise<void>;

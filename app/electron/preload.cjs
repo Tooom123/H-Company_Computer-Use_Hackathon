@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('companion', {
   },
   reportGaze: sample => ipcRenderer.send('companion:gaze', sample),
   reportHead: sample => ipcRenderer.send('companion:head', sample),
+  reportTargetPresented: sample => ipcRenderer.send('companion:target-presented', sample),
   reportTracker: status => ipcRenderer.send('companion:tracker-status', status),
   finishCalibration: () => ipcRenderer.invoke('companion:finish-calibration'),
   requestCamera: () => ipcRenderer.invoke('companion:request-camera'),

@@ -1,5 +1,52 @@
 import { expect, test } from '@playwright/test';
 
+test('offers wide calibration by default and places its first eye target 48 logical pixels from the true edges', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 650 });
+  await page.addInitScript(() => {
+    const api = {
+      params: { faceMeshSolutionPath: '' },
+      async begin() { return api; },
+      pause() { return api; },
+      async clearData() {},
+      clearGazeListener() { return api; },
+      setGazeListener() { return api; },
+      setRegression() { return api; },
+      removeMouseEventListeners() { return api; },
+      recordScreenPosition() { return api; },
+      getRegression() { return [{ getData: () => [] }]; },
+      getTracker() { return { getPositions: () => null }; },
+      saveDataAcrossSessions() { return api; },
+      showPredictionPoints() { return api; },
+      showVideoPreview() { return api; },
+    };
+    Object.assign(window, { webgazer: api, companion: {
+      async getState() { return { tracker: { state: 'off' }, settings: { selection: 'gaze' } }; },
+      async requestCamera() {}, async finishCalibration() {}, async stopTracker() {},
+      reportGaze() {}, reportHead() {}, reportTracker() {},
+    } });
+  });
+  await page.goto('/tracker.html#tracker');
+  await expect(page.getByRole('combobox', { name: 'Profil de calibration' })).toHaveValue('wide');
+  await page.getByRole('button', { name: /Activer la caméra et calibrer/ }).click();
+  const target = page.getByRole('button', { name: 'Cible 1', exact: true });
+  await expect(target).toBeVisible();
+  const bounds = (await target.boundingBox())!;
+  expect(bounds.x + bounds.width / 2).toBe(48);
+  expect(bounds.y + bounds.height / 2).toBe(48);
+  expect(bounds.x).toBeGreaterThanOrEqual(9); // the outer ring also remains visible
+  expect(bounds.y).toBeGreaterThanOrEqual(9);
+  const close = (await page.getByRole('button', { name: /Fermer la calibration/ }).boundingBox())!;
+  expect(close.y).toBeGreaterThan(bounds.y + bounds.height + 9);
+  // Calibration labels must stay at the displayed point while the user presses.
+  // The generic button active transform must not make this target jump away.
+  await target.hover();
+  await page.mouse.down();
+  expect(await target.evaluate(element => element.matches(':active'))).toBe(true);
+  await expect(target).toHaveCSS('transition-property', 'background');
+  await expect(target).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -33, -33)');
+  await page.mouse.up();
+});
+
 // End-to-end React flow with synthetic landmarks, not a camera/accuracy benchmark.
 // No webcam permission, screen capture or Holo request is used by this fixture.
 test('calibrates and validates head-only tracking without eye labels, then rejects stale landmarks', async ({ page }) => {
@@ -73,6 +120,10 @@ test('calibrates and validates head-only tracking without eye labels, then rejec
   });
   await page.goto('/tracker.html#tracker');
   await expect(page.getByRole('heading', { name: 'Calibrons la tête.' })).toBeVisible();
+  // Keep this full-flow fixture comparable with the original calibration.
+  // The wider profile has independent geometry assertions below.
+  await expect(page.getByRole('combobox', { name: 'Profil de calibration' })).toHaveValue('wide');
+  await page.getByRole('combobox', { name: 'Profil de calibration' }).selectOption('standard');
   await page.getByRole('button', { name: /Activer la caméra et calibrer/ }).click();
   await page.getByRole('button', { name: /Calibrer la tête · 5 cibles/ }).click();
   await expect(page.getByText('TÊTE · APPRENTISSAGE', { exact: true })).toBeVisible();
@@ -95,7 +146,7 @@ test('calibrates and validates head-only tracking without eye labels, then rejec
     const fixture = (window as any).__headTrackerFixture;
     return { status: fixture.statuses.at(-1), eyeLabels: fixture.eyeLabels.length, cameraRequests: fixture.cameraRequests, finishCalls: fixture.finishCalls };
   });
-  expect(summary).toMatchObject({ status: { state: 'calibrating', headCalibrated: true, gazeCalibrated: false }, eyeLabels: 0, cameraRequests: 1, finishCalls: 0 });
+  expect(summary).toMatchObject({ status: { state: 'calibrating', headCalibrated: true, gazeCalibrated: false, calibrationProfile: 'standard' }, eyeLabels: 0, cameraRequests: 1, finishCalls: 0 });
   expect(Number.isFinite(summary.status.headCalibrationErrorPx)).toBe(true);
   expect(summary.status.calibrationErrorPx).toBeUndefined();
 

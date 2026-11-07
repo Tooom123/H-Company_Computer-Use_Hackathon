@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CaptureFrame, CompanionBridge, LiveState, ObservationSample } from "./lib/types";
+import type { BenchmarkScore, CaptureFrame, CompanionBridge, LiveState, ObservationOptions, ObservationSample, Rect } from "./lib/types";
 
 type Props = {
   bridge: CompanionBridge;
@@ -18,16 +18,28 @@ type Props = {
   regionScopeDisabled: boolean;
   onRegionScopeChange: (scope: "screen" | "window") => void;
   shortcutAvailable: boolean;
-  onStart: (options: { durationSeconds: 15 | 30 | 60; showOverlay: boolean }) => void;
+  onStart: (options: ObservationOptions) => void;
   onSelect: (frame: CaptureFrame) => void;
   onClear: () => void;
 };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const signalLabels = { gaze: "Regard", head: "Tête", hybrid: "Regard + tête", cursor: "Curseur", full: "Écran complet" };
+const fraction = (hits: number, count: number) => `${hits} / ${count}${count ? ` (${Math.round(100 * hits / count)} %)` : ""}`;
+const benchmarkReasons: Record<string, string> = { unpresented: "Affichage de la cible non confirmé.", transition: "Délai de stabilisation après le changement de cible.", unstable: "La cible a changé pendant la capture.", "invalid-timing": "Horodatage de capture non exploitable." };
+
+/** Local review annotation only: never changes the PNG or the payload sent to Holo. */
+function TargetMarker({ score, viewport }: { score: BenchmarkScore; viewport: Rect }) {
+  const point = score.targetPixels;
+  if (!point || ![point.x, point.y, point.radiusX, point.radiusY].every(Number.isFinite)) return null;
+  return <span className="review-target-marker" role="img" aria-label="Position connue de la cible rouge — annotation locale"
+    style={{ left: `${100 * (point.x - viewport.x) / viewport.width}%`, top: `${100 * (point.y - viewport.y) / viewport.height}%`, width: `${200 * point.radiusX / viewport.width}%`, height: `${200 * point.radiusY / viewport.height}%` }} />;
+}
 
 export default function ObservationPanel({ bridge, observation, disabled, startDisabled, startHint, calibrationState, calibrationLabel, onCalibrate, modeLabel, trackerLabel, headStatus, headAngles, regionScope, regionScopeDisabled, onRegionScopeChange, shortcutAvailable, onStart, onSelect, onClear }: Props) {
   const [durationSeconds, setDurationSeconds] = useState<15 | 30 | 60>(30);
   const [showOverlay, setShowOverlay] = useState(false);
+  const [benchmark, setBenchmark] = useState(false);
+  const [seedDraft, setSeedDraft] = useState("42");
   const [samples, setSamples] = useState<ObservationSample[]>([]);
   const [selected, setSelected] = useState<CaptureFrame | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -37,6 +49,17 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
   onSelectRef.current = onSelect;
   const active = observation?.status === "running" || observation?.status === "stopping";
   const settledCount = active ? 0 : observation?.sampleCount ?? 0;
+  const autoSummary = observation?.benchmarkSummary;
+  const start = () => {
+    setError(null);
+    if (!benchmark) { onStart({ durationSeconds, showOverlay }); return; }
+    const seed = Number(seedDraft);
+    if (!seedDraft.trim() || !Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
+      setError("Choisissez un numéro de parcours entier entre 0 et 4 294 967 295.");
+      return;
+    }
+    onStart({ durationSeconds, showOverlay: false, benchmark: true, seed });
+  };
 
   useEffect(() => {
     const request = ++generation.current;
@@ -123,6 +146,13 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
     <p className="field-note" aria-label="Mode et suivi de l’essai">Mode : <strong>{modeLabel}</strong> · {trackerLabel}</p>
     {headStatus && <p className="field-note head-status" aria-label="Suivi de la tête">{headStatus}{headAngles ? ` · ${headAngles}` : ""}</p>}
     <p className="continuous-intro">Le panneau se masque pendant l’essai. Environ une capture par seconde, puis retour pour vérifier la zone retenue.</p>
+    <div className="benchmark-controls">
+      <label className="continuous-overlay"><input type="checkbox" checked={benchmark} disabled={disabled || active} onChange={event => { setBenchmark(event.target.checked); if (event.target.checked) setShowOverlay(false); }} /> Cible rouge — score automatique</label>
+      {benchmark && <label className="benchmark-seed">Numéro du parcours
+        <input aria-label="Numéro du parcours" type="number" min="0" max="4294967295" step="1" value={seedDraft} disabled={disabled || active} onChange={event => setSeedDraft(event.target.value)} />
+      </label>}
+    </div>
+    {benchmark && <p className="field-note">Suivez la cible rouge : elle change de position environ toutes les 3 secondes. Les 800 premières millisecondes de chaque position sont exclues du score. Le contour reste masqué et ces mesures ne réentraînent pas la calibration.</p>}
     <div className="continuous-controls">
       <label className="continuous-duration">Durée de l’essai
         <select aria-label="Durée de l’essai" value={durationSeconds} disabled={disabled || active} onChange={event => setDurationSeconds(Number(event.target.value) as 15 | 30 | 60)}>
@@ -134,10 +164,10 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
           <option value="screen">Écran</option><option value="window">Fenêtre regardée</option>
         </select>
       </label>
-      <label className="continuous-overlay"><input type="checkbox" checked={showOverlay} disabled={disabled || active} onChange={event => setShowOverlay(event.target.checked)} /> Montrer le contour pendant l’essai</label>
+      <label className="continuous-overlay"><input type="checkbox" checked={showOverlay} disabled={disabled || active || benchmark} onChange={event => setShowOverlay(event.target.checked)} /> Montrer le contour pendant l’essai</label>
       {active ? <button className="button secondary" disabled={observation?.status === "stopping"} onClick={() => void bridge.stopObservation().catch(cause => setError(errorText(cause)))}>{observation?.status === "stopping" ? "Arrêt en cours…" : "Arrêter l’observation"}</button>
         : calibrationState ? <button className="button primary" disabled={disabled || calibrationState === "running" || reviewBusy} onClick={onCalibrate}>{calibrationState === "running" ? "Calibration en cours…" : calibrationLabel}</button>
-          : <button className="button primary" disabled={disabled || startDisabled || reviewBusy || !shortcutAvailable} onMouseDown={event => event.preventDefault()} onClick={() => onStart({ durationSeconds, showOverlay })}>Observer et masquer le panneau</button>}
+          : <button className="button primary" disabled={disabled || startDisabled || reviewBusy || !shortcutAvailable} onMouseDown={event => event.preventDefault()} onClick={start}>Observer et masquer le panneau</button>}
     </div>
     {startHint && !active && <p className="field-note">{startHint}</p>}
     <p className="continuous-shortcut">Retour anticipé : <kbd>⌘ / Ctrl</kbd> + <kbd>Maj</kbd> + <kbd>Espace</kbd>. Le panneau revient aussi à la fin de la durée choisie.</p>
@@ -146,6 +176,21 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
     {active && <p role="status">Observation en cours · {observation?.sampleCount ?? 0} captures conservées. Aucun appel Holo.</p>}
     {!active && observation?.status === "stopped" && <p className="field-note" role="status">{stopReason || "Essai terminé"} · {observation.sampleCount} captures conservées.</p>}
     {(error || observation?.error) && <p className="warning-text" role="alert">{error || observation?.error}</p>}
+    {!active && observation?.benchmark && autoSummary && <section className="benchmark-results" aria-label="Score automatique de la cible">
+      <h3>Score automatique · parcours {observation.benchmark.seed}</h3>
+      <div className="benchmark-metrics">
+        <div><span>Cible entière · toutes images évaluables</span><strong>{fraction(autoSummary.fullHits, autoSummary.scored)}</strong></div>
+        <div><span>Cible entière · images recadrées seules</span><strong>{fraction(autoSummary.croppedFullHits, autoSummary.croppedScored)}</strong></div>
+        <div><span>Images plein écran</span><strong>{autoSummary.fullFrames}<small>dont {autoSummary.fullFallbacks} repli(s)</small></strong></div>
+        <div><span>Surface détaillée conservée · moyenne</span><strong>{autoSummary.meanAreaFraction == null ? "—" : `${Math.round(100 * autoSummary.meanAreaFraction)} %`}</strong></div>
+      </div>
+      <p className="field-note">Centre de la cible inclus : {fraction(autoSummary.centerHits, autoSummary.scored)} · {autoSummary.unscored} capture(s) exclue(s), notamment pendant la stabilisation.</p>
+      <p className="field-note">Cible entière aux bords : {fraction(autoSummary.edge.fullHits, autoSummary.edge.scored)} · à l’intérieur : {fraction(autoSummary.interior.fullHits, autoSummary.interior.scored)}.</p>
+      {autoSummary.scored === 0 && <p className="warning-text">Aucune capture évaluable : aucun taux de couverture ne peut être conclu pour cet essai.</p>}
+      {samples[0]?.calibrationProfile && <p className="field-note">Profil de calibration de cet essai : {samples[0].calibrationProfile === "wide" ? "Bords étendus" : "Standard"}.</p>}
+      <p className="field-note">Comparez le même numéro de parcours, la même durée, les mêmes dimensions et le même cadre de région. Notez le profil de calibration. Un plein écran peut contenir la cible sans produire de recadrage utile. La surface conservée ne mesure pas les tokens économisés.</p>
+      <p className="field-note">Ce score mesure la couverture géométrique d’une cible demandée, pas le regard réel ni la réussite d’une tâche dans le logiciel.</p>
+    </section>}
     {!active && samples.length > 0 && <div className="observation-review">
       <div className="review-toolbar">
         <h3>Revoir les captures</h3>
@@ -162,20 +207,27 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
             {selected.reference ? <div className="review-reference">
               <img src={selected.reference.dataUrl} alt="Bureau de référence de l’essai" />
               <div className="review-crop-outline" aria-label="Zone retenue dans le bureau" style={{left: `${100 * selected.cropRect.x / selected.sourceWidth}%`, top: `${100 * selected.cropRect.y / selected.sourceHeight}%`, width: `${100 * selected.cropRect.width / selected.sourceWidth}%`, height: `${100 * selected.cropRect.height / selected.sourceHeight}%`}} />
+              {selected.benchmark && <TargetMarker score={selected.benchmark} viewport={{ x: 0, y: 0, width: selected.sourceWidth, height: selected.sourceHeight }} />}
             </div> : <p>Référence indisponible pour cette capture.</p>}
           </figure>
-          <figure><figcaption>Région retenue · {selected.detail.width} × {selected.detail.height}</figcaption><img src={selected.detail.dataUrl} alt="Région retenue pendant l’essai" /></figure>
+          <figure><figcaption>Région retenue · {selected.detail.width} × {selected.detail.height}</figcaption><div className="review-detail"><img src={selected.detail.dataUrl} alt="Région retenue pendant l’essai" />{selected.benchmark && <TargetMarker score={selected.benchmark} viewport={selected.cropRect} />}</div></figure>
         </div>
+        {selected.benchmark && <div className="benchmark-frame-result" aria-label="Résultat automatique de cette capture">
+          <strong>{selected.benchmark.scorable ? (selected.benchmark.fullContained ? "Cible entière dans la région" : selected.benchmark.centerContained ? "Centre inclus · cible partiellement coupée" : "Cible hors de la région") : "Capture exclue du score"}</strong>
+          {selected.benchmark.reason && <span>{benchmarkReasons[selected.benchmark.reason] || selected.benchmark.reason}</span>}
+          <span>Cible {selected.benchmark.target.index + 1} · {selected.benchmark.target.zone === "edge" ? "bord de l’écran" : "intérieur"}{selected.calibrationProfile ? ` · calibration ${selected.calibrationProfile === "wide" ? "bords étendus" : "standard"}` : ""}</span>
+          <p>La cible est réaffichée ici comme annotation locale. Les PNG préparés pour Holo restent inchangés et ne contiennent pas notre overlay.</p>
+        </div>}
         <p className="review-context">{selected.selectedWindow ? `Fenêtre : ${selected.selectedWindow.appName}` : "Région de l’écran"} · {new Date(selected.capturedAt).toLocaleTimeString("fr-FR")}{selected.fallbackReason ? ` · Repli : ${selected.fallbackReason}` : ""}</p>
         {selected.signalUsed && <p className="review-context signal-used">Signal utilisé : <strong>{signalLabels[selected.signalUsed]}</strong>{selected.signalReason ? ` · ${selected.signalReason}` : ""}</p>}
         {selected.windowFallbackReason && <p className="warning-text">{selected.windowFallbackReason}</p>}
-        <div className="review-annotation" aria-label="Présence de la cible dans cette capture">
+        {!selected.benchmark && <div className="review-annotation" aria-label="Présence de la cible dans cette capture">
           <span>La cible regardée est-elle dans la région ?</span>
           {([['present', 'Cible présente'], ['absent', 'Cible absente'], ['uncertain', 'Impossible à juger']] as const).map(([label, title]) => <button key={label} className={`button ${current?.annotation === label ? 'primary' : 'secondary'}`} aria-pressed={current?.annotation === label} disabled={locked} onClick={() => void annotate(label)}>{title}</button>)}
-        </div>
+        </div>}
       </>}
-      <p className="review-summary" aria-live="polite">Cible présente : {present} / {labelled} captures jugées{labelled ? ` (${Math.round(100 * present / labelled)} %)` : ""} · {uncertain} incertaine(s) · {unlabelled} non annotée(s).</p>
-      <p className="field-note">Cette annotation mesure la couverture visuelle de la cible, pas la réussite d’une tâche. La capture sélectionnée apparaît également ci-dessous ; son envoi à Holo reste une action séparée.</p>
+      {!observation?.benchmark && <p className="review-summary" aria-live="polite">Cible présente : {present} / {labelled} captures jugées{labelled ? ` (${Math.round(100 * present / labelled)} %)` : ""} · {uncertain} incertaine(s) · {unlabelled} non annotée(s).</p>}
+      <p className="field-note">La capture sélectionnée apparaît également ci-dessous ; son envoi à Holo reste une action séparée.</p>
     </div>}
   </section>;
 }

@@ -10,6 +10,9 @@ html:has(body[data-surface="tracker"]), body[data-surface="tracker"], body[data-
 .tracker-eyebrow { display: block; color: #70877a; letter-spacing: .14em; font-size: 10px; font-weight: 700; }
 .tracker-card h1 { font-size: clamp(26px, 3.2vw, 40px); font-weight: 520; letter-spacing: -.045em; line-height: 1.1; margin: 19px 0 22px; }
 .tracker-card p { line-height: 1.65; color: #62736a; font-size: 14px; }
+.tracker-profile { display: grid; gap: 8px; color: #40564c; font-size: 12px; font-weight: 600; margin-top: 18px; }
+.tracker-profile select { border: 1px solid #c8d4cc; border-radius: 8px; background: #fff; color: #173d3a; padding: 10px 12px; font: inherit; }
+.tracker-card .tracker-profile-note, .tracker-card .tracker-profile-summary { font-size: 12px; line-height: 1.5; }
 .tracker-privacy { display: flex; flex-direction: column; gap: 7px; padding: 19px 20px; margin: 24px 0; border: 1px solid #d9e3da; border-radius: 12px; background: #eaf0e8; font-size: 13px; line-height: 1.55; }
 .tracker-privacy span { color: #617569; }
 .tracker-primary { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 15px; padding: 16px 19px; background: #173d3a; color: #f0f8f1; border: 0; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; margin-top: 22px; }
@@ -24,6 +27,8 @@ html:has(body[data-surface="tracker"]), body[data-surface="tracker"], body[data-
 .tracker-target-number { font-size: 16px; font-weight: 600; }
 .tracker-target.is-sampling { background: #173d3a; color: #f3f8ec; box-shadow: 0 0 0 10px #dce8d4; cursor: default; }
 .tracker-target.is-sampling .tracker-target-ring { border-color: #7b9d79; }
+.tracker-screen .tracker-target { transition: background .15s; }
+.tracker-screen .tracker-target:not(:disabled):active { transform: translate(-50%, -50%); }
 .tracker-footer { position: absolute; left: 50%; bottom: 25px; transform: translateX(-50%); text-align: center; width: min(620px, 90%); color: #5f7467; }
 .tracker-footer strong { font-size: 12px; font-weight: 550; }
 .tracker-footer p { margin: 8px 0 0; font-size: 11px; color: #809184; }
@@ -35,4 +40,9 @@ html:has(body[data-surface="tracker"]), body[data-surface="tracker"], body[data-
 .tracker-loader { display: block; width: 30px; height: 30px; border: 2px solid #d4dfd1; border-top-color: #345c46; border-radius: 50%; animation: tracker-spin 1s linear infinite; }
 @keyframes tracker-spin { to { transform: rotate(360deg); } }
 .tracker-screen button:focus-visible { outline: 3px solid #659860; outline-offset: 5px; }
+.tracker-collecting .tracker-header { inset: 106px 0 auto; justify-content: center; }
+.tracker-collecting .tracker-wordmark { display: none; }
+.tracker-collecting .tracker-close { margin-left: 0; }
+.tracker-collecting .tracker-instruction { top: 29%; max-width: 60%; }
+.tracker-collecting .tracker-footer { bottom: 28%; width: min(620px, 60%); }
 @media (prefers-reduced-motion: reduce) { .tracker-loader { animation: none; } .tracker-progress-track > span { transition: none; } }

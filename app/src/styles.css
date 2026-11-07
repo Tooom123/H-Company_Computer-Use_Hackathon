@@ -1005,8 +1005,23 @@ textarea {
 .review-images figure { margin: 0; min-width: 0; }
 .review-images figcaption { font-size: 11px; color: var(--muted); margin-bottom: 7px; }
 .review-images img { display: block; width: 100%; height: auto; }
-.review-reference { position: relative; }
+.review-reference, .review-detail { position: relative; overflow: hidden; }
 .review-crop-outline { position: absolute; border: 2px solid var(--green); background: #087c6114; pointer-events: none; }
+.review-target-marker { position: absolute; display: block; border-radius: 50%; background: #e62e38d9; border: 1px solid #fff; box-shadow: 0 0 0 1px #9b1124; transform: translate(-50%, -50%); pointer-events: none; }
+.benchmark-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin: 16px 0 12px; }
+.benchmark-seed { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.benchmark-seed input { width: 130px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; }
+.benchmark-results { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #f2f7f1; }
+.benchmark-results h3 { margin: 0 0 15px; font-size: 15px; }
+.benchmark-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.benchmark-metrics > div { display: flex; flex-direction: column; gap: 10px; }
+.benchmark-metrics span { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.benchmark-metrics strong { display: flex; flex-direction: column; font-size: 21px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.benchmark-metrics small { font-size: 11px; font-weight: 400; color: var(--muted); }
+.benchmark-frame-result { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; background: #f7f2ee; border-radius: 8px; font-size: 12px; }
+.benchmark-frame-result span, .benchmark-frame-result p { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.benchmark-frame-result p { margin: 4px 0 0; }
+@media (max-width: 960px) { .benchmark-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .review-context { margin: 12px 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .review-annotation { font-size: 12px; }
 .review-summary { margin-top: 14px; font-size: 12px; font-variant-numeric: tabular-nums; }

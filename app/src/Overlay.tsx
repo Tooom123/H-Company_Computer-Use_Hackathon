@@ -50,7 +50,25 @@ export default function Overlay() {
       document.documentElement.classList.remove("overlay-document");
     };
   }, []);
+  const target = state?.benchmarkTarget;
+  useEffect(() => {
+    if (!target) return;
+    let second = 0;
+    // Acknowledge after two animation frames, not merely when React receives
+    // the coordinates. Main records receipt on its own monotonic clock.
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => window.companion.reportTargetPresented({ runId: target.runId, index: target.index }));
+    });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [target?.runId, target?.index]);
   if (!state) return null;
+  if (target) return <div className="screen-overlay" aria-hidden="true">
+    <div data-testid="benchmark-target" style={{
+      position: 'absolute', left: target.x - target.radius, top: target.y - target.radius,
+      width: 2 * target.radius, height: 2 * target.radius, borderRadius: '50%',
+      boxSizing: 'border-box', background: '#ef233c', border: '2px solid white',
+    }} />
+  </div>;
   const showCaptured = state.observation?.status === 'running' || state.settings.regionScope === 'window';
   return (
     <div className="screen-overlay" aria-hidden="true">

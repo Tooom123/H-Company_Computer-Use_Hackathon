@@ -108,3 +108,12 @@ it('rejects unsupported cadence/duration inputs before capturing', () => {
   }
   expect(validateObservationOptions({ durationSeconds: 30, showOverlay: false })).toEqual({ durationSeconds: 30, showOverlay: false });
 });
+
+it('bounds benchmark seeds and forces off the crop outline so it cannot cue the target test', () => {
+  expect(validateObservationOptions({ durationSeconds: 30, showOverlay: true, benchmark: true, seed: 42 }))
+    .toEqual({ durationSeconds: 30, showOverlay: false, benchmark: true, seed: 42 });
+  for (const seed of [undefined, -1, 1.5, '42', 0x1_0000_0000, NaN]) {
+    expect(() => validateObservationOptions({ durationSeconds: 30, showOverlay: false, benchmark: true, seed })).toThrow();
+  }
+  expect(() => validateObservationOptions({ durationSeconds: 30, showOverlay: false, benchmark: 'yes' })).toThrow();
+});

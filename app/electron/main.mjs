@@ -11,6 +11,8 @@ import { windowIdsFromMediaSources } from './window-ids.mjs';
 import { requestCameraAccess } from './camera-permission.mjs';
 import { ObservationSession, validateObservationOptions } from './observation-session.mjs';
 import { acceptGazeSample, acceptHeadSample, calibratedForSelection, headDiagnostics, selectAttention } from './attention-selection.mjs';
+import { TargetSequence } from './target-sequence.mjs';
+import { summarizeTargetScores } from './target-benchmark.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -41,7 +43,9 @@ const state = {
   tracker: { state: 'off', gazeCalibrated: false, headCalibrated: false },
   head: headDiagnostics(null, performance.now()), candidate: null, sent: null, observed: null, busy: null,
   settings: { selection: 'gaze', roiWidth: 800, roiHeight: 600, includeGlobal: true, overlay: true },
+  benchmarkTarget: null,
 };
+const targets = new TargetSequence({ onTarget: target => { state.benchmarkTarget = target; broadcast(); } });
 const observation = new ObservationSession({
   capture: async signal => {
     operation = new AbortController();
@@ -49,8 +53,9 @@ const observation = new ObservationSession({
       return await captureFrame(AbortSignal.any([signal, operation.signal]), true);
     } finally { operation = null; }
   },
-  onChange: status => { state.observation = status; broadcast(); },
-  onFinish: () => { setOverlayVisibility(); showPanel(); },
+  onChange: status => { state.observation = { ...status,
+    ...(status.benchmark ? { benchmarkSummary: summarizeTargetScores(observation.list().map(sample => sample.benchmark).filter(Boolean)) } : {}) }; broadcast(); },
+  onFinish: () => { targets.stop(); setOverlayVisibility(); showPanel(); },
 });
 state.observation = { ...observation.state };
 
@@ -66,6 +71,8 @@ function recoverPanel() {
 async function captureFrame(signal, reference = false) {
   const generation = displayGeneration;
   const settings = { ...state.settings };
+  const targetSnapshot = reference ? targets.beforeCapture() : null;
+  const calibrationProfile = state.tracker.calibrationProfile;
   const selection = currentSelection(settings);
   state.busy = 'capture'; state.sent = null;
   broadcast();
@@ -77,6 +84,8 @@ async function captureFrame(signal, reference = false) {
     });
     signal.throwIfAborted();
     if (generation !== displayGeneration) throw new Error('Écran modifié pendant la capture. Recommencez.');
+    if (calibrationProfile) captured.calibrationProfile = calibrationProfile;
+    if (targetSnapshot) captured.benchmark = targets.score(targetSnapshot, captured);
     frame = captured;
     state.observed = { frameId: captured.frameId, rect: captureRectToDisplay(captured.cropRect, { width: captured.sourceWidth, height: captured.sourceHeight }, captured.screenBounds) };
     return captured;
@@ -120,7 +129,7 @@ function resetTracker() {
 }
 function setOverlayVisibility() {
   if (!overlay || overlay.isDestroyed()) return;
-  const wanted = observation.active ? observationOverlay : state.settings.overlay;
+  const wanted = observation.active ? observationOverlay || Boolean(state.benchmarkTarget) : state.settings.overlay;
   if (wanted && !calibrationInteractive) overlay.showInactive(); else overlay.hide();
 }
 function currentSelection(settings = state.settings) {
@@ -230,6 +239,12 @@ ipcMain.on('companion:head', (event, sample) => {
   try { authorize(event, tracker); } catch { return; }
   head = acceptHeadSample(sample, display.bounds, performance.now());
 });
+ipcMain.on('companion:target-presented', (event, input) => {
+  try { authorize(event, overlay); } catch { return; }
+  if (!observation.active || !overlay.isVisible() || calibrationInteractive) return;
+  if (!input || typeof input.runId !== 'string' || !Number.isInteger(input.index)) return;
+  targets.acknowledge(input);
+});
 ipcMain.on('companion:tracker-status', (event, status) => {
   try { authorize(event, tracker); } catch { return; }
   if (!status || !['off', 'calibrating', 'tracking', 'lost', 'error'].includes(status.state)) return;
@@ -240,6 +255,7 @@ ipcMain.on('companion:tracker-status', (event, status) => {
     headCalibrated: status.headCalibrated === true,
     headCalibrationErrorPx: Number.isFinite(status.headCalibrationErrorPx) && status.headCalibrationErrorPx >= 0 ? status.headCalibrationErrorPx : undefined,
     headMessage: typeof status.headMessage === 'string' ? status.headMessage.slice(0, 400) : undefined,
+    calibrationProfile: ['standard', 'wide'].includes(status.calibrationProfile) ? status.calibrationProfile : undefined,
   };
   broadcast();
 });
@@ -275,6 +291,7 @@ ipcMain.handle('companion:observation-start', (event, input) => {
   observationOverlay = options.showOverlay;
   frame = null; state.sent = null; state.observed = null;
   panel.hide();
+  if (options.benchmark) targets.start({ seed: options.seed, bounds: display.bounds }); else targets.stop();
   observation.start(options);
   setOverlayVisibility();
 });
