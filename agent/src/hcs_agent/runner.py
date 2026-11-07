@@ -276,7 +276,8 @@ class Intervention:
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             step = script[i]
-            loc = self._locate_with_retries(step.element, context, tries=1 if step.optional else 6)
+            t_step = time.time()
+            loc = self._locate_with_retries(step.element, context, tries=1 if step.optional else 3)
             if loc is None or not loc.found:
                 if step.optional:
                     i += 1
@@ -285,16 +286,14 @@ class Intervention:
                 if nxt and (n := self.backend.locate(nxt.element, context)) and n.found:
                     i += 1  # the user is already past this step
                     continue
-                if done_steps:
-                    # Mid-script and the screen does not match: let the H agent take over from here.
-                    self._emit("needs_human", f"Script lost at step {i + 1}: {step.element} not visible.",
-                               fallback="h_agent")
-                    return None
+                # Not on screen: keep guiding with words (no circle) rather than switching to the slow agent.
                 gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=step.why,
-                                  instruction=f"Affiche {bound.request.software} : je ne vois pas {step.element}")
+                                  kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
             else:
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, kind=step.action, last=False)
+            self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action",
+                               summary=f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}"))
             reply = self._on_guidance(gs)
             if reply is None:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -302,15 +301,14 @@ class Intervention:
             if not did:
                 self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="h_agent")
                 return None
-            if loc is not None and loc.found:
-                done_steps.append(step.instruction)
-                i += 1
+            done_steps.append(step.instruction)
+            i += 1
         self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
 
-    def _locate_with_retries(self, element: str, context: str, tries: int, pause_s: float = 0.8):
+    def _locate_with_retries(self, element: str, context: str, tries: int, pause_s: float = 0.4):
         """The page may still be updating after the user's action: look again a few times before giving up."""
         loc = None
         for attempt in range(tries):
