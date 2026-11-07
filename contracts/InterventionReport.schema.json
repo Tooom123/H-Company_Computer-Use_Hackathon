@@ -1,5 +1,72 @@
 {
   "$defs": {
+    "Annotation": {
+      "description": "An extra mark drawn on screen with a step: a box around a zone, a circled element, a label.",
+      "properties": {
+        "shape": {
+          "default": "label",
+          "enum": [
+            "circle",
+            "box",
+            "underline",
+            "label"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pointer"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        }
+      },
+      "title": "Annotation",
+      "type": "object"
+    },
     "CaseStatus": {
       "enum": [
         "resolved",
@@ -275,6 +342,25 @@
           "default": null,
           "description": "Screen coordinates the agent pointed at.",
           "title": "Pointer"
+        },
+        "kind": {
+          "default": "click",
+          "description": "click / type: act; info: read, moves on by itself; wait: the agent polls the screen.",
+          "enum": [
+            "click",
+            "type",
+            "info",
+            "wait"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "annotations": {
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "last": {
           "default": false,
