@@ -134,3 +134,33 @@ def test_secrets_generated_when_missing():
     s = Settings()
     s.ensure_secrets()
     assert s.ingest_token and s.dashboard_password and len(s.generated_secrets) == 2
+
+
+def test_billing_requires_test_key(client):
+    assert client.get("/billing/plans").json()["configured"] is False
+    r = client.post("/billing/checkout", json={"plan": "pro"})
+    assert r.status_code == 503 and "STRIPE_SECRET_KEY" in r.json()["detail"]
+    assert client.post("/billing/checkout", json={"plan": "gold"}).status_code == 422
+
+
+def test_billing_refuses_live_key_and_creates_test_session(monkeypatch):
+    import hcs_backend.billing as billing
+
+    calls = []
+
+    class FakeSession:
+        @staticmethod
+        def create(**kw):
+            calls.append(kw)
+            return type("S", (), {"url": "https://checkout.stripe.com/c/pay/cs_test_123"})()
+
+    monkeypatch.setattr(billing.stripe.checkout, "Session", FakeSession)
+    live = TestClient(create_app(Settings(ingest_token=TOKEN, dashboard_password="pw", stripe_secret_key="sk_live_x"), Store(":memory:")))
+    assert live.post("/billing/checkout", json={"plan": "pro"}).status_code == 503
+    test = TestClient(create_app(Settings(ingest_token=TOKEN, dashboard_password="pw", stripe_secret_key="sk_test_x"), Store(":memory:")))
+    r = test.post("/billing/checkout", json={"plan": "pro"}, headers={"Origin": "http://127.0.0.1:5173"})
+    assert r.status_code == 200 and r.json()["url"].startswith("https://checkout.stripe.com/")
+    assert r.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+    assert calls[0]["mode"] == "subscription" and calls[0]["line_items"][0]["price_data"]["recurring"] == {"interval": "month"}
+    test.post("/billing/checkout", json={"plan": "fixpack"})
+    assert calls[1]["mode"] == "payment" and "recurring" not in calls[1]["line_items"][0]["price_data"]

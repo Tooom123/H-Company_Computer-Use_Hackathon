@@ -6,10 +6,12 @@ import secrets
 from typing import Annotated, Any
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBasic, HTTPBasicCredentials, HTTPBearer
 
 from . import dashboard
+from .billing import PLANS, BillingNotConfigured, create_checkout
 from .config import Settings
 from .escalation import build_escalation, escalation_markdown, needs_escalation
 from .grouping import Group, group_cases
@@ -27,6 +29,10 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
     app = FastAPI(title="HCS support backend", version="0.1.0")
     app.state.settings = settings
     app.state.store = store
+    # the landing page (another origin) may call /billing/* only
+    landing_origins = {settings.landing_url.rstrip("/"), "http://localhost:5173", "http://127.0.0.1:5173"}
+    app.add_middleware(CORSMiddleware, allow_origins=sorted(landing_origins), allow_methods=["GET", "POST"],
+                       allow_headers=["Content-Type"])
 
     # auth ----------------------------------------------------------------------------------------
     def require_agent(creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]) -> None:
@@ -110,6 +116,24 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             raise HTTPException(422, {"schema": e.schema, "errors": e.errors}) from e
         store.add_event(event)
         return {"accepted": True}
+
+    # billing (public: called by the landing page) -------------------------------------------------
+    @app.get("/billing/plans")
+    def billing_plans() -> dict[str, Any]:
+        return {
+            "configured": settings.stripe_secret_key.startswith(("sk_test_", "rk_test_")),
+            "plans": {k: {"name": v["name"], "amount_eur": v["unit_amount"] / 100, "mode": v["mode"]} for k, v in PLANS.items()},
+        }
+
+    @app.post("/billing/checkout")
+    def billing_checkout(body: Annotated[dict[str, Any], Body()]) -> dict[str, str]:
+        plan = body.get("plan")
+        if plan not in PLANS:
+            raise HTTPException(422, f"unknown plan {plan!r}")
+        try:
+            return {"url": create_checkout(plan, settings.stripe_secret_key, settings.landing_url)}
+        except BillingNotConfigured as e:
+            raise HTTPException(503, str(e)) from e
 
     # read APIs (support) -------------------------------------------------------------------------
     @app.get("/cases", dependencies=[Support])

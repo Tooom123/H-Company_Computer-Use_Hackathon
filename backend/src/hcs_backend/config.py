@@ -35,6 +35,9 @@ class Settings:
     dashboard_password: str = ""
     # Jaccard threshold on difficulty keywords for two cases to share a group.
     group_threshold: float = 0.3
+    # Stripe Checkout (test mode) for the landing paywall
+    stripe_secret_key: str = ""
+    landing_url: str = "http://127.0.0.1:5173"
     generated_secrets: list[str] = field(default_factory=list)
 
     @classmethod
@@ -50,6 +53,8 @@ class Settings:
         s.ingest_token = os.environ.get("HCS_INGEST_TOKEN", "")
         s.dashboard_user = os.environ.get("HCS_DASHBOARD_USER", s.dashboard_user)
         s.dashboard_password = os.environ.get("HCS_DASHBOARD_PASSWORD", "")
+        s.stripe_secret_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        s.landing_url = os.environ.get("HCS_LANDING_URL", s.landing_url)
         if v := os.environ.get("HCS_GROUP_THRESHOLD"):
             s.group_threshold = float(v)
         s.ensure_secrets()
