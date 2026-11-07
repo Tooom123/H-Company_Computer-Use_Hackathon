@@ -180,7 +180,10 @@ class HBackend:
             "model": self.model,
             "instructions": instructions,
             "environments": [
-                {"id": "user-mac", "kind": "desktop", "lazy": lazy, "screenshot_max_width": self.screenshot_max_width}
+                # host=user_device is what makes the SDK serve this Mac from this process; without it H
+                # provisions a cloud desktop and the screen seen by the agent is not the user's.
+                {"id": "user-mac", "kind": "desktop", "host": "user_device", "lazy": lazy,
+                 "screenshot_max_width": self.screenshot_max_width}
             ],
         }
 
