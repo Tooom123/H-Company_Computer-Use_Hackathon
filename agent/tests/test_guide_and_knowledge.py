@@ -41,7 +41,8 @@ def test_guide_mode_waits_for_user_between_steps(tmp_path):
     # scripted guide: 7 steps minus the optional "open CRM" (not visible in the mock) + the closing note
     assert len(r.guidance) == 7 and r.guidance[-1].last
     assert [g.index for g in r.guidance] == list(range(1, 8))
-    assert all(g.pointer for g in r.guidance[:-1])  # every real step was grounded
+    assert all(g.pointer for g in r.guidance[:-1] if g.kind != "info")  # every control step was grounded
+    assert any(g.kind == "info" and g.annotations for g in r.guidance)  # To-Do chip shown, not clicked
     guidance_events = [e for e in events if e.type == "guidance"]
     assert len(guidance_events) == 7
     assert any(e.type == "state_changed" and e.state is State.awaiting_user for e in events)
@@ -101,3 +102,41 @@ def test_act_mode_records_agent_lookups(tmp_path):
     it.wait(5)
     assert {k.purpose for k in it.report.knowledge} == {"agent_lookup"}  # only when the agent asked
     assert any(e.type == "knowledge" for e in events)
+
+
+def test_raising_autonomy_mid_guide_hands_over_and_finishes(tmp_path):
+    events = []
+    it = Intervention(_request("odoo_crm_followup_activity"), MockBackend(step_delay_s=0.01), ProcedureRegistry(),
+                      events.append, tmp_path)
+    it.start()
+    it.approve(ApproveCommand())
+    for _ in range(200):
+        if it.state is State.awaiting_user:
+            break
+        time.sleep(0.02)
+    assert it.state is State.awaiting_user
+    it.set_autonomy(2)  # the user clicks the Magnet's right notch while a step is shown
+    it.wait(5)
+    assert it.takeover is True
+    assert it.report is not None and it.report.status is CaseStatus.resolved
+    # the agent took the controls: the session left awaiting_user and ran the act path, then verified
+    states = [e.state for e in events if e.type == "state_changed"]
+    assert State.running in states[states.index(State.awaiting_user):]
+    assert any(e.type == "state_changed" and e.data.get("takeover") for e in events)
+
+
+def test_lowering_autonomy_mid_guide_keeps_guiding(tmp_path):
+    events = []
+    it = Intervention(_request("odoo_crm_followup_activity"), MockBackend(step_delay_s=0.01), ProcedureRegistry(),
+                      events.append, tmp_path)
+    it.start()
+    it.approve(ApproveCommand())
+    for _ in range(200):
+        if it.state is State.awaiting_user:
+            break
+        time.sleep(0.02)
+    it.set_autonomy(0)
+    assert it.state is State.awaiting_user  # nothing stops, the step is still waiting for the user
+    _auto_next(it, events, [])
+    it.wait(5)
+    assert it.report.status is CaseStatus.resolved and it.takeover is False

@@ -2,7 +2,7 @@
 # pipeline logic. Reversible (stage and values can be edited back).
 id: odoo_crm_qualify_opportunity
 software: odoo
-software_version: "19.0"
+software_version: "20.0"
 session_type: onboarding
 title: Qualify an opportunity (revenue, probability, stage)
 reversible: true
@@ -29,16 +29,16 @@ preconditions:
   - The opportunity "{opportunity}" exists in the CRM pipeline.
 
 objective: >-
-  Qualify the opportunity "{opportunity}": set the customer "{customer}", the expected revenue {expected_revenue},
+  Qualify the opportunity "{opportunity}": set the contact "{customer}", the expected revenue {expected_revenue},
   and move it to the "Qualified" stage.
 
 planned_changes:
-  - Open the opportunity "{opportunity}" and set Customer = "{customer}", Expected Revenue = {expected_revenue}.
+  - Open the opportunity "{opportunity}" and set Contact = "{customer}", Expected Revenue = {expected_revenue}.
   - Move the opportunity from "New" to "Qualified". Nothing else is modified.
 
 allowed_actions:
   - Navigate inside the Odoo CRM app and open the opportunity form.
-  - Edit the Customer and Expected Revenue fields; click the "Qualified" stage in the status bar; save.
+  - Edit the Contact and Expected Revenue fields; click the "Qualified" stage in the status bar; save.
 
 forbidden_actions:
   - Sending any email or external message.
@@ -52,67 +52,76 @@ agent_instructions: |
   the visible Odoo tab.
   Procedure:
   1. Open the CRM pipeline and click the card "{opportunity}" to open its form.
-  2. In the "Customer" field, type "{customer}" and pick "Create "{customer}"" if it does not exist yet.
-  3. In "Expected Revenue", type {expected_revenue}.
-  4. In the stage bar at the top-right of the form, click "Qualified".
-  5. Click the save icon (cloud) if the form shows unsaved changes. Confirm the stage shows "Qualified".
+  2. In the "Contact" field (placeholder "Select or create a contact..."; Odoo 20 has no "Customer" label), type
+     "{customer}". Pick the existing contact "{customer}" if listed; otherwise pick Create "{customer}".
+     Never pick an upper-case suggestion from the external directory (e.g. "ACME ... CORPORATION, city").
+  3. In "Expected Revenue" (the amount under the title), type {expected_revenue}.
+  4. In the stage bar at the top of the form (New / Qualified / Proposition / Won), click "Qualified".
+  5. Click the cloud save icon next to the breadcrumb if it is shown. Confirm the stage shows "Qualified".
   If something prevents a step, stop and report it as blocked with the exact message.
 
+# Checked live on Odoo 20 (h-companion.odoo.com, 2026-11-07): "Customer" is now "Contact", the chatter sits
+# on the right of the form, and the cloud save icon stays visible after a stage change until clicked.
 guide_steps:
   - instruction: "Clique sur la carte « {opportunity} »"
     element: "the pipeline card titled {opportunity}"
     why: "On qualifie toujours depuis la fiche : c'est là que vivent les infos de l'affaire."
     annotations:
-      - element: "the column header New at the top of the first pipeline column"
+      - element: "the word New, title of the first pipeline column, above its progress bar"
         text: "New = pas encore qualifié"
         shape: underline
-      - element: "the column header Qualified at the top of the second pipeline column"
+      - element: "the word Qualified, title of the second pipeline column, above its progress bar"
         text: "Qualified = besoin + budget OK"
         shape: underline
+    done_when: "the form view of the opportunity {opportunity} is open (large title {opportunity}, Won and Lost buttons, stage bar)"
   - instruction: "Regarde la fiche : trois zones comptent pour qualifier"
-    why: "Le haut = qui et combien ; la barre d'étapes = où en est l'affaire ; le chatter en bas = l'historique."
+    why: "En haut = combien et qui ; la barre d'étapes = où en est l'affaire ; le panneau de droite = l'historique."
     annotations:
-      - element: "the Expected Revenue field of the opportunity form"
+      - element: "the Expected Revenue amount under the opportunity title"
         text: "Montant espéré"
         shape: circle
-      - element: "the stage status bar at the top-right of the form showing New, Qualified, Proposition, Won"
+      - element: "the stage bar at the top of the form showing New, Qualified, Proposition, Won"
         text: "Étapes du pipeline"
         shape: box
-        size: [420, 40]
-      - element: "the chatter area at the bottom of the form with Send message and Log note"
+      - element: "the chatter panel on the right of the form, with Send message, Log note and Activity"
         text: "Historique + notes"
         shape: box
-        size: [600, 80]
-  - instruction: "Tape « {customer} » dans Customer"
-    element: "the Customer field of the opportunity form"
+  - instruction: "Tape « {customer} » dans Contact"
+    kind: type
+    element: "the Contact field, right of the Contact label, in the opportunity form under Expected Revenue"
     why: "Lier un client permet de retrouver toutes ses affaires et factures ensemble."
-  - instruction: "Choisis « Create {customer} » dans la liste"
-    element: "the dropdown option Create {customer} under the Customer field"
-    why: "Odoo crée la fiche client à la volée ; tu complèteras l'adresse plus tard."
+  - instruction: "Choisis « {customer} » dans la liste"
+    element: "the option {customer} in the dropdown under the Contact field (the existing contact, else Create \"{customer}\")"
+    why: "S'il existe déjà, prends-le : Create ferait un doublon. Évite les suggestions en MAJUSCULES : annuaire externe."
     optional: true
+    done_when: "the Contact field of the opportunity form shows {customer} and no dropdown is open"
   - instruction: "Mets {expected_revenue} dans Expected Revenue"
-    element: "the Expected Revenue amount field of the opportunity form"
+    kind: type
+    element: "the Expected Revenue amount field (large number with €) under the opportunity title"
     why: "C'est ce montant qui alimente les prévisions de ventes de l'équipe."
+    done_when: "the Expected Revenue field shows {expected_revenue} (possibly formatted, e.g. 12,000.00 €)"
   - instruction: "Clique sur Qualified dans la barre d'étapes"
-    element: "the Qualified stage in the status bar at the top-right of the opportunity form"
+    element: "the Qualified stage in the stage bar at the top of the opportunity form"
     why: "Changer d'étape ici déplace la carte dans le pipeline ; c'est réversible."
     annotations:
-      - element: "the Won button in the opportunity form header"
+      - element: "the Won button at the top-left of the opportunity form"
         text: "Pas Won : ça clôture"
         shape: label
+    done_when: "the stage bar of the opportunity form highlights Qualified"
   - instruction: "Clique sur l'icône de sauvegarde (nuage)"
-    element: "the cloud save icon near the breadcrumb at the top-left of the form"
-    why: "Odoo sauvegarde souvent tout seul, mais un clic ici garantit que rien n'est perdu."
+    element: "the cloud-shaped save icon right of the breadcrumb Pipeline / {opportunity} at the top-left"
+    why: "Sans ce clic, les changements restent en attente et peuvent être perdus."
     optional: true
+    done_when: "the form is saved: right of the breadcrumb there is just the ⋮ menu (an unsaved form would also show a cloud icon and an X there)"
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
-    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+    element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
     why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
-    element: "the apps grid icon at the far top-left of the Odoo top bar"
-    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
+    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
     optional: true
 
 postcondition:
@@ -125,9 +134,9 @@ postcondition:
     - key: stage_qualified
       prompt: The stage bar highlights "Qualified".
     - key: customer_set
-      prompt: The Customer field shows "{customer}".
+      prompt: The Contact field shows "{customer}".
     - key: revenue_set
-      prompt: The Expected Revenue field shows {expected_revenue}.
+      prompt: The Expected Revenue field shows {expected_revenue} (formatted amounts like 12,000.00 count).
   verification_instructions: |
     You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the browser
     window and do not reload the page. Open the CRM pipeline from the app menu if needed and open the opportunity

@@ -1,7 +1,7 @@
 # Starter case: create an opportunity in the CRM pipeline. Three steps, works on an empty database.
 id: odoo_crm_create_opportunity
 software: odoo
-software_version: "19.0"
+software_version: "20.0"
 session_type: onboarding
 title: Create an opportunity in the CRM pipeline
 reversible: true
@@ -42,37 +42,49 @@ agent_instructions: |
   You are assisting a user inside Odoo CRM (version {software_version}) running in a browser on macOS.
   Work only inside the Odoo tab that is already visible.
   Procedure:
-  1. Open the CRM app if the pipeline is not displayed (app menu, top-left, then "CRM").
-  2. In the pipeline, click the "New" button (top-left, next to "Generate").
-  3. A quick-create card opens in the "New" column: type "{opportunity}" in the "Opportunity" field.
-     If an expected revenue was given, type it in "Expected Revenue".
-  4. Click "Add" to save the card. Confirm the card "{opportunity}" is visible in the "New" column.
+  1. Open the CRM app if the pipeline is not displayed (Odoo logo at the top-left, then "CRM").
+  2. In the pipeline, click the "New" button (top-left, left of "Generate").
+  3. A quick-create card opens at the top of the "New" column. The cursor starts in "Contact": do NOT type there.
+     Click the second line, placeholder "Opportunity's Name", and type "{opportunity}".
+     If an expected revenue was given, type it on the line with the money icon (0.00 €).
+  4. Click "Add" (or press Enter). The card is saved and an empty quick-create card reopens: press Escape to close it.
+     Confirm the card "{opportunity}" is visible in the "New" column.
   If something prevents a step (login prompt, error dialog), stop and report it as blocked with the exact message.
 
 # Scripted guide: the service knows the app. Holo only locates each control on the user's screen.
+# Checked live on Odoo 20 (h-companion.odoo.com, 2026-11-07).
 guide_steps:
   - instruction: "Ouvre l'application CRM"
     element: "the CRM app icon or menu entry"
     why: "C'est l'application où vivent tes opportunités commerciales."
     optional: true
   - instruction: "Clique sur New"
-    element: "the purple New button at the top-left of the pipeline, next to Generate"
+    element: "the New button at the top-left of the CRM pipeline, left of the Generate dropdown"
     why: "Ça ouvre une petite carte pour créer une opportunité directement dans la colonne New."
-  - instruction: "Tape « {opportunity} » dans le champ Opportunity"
-    element: "the Opportunity title text field inside the quick-create card in the New column"
-    why: "C'est le nom que ton équipe verra dans le pipeline."
-  - instruction: "Clique sur Add"
-    element: "the purple Add button at the bottom of the quick-create card"
-    why: "Ça enregistre la carte ; elle reste modifiable ensuite."
+    done_when: "a quick-create card is open at the top of the New column, with the fields Contact and Opportunity's Name"
+  # One step for name + Add: Enter in the name field already saves the card, and the card then reopens empty,
+  # so a separate "click Add" step would point at an empty card.
+  - instruction: "Clique sur « Opportunity's Name » et tape « {opportunity} », puis Entrée"
+    kind: type
+    element: "the Opportunity's Name field (second line, briefcase icon) of the quick-create card in the New column"
+    why: "Le curseur démarre dans Contact : écris bien sur la 2e ligne. Entrée (ou Add) enregistre la carte."
+    annotations:
+      - element: "the Contact field (first line, person icon) of the quick-create card"
+        text: "Pas ici : c'est le client"
+        shape: label
+      - element: "the Add button at the bottom-left of the quick-create card"
+        text: "ou Add"
+        shape: label
+    done_when: "the New column of the pipeline contains a saved card titled {opportunity} (not only text typed in the open quick-create form)"
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
-    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+    element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
     why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
-    element: "the apps grid icon at the far top-left of the Odoo top bar"
-    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
+    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
     optional: true
 
 postcondition:

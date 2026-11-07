@@ -245,6 +245,9 @@ class Intervention:
                 if last_attempt is None:
                     # The user is stuck: take the controls, finish the task and narrate each action.
                     self.takeover = True
+                    with self._lock:
+                        if not self.state.terminal:
+                            self.state = State.running  # leave awaiting_user: the agent acts now
                     self._emit("state_changed", "Je prends la main pour finir la tâche.", takeover=True)
                     self.takeover = True
                     task = bound.task_message(self.scope_note, "The user started this task by hand and got stuck; "
@@ -369,6 +372,16 @@ class Intervention:
 
             # Verify progress on screen before moving on.
             nxt = script[i + 1] if i + 1 < len(script) else None
+            if step.done_when:
+                # Explicit end state: the only reliable test when the next control is already on screen.
+                if self._screen_shows(step.done_when):
+                    done_steps.append(step.instruction)
+                    i += 1
+                    misses = 0
+                    continue
+                misses += 1
+                self._trace(f"step {i + 1} not done yet ({step.done_when[:60]}); showing it again")
+                continue
             if nxt is None:
                 done_steps.append(step.instruction)
                 i += 1
@@ -442,6 +455,20 @@ class Intervention:
             if check and check(bound.expected_screen)[0]:
                 return True
         return self._ensure_screen(bound, attempts=10)
+
+    def _screen_shows(self, expected: str, tries: int = 3, pause_s: float = 0.6) -> bool:
+        """Has the step's effect appeared? The page may still be updating, so look a few times."""
+        check = getattr(self.backend, "screen_matches", None)
+        if check is None:
+            return True
+        for attempt in range(tries):
+            ok, visible = check(expected)
+            self._trace(f"done check ({attempt + 1}/{tries}): {'yes' if ok else 'no'} ({visible[:60]})")
+            if ok or self._stop.is_set():
+                return ok
+            if attempt + 1 < tries:
+                time.sleep(pause_s)
+        return False
 
     def _trace(self, summary: str) -> None:
         self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))

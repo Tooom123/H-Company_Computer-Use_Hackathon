@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -93,6 +94,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     params = dict(kv.split("=", 1) for kv in args.param or [])
     request = InterventionRequest(software=args.software, role=args.role, goal=args.goal, symptom=args.symptom,
                                   procedure_id=args.procedure, parameters=params, mode=args.mode)
+    # `run` is explicit about the mode: the Magnet follows the flag instead of overriding it.
+    _MAGNET["level"] = 2 if args.mode == "act" else min(_MAGNET["level"], 1)
     return _execute(request, make_backend(args.mock), Path(args.runs_dir), auto_approve=args.yes,
                     scope_note=args.scope_note, stop_after=args.stop_after, auto_next=args.auto_next,
                     overlay=not args.no_overlay)
@@ -142,9 +145,9 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         else:
             it.wait()
     except KeyboardInterrupt:
-        print(">> Ctrl+C: stopping")
+        print(">> Ctrl+C: stopping (new commands blocked locally, asking H to cancel)")
         it.stop(StopCommand(reason="Ctrl+C"))
-        it.wait(60)
+        _wait_stopped(it, ov, timeout=60)
     if it.report:
         print(f"\nreport: {it.runs_dir / 'report.json'}")
         print(json.dumps(it.report.to_support_summary(), indent=2))
@@ -154,6 +157,24 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
             _show_outcome(ov, it)
         return 0 if it.report.status.value == "resolved" else 3
     return 1
+
+
+def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
+    """Wait for the stop to land while keeping the overlay alive (badge "Arrêt…", note cleared)."""
+    deadline = time.time() + timeout
+    if ov is not None:
+        ov.hide()
+        ov.badge("Arrêt en cours…", pulsing=True)
+        try:
+            ov.run_until(lambda: (it.state.terminal and it.report is not None) or time.time() > deadline, None, 0.1,
+                         hide_at_end=False)
+        except KeyboardInterrupt:
+            print(">> second Ctrl+C: not waiting for H any longer")
+        ov.badge(None)
+    else:
+        it.wait(timeout)
+    if it.report is None:
+        print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
@@ -173,7 +194,11 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     ov.badge(None)
     ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
     t0 = time.time()
-    ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
+    hold = 2.5 if r.status.value == "abandoned" else seconds
+    try:
+        ov.run_until(lambda: time.time() - t0 > hold, None, 0.1)
+    except KeyboardInterrupt:
+        ov.hide()
 
 
 def cmd_talk(args: argparse.Namespace) -> int:
@@ -228,10 +253,25 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 time.sleep(0.1)
         return box["text"]
 
+    last_request = None
     try:
         while True:
             text = next_transcript()
             print(f"\nYou said: \"{text}\"")
+            if last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
+                request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
+                print(f"  -> resuming {request.procedure_id} from the current screen")
+                ptt.pause()
+                try:
+                    _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                             overlay=not args.no_overlay, ov=ov)
+                except Exception:  # noqa: BLE001
+                    import traceback
+
+                    traceback.print_exc()
+                ptt.resume()
+                print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
+                continue
             try:
                 intent = router.route(text)
             except Exception as exc:  # noqa: BLE001
@@ -250,6 +290,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 if val:
                     intent.parameters[name] = val
             request = intent_to_request(intent)
+            last_request = request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             ptt.pause()
             try:
@@ -269,6 +310,11 @@ def cmd_talk(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("\nbye")
         ptt.stop()
+        if ov is not None:
+            ov.hide()
+            ov.badge(None)
+        if _MAGNET.get("widget") is not None:
+            _MAGNET["widget"].close()
         return 0
 
 
@@ -368,6 +414,9 @@ class _InputWatcher:
     def _on_event(self, event: str, payload) -> None:
         now = time.time()
         if event == "click":
+            magnet = _MAGNET.get("widget")
+            if magnet is not None and payload and magnet.contains(*payload):
+                return  # changing the Magnet level is not the user doing the step
             self.last_click = now
         elif event == "key_down":
             if payload in (self._kb.Key.enter, self._kb.Key.tab):

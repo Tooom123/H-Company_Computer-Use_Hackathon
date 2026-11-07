@@ -2,7 +2,7 @@
 # the limit, stop at the attempt cap and escalate with a precise case file. No false success.
 id: odoo_crm_change_stage_restricted
 software: odoo
-software_version: "19.0"
+software_version: "20.0"
 session_type: support
 title: Mark an opportunity as Won (requires sales manager rights on the demo account)
 reversible: false
@@ -42,19 +42,19 @@ agent_instructions: |
   Work only inside the visible Odoo tab.
   Procedure:
   1. Open the CRM app and open the opportunity "{opportunity}".
-  2. Click the "Won" button in the form header.
+  2. Click the "Won" button at the top-left of the form (left of "Lost").
   3. If an "Access Error" / "Access Denied" or any permission message appears, read it carefully,
      close it, and report the task as blocked with the exact message text. Do not retry or work around.
   4. If no error appears, confirm the "Won" ribbon is visible on the opportunity.
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
-    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+    element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
     why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
-    element: "the apps grid icon at the far top-left of the Odoo top bar"
-    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
+    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
     optional: true
 
 postcondition:

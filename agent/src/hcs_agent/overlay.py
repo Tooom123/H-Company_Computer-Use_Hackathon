@@ -576,6 +576,13 @@ class MagnetWidget:
         self.view.on_change = on_change
         self.window.setContentView_(self.view)
         self.window.orderFrontRegardless()
+        # Rect in top-left screen points (pynput's frame), to tell Magnet clicks apart from clicks in the app.
+        screen_h = AppKit.NSScreen.screens()[0].frame().size.height
+        self.rect = (18.0, screen_h - 18.0 - h, w, h)
+
+    def contains(self, x: float, y: float) -> bool:
+        rx, ry, rw, rh = self.rect
+        return rx <= x <= rx + rw and ry <= y <= ry + rh
 
     def set_level(self, level: int) -> None:
         def apply() -> None:
