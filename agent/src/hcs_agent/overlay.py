@@ -391,21 +391,26 @@ class _SketchView(AppKit.NSView):
         self.stroke_total = max(self.stroke_total, _REVEAL["index"]) if self.progress < 1 else _REVEAL["index"]
 
     def _draw_badge(self):
+        """Status badge in the same draft style as the notes: a small paper scrap, handwritten red text,
+        a pencil dot that pulses while listening. Sits ~3 cm above the bottom edge, clear of the Dock."""
         import time
 
         text, pulsing = self.badge
         bounds = self.bounds()
-        w, h = max(210.0, 52 + 7.6 * len(text)), 36.0  # pill grows with the text
-        x, y = bounds.size.width / 2 - w / 2, 86.0  # ~2 cm above the bottom edge, clear of the Dock
-        pill = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(((x, y), (w, h)), h / 2, h / 2)
-        AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.08, 0.88).setFill()
-        pill.fill()
-        alpha = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(time.time() * 6)) if pulsing else 1.0
-        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.23, 0.2, alpha).setFill()
-        AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x + 14, y + h / 2 - 7), (14, 14))).fill()
-        attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.systemFontOfSize_(14),
-                 AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
-        Foundation.NSString.stringWithString_(text).drawInRect_withAttributes_(((x + 38, y + 8), (w - 46, 20)), attrs)
+        rnd = random.Random(11)
+        attrs, s, tw, th = _measure(text, 15, 420)
+        w, h = tw + 44, th + 14
+        x, y = bounds.size.width / 2 - w / 2, 114.0
+        saved = (_REVEAL["progress"], _REVEAL["index"], _REVEAL["total"])
+        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 10_000
+        _draw_paper(x, y, w, h, rnd)
+        alpha = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(time.time() * 6)) if pulsing else 0.9
+        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(GRAPHITE[0], GRAPHITE[1], GRAPHITE[2], alpha).setFill()
+        AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x + 14, y + h / 2 - 5), (10, 10))).fill()
+        _ink().setStroke()
+        _circle(x + 19, y + h / 2, rnd, 8, 7)  # a loose pencil ring around the dot
+        s.drawInRect_withAttributes_(((x + 36, y + 7), (tw + 4, th + 4)), attrs)
+        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = saved
 
 
 class Overlay:
