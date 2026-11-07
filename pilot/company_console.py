@@ -86,6 +86,9 @@ def _episodes(root: Path) -> list[dict]:
         meta = _safe_json(directory, 'episode.json')
         if not meta:
             continue
+        quarantined = (quarantined or meta.get('quarantined') is True
+                       or meta.get('scope_violation') is True
+                       or str(meta.get('phase', '')).lower() in {'quarantine', 'quarantined'})
         row = {'id': directory.name, 'meta': meta, 'quarantined': quarantined}
         if not quarantined:
             row.update(report=_safe_json(directory, 'report.json'),
@@ -211,12 +214,13 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
     def page(request: Request, title: str, content: str, *, status_code=200):
         token = csrf(request)
         content = content.replace('<!--CSRF-->', f'<input type="hidden" name="csrf" value="{_e(token)}">')
+        live_link = '<a href="/company/live">Tour de contrôle</a>' if config.get('control_tower_enabled') else ''
         if config.get('simulated') is True:
             content = '<p class="badge">Mode simulé · aucun résultat réel de Holo</p>' + content
         response = HTMLResponse('''<!doctype html><html lang="fr"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>''' + _e(title) + ''' · H-Companion</title>
 <style>*{box-sizing:border-box}body{margin:0;background:#f5f8f5;color:#18332e;font:16px system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:32px 22px}header{display:flex;gap:24px;align-items:center;flex-wrap:wrap}nav{display:flex;gap:18px;flex-wrap:wrap}a{color:#087b64;overflow-wrap:anywhere}h1{margin-top:36px}h2{font-size:21px}.card{background:white;border:1px solid #d7e3dc;border-radius:12px;padding:22px;margin:18px 0}.muted{color:#536b62}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}.metric strong{display:block;font-size:30px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #e0e8e2}input,textarea,button{max-width:100%;font:inherit;padding:10px;border-radius:6px;border:1px solid #8da69c}textarea{width:95%;min-height:90px}button{background:#176b57;color:white;cursor:pointer}label{display:block;margin:12px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f5f1;padding:16px}code{overflow-wrap:anywhere}.warning{border-left:5px solid #b97316}.badge{display:inline-block;padding:3px 9px;border-radius:20px;background:#e4eee7}dl{display:grid;grid-template-columns:minmax(130px,220px) 1fr;gap:14px}dd{margin:0;overflow-wrap:anywhere}@media(max-width:600px){dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:14px}.card{padding:16px}main{padding:24px 16px}}</style>
-<main><header><strong>H-Companion · Entreprise</strong><nav><a href="/company">Configuration</a><a href="/company/documents">Documentation</a><a href="/company/sessions">Sessions et retours</a></nav></header><h1>''' + _e(title) + '</h1>' + content +
+<main><header><strong>H-Companion · Entreprise</strong><nav><a href="/company">Configuration</a><a href="/company/documents">Documentation</a><a href="/company/sessions">Sessions et retours</a>''' + live_link + '''</nav></header><h1>''' + _e(title) + '</h1>' + content +
             '<p class="muted">Console privée · une entreprise · aucun contrôle du bureau depuis ces pages.</p></main></html>', status_code=status_code)
         response.set_cookie(COOKIE, token, max_age=3600, httponly=True, secure=request.url.scheme == 'https', samesite='strict', path='/company')
         response.headers.update({'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -357,6 +361,8 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
         body += '<section class="card"><h2>Retour humain</h2><p>Réussite : ' + _e(_verdict(labels.get('task_success_user')) if labels.get('user_confirmed') is True else 'Non recueilli') + ' · Utilité : ' + _e(_verdict(labels.get('useful')) if labels.get('user_confirmed') is True else 'Non recueillie') + '</p><p>' + _e(labels.get('comment', '') if labels.get('user_confirmed') is True else '') + '</p></section>'
         body += '<section class="card"><h2>Revue IA indépendante</h2><p>Réussite : ' + _e(_verdict(review.get('task_success_agent'), 'Non revue')) + ' · Périmètre : ' + _e(_verdict(review.get('scope_compliance_agent'), 'Non revu')) + '</p>' + _review_details(review.get('rationale')) + '<p>Une revue humaine est nécessaire avant toute sélection pour entraînement.</p></section>'
         declared, verification = report.get('declared') or {}, report.get('verification') or {}
+        declared = declared if isinstance(declared, dict) else {'summary': declared} if isinstance(declared, str) else {}
+        verification = verification if isinstance(verification, dict) else {}
         body += '<section class="card"><h2>Rapport moteur</h2><p>Déclaration : ' + _e(declared.get('summary', 'Non renseignée')) + '</p><p>Vérification observée : ' + _e(verification.get('observed', 'Non renseignée')) + '</p><p>Critère satisfait selon le vérificateur : ' + _e(verification.get('satisfied', 'Non renseigné')) + '</p><p>Escalade : ' + _e(report.get('needs_human', 'Non renseignée')) + '</p><p class="muted">Les captures, fichiers audio et téléchargements de traces ne sont pas exposés par cette console.</p></section>'
         return page(request, 'Détail de session', body)
 

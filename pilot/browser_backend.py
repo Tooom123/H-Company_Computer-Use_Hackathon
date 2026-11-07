@@ -227,7 +227,7 @@ def _browser_event_step(event, index, attempt):
 
 
 class BrowserHBackend(HBackend):
-    adapter_revision = 'pilot-isolated-browser-v4'
+    adapter_revision = 'pilot-isolated-browser-v5'
     transport = 'browser'
 
     def __init__(self, *, browser_config: BrowserConfig, browser_credentials: BrowserCredentials,
@@ -527,6 +527,17 @@ class BrowserHBackend(HBackend):
 
     def screen_matches(self, expected):
         return False, 'Desktop pre-plan matching is disabled in browser transport.'
+
+    def effect_visible(self, expected):
+        # The upstream wrapper catches our disabled _grounding() and returns
+        # True on error. Never let it turn an unavailable desktop check into a
+        # successful browser postcondition. An empty description also avoids
+        # the GUIDE runner treating a diagnostic as "another app is in front".
+        self.last_visual_check = {
+            'check': 'effect_visible', 'status': 'unavailable',
+            'message': 'Vérification rapide indisponible dans ce navigateur ; utiliser le vérificateur navigateur.',
+        }
+        return False, ''
 
     def _grounding(self):
         raise BrowserRuntimeError('Desktop grounding is disabled in browser transport.')

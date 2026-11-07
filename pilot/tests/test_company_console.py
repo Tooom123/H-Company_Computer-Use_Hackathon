@@ -82,6 +82,25 @@ def test_every_route_requires_basic_auth(tmp_path, path):
     assert client.get(path + '?token=' + PASSWORD, auth=None).status_code == 401
 
 
+def test_cloud_string_declared_report_is_compatible(tmp_path):
+    folder = episode(tmp_path, 'sess_cloud')
+    (folder / 'report.json').write_text(json.dumps({'declared': 'Cloud final answer', 'verification': None}))
+    client, _ = factory(tmp_path)
+    response = client.get('/company/sessions/sess_cloud')
+    assert response.status_code == 200 and 'Cloud final answer' in response.text
+
+
+@pytest.mark.parametrize('flag', [{'scope_violation': True}, {'quarantined': True}, {'phase': 'quarantine'}])
+def test_cloud_quarantine_metadata_hides_all_content(tmp_path, flag):
+    folder = episode(tmp_path, 'sess_cloud', goal='PRIVATE GOAL')
+    meta = json.loads((folder / 'episode.json').read_text())
+    (folder / 'episode.json').write_text(json.dumps({**meta, **flag}))
+    client, _ = factory(tmp_path)
+    response = client.get('/company/sessions/sess_cloud')
+    assert response.status_code == 200 and 'Contenu privé masqué' in response.text
+    assert 'PRIVATE GOAL' not in response.text and 'Agent declared done' not in response.text
+
+
 def test_config_has_no_credentials_or_injected_markup(tmp_path):
     client, _ = factory(tmp_path)
     response = client.get('/company')

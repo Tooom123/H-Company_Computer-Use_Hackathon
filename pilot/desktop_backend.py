@@ -82,7 +82,7 @@ class RestrictedDesktopBridge(PyautoguiDesktopBridge):
 
 
 class PilotHBackend(HBackend):
-    adapter_revision = 'pilot-bridge-health-v3'
+    adapter_revision = 'pilot-bridge-health-v4'
 
     def __init__(self, *, frontmost_bundle_id: Callable[[], str | None] | None = None, **kwargs):
         super().__init__(**kwargs)
@@ -99,6 +99,38 @@ class PilotHBackend(HBackend):
         if not _chrome_is_frontmost(self._frontmost_bundle_id):
             return None
         return super().screenshot(path)
+
+    def _visual_check(self, method: str, expected: str) -> tuple[bool, str]:
+        """Bypass the upstream fail-open wrapper, while retaining real grounding.
+
+        A missing verifier is inconclusive, never an observed match. The current
+        GUIDE runner interprets a non-empty effect description without the app
+        name as another app being in front (and keeps waiting). For unavailable
+        effect checks, leave that description empty and retain an explicit
+        diagnostic separately. False makes its fast verifier fall back to the
+        full verifier instead of manufacturing successful postconditions.
+        """
+        try:
+            self._require_chrome()
+            result = getattr(self._grounding(), method)(expected)
+            self._require_chrome()
+            if (not isinstance(result, tuple) or len(result) != 2
+                    or type(result[0]) is not bool or not isinstance(result[1], str)
+                    or not result[1].strip()):
+                raise ValueError('Unusable visual check result')
+        except Exception:
+            message = 'Vérification visuelle indisponible : résultat inconclusif, aucune réussite confirmée.'
+            # Never forward raw capture/network exceptions to a recorded trace.
+            self.last_visual_check = {'check': method, 'status': 'unavailable', 'message': message}
+            return False, '' if method == 'effect_visible' else message
+        self.last_visual_check = {'check': method, 'status': 'observed', 'matched': result[0]}
+        return result
+
+    def effect_visible(self, expected: str) -> tuple[bool, str]:
+        return self._visual_check('effect_visible', expected)
+
+    def screen_matches(self, expected: str) -> tuple[bool, str]:
+        return self._visual_check('screen_matches', expected)
 
     def _close_orphans(self) -> None:
         # The inherited cleanup scans every session sharing the team's API key.
@@ -180,6 +212,11 @@ class PilotHBackend(HBackend):
     def verify(self, *args, **kwargs) -> VerifyResult:
         try:
             self._require_chrome()
-            return super().verify(*args, **kwargs)
+            result = super().verify(*args, **kwargs)
+            diagnostic = getattr(self, 'last_visual_check', {})
+            if (isinstance(result, VerifyResult) and not result.checks
+                    and diagnostic.get('status') == 'unavailable'):
+                result.observed = (result.observed + ' ' + diagnostic['message']).strip()
+            return result
         except DesktopConnectionError as exc:
             return VerifyResult(None, 'failed', error=str(exc))

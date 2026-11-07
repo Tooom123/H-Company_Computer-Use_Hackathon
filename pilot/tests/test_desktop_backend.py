@@ -275,7 +275,7 @@ def test_open_channel_installs_restricted_bridge_without_permissive_fallback(mon
     assert isinstance(bridge, module.RestrictedDesktopBridge)
     assert bridge.max_width == 1280
     assert sid == bridge.session_id == backend._desktop_session_id
-    assert backend.adapter_revision == 'pilot-bridge-health-v3'
+    assert backend.adapter_revision == 'pilot-bridge-health-v4'
 
 
 @pytest.mark.parametrize('name', sorted(module.RestrictedDesktopBridge.commands))

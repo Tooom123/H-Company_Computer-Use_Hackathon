@@ -410,3 +410,72 @@ pages de la console ont été vérifiées dans un navigateur séparé.
 Voir le [bilan complet](bilan-isolation-et-portail-2026-11-07.md) pour les erreurs
 observées, l’usage H, les limites de revue et les prochaines tâches. Les métriques,
 images, documents de contexte, réponses et labels détaillés restent hors Git.
+
+## 2026-11-08 — H cloud natif, console live et baseline documentaire
+
+Six tickets synthétiques HC01–HC06 exécutés dans des navigateurs H indépendants,
+sans contrôle du Mac, avec plafond local de six et quota fournisseur vérifié.
+Modèle `holo4-35b-a3b`, viewport 1280 × 832, 32 étapes / 240 secondes maximum,
+aucun profil ni vault pour cette baseline. Les réponses attendues du catalogue
+restent exclusivement chez le juge. Aucun correctif humain pendant les essais.
+
+| Cas | Épisode local | Durée H* | Usage rapporté USD* | Revue IA métier / périmètre |
+| --- | --- | ---: | ---: | --- |
+| HC01 réseau local/cloud | `cloud_331d5e2f98284fe0` | 83,5 s | 0,03380 | Partiel / conforme |
+| HC02 quota et relances | `cloud_9e949b82e6014524` | 114,3 s | 0,05493 | Partiel / conforme |
+| HC03 connexion et profils | `cloud_8f3c0e3df7584a08` | 88,2 s | 0,03425 | Partiel / conforme |
+| HC04 statut et preuves | `cloud_d9617906ea874f7a` | 68,6 s | 0,02762 | Partiel / conforme |
+| HC05 export des traces | `cloud_39196b879ebf40e5` | 146,6 s | 0,07516 | Partiel / conforme |
+| HC06 reproductibilité | `cloud_d9553be1849a4358` | 80,8 s | 0,03600 | Partiel / conforme |
+
+\* Temps `started_at` → `finished_at`, non temps utilisateur. Total fournisseur :
+0,26176124 USD, 112 étapes. Ce n'est pas une facture et aucune économie de tokens
+n'est déduite des pixels. Les six archives sont complètes ; 72 images d'archive
+ont leurs empreintes vérifiées. Le nombre d'aperçus publiés peut être inférieur.
+
+Les limites sont concrètes : configuration inventée en HC01, réserve de quota
+mal conservée en HC02, confusion sur profils/cookies en HC03, règle de succès
+incorrecte en HC04, export et labels incomplets en HC05, candidate non figée
+en HC06. Aucun de ces résultats partiels n'est une démonstration positive prête
+pour SFT. Les secondes revues HC03/04/06 conservent les premières au lieu de les
+remplacer. Aucun retour humain, consentement d'entraînement ou utilité n'est inféré.
+
+Les sessions répondent puis restent `idle` ; le runner annule seulement ses
+propres sessions via l'API v2 et confirme leur fin pour libérer le quota.
+`interrupted` est donc conservé comme statut H avec
+`completion_reason=answered_then_cancelled_for_terminal_confirmation`. Il ne
+signifie pas que l'utilisateur a interrompu la tâche ni que la réponse est correcte.
+
+Le test authentifié HC07 (`cloud_57200aead27b460f`) atteint la vérification
+d'accès puis la page de connexion : le profil préparé n'était pas connecté.
+L'archive est complète, mais le résultat métier n'a pas pu être observé.
+Ses anciens aperçus sont retirés de la publication après revue, sans modifier
+l'archive privée. HC08–HC10 attendent une connexion distante effectivement validée.
+Les sessions de préparation SSO sont exclues du benchmark.
+
+Deux comparaisons avec recherche lexicale BM25 sur onze pages officielles H
+sont conservées séparément : HC01 `cloud_4544bd4f4b1049ef`, HC04
+`cloud_60a3a704caf34f71`. Même demande, modèle et limites ; passages et empreintes
+conservés dans chaque requête. Leurs archives sont complètes. Une seule paire
+par cas ne démontre pas un gain généralisable.
+
+Les deux retests restent **partiels**. HC01 corrige les champs de configuration,
+mais sa recommandation finale revient à l'environnement local en contradiction
+avec le besoin d'isolation. HC04 corrige les valeurs `outcome`, mais garde une
+règle de succès fondée sur la déclaration et invente un endpoint d'outils.
+Les mesures brutes vont dans des directions différentes : HC01 15 → 12 étapes,
+198 599 → 176 104 tokens d'entrée ; HC04 12 → 20 étapes, 152 890 → 323 098 tokens
+d'entrée. Les tokens en cache et de sortie sont conservés séparément. Ce n'est
+pas une mesure de latence du modèle isolée ni une preuve d'économie générale.
+
+La tour de contrôle est vérifiée en navigateur headless séparé : navigation,
+images autorisées, zoom, détail, refresh, mobile et desktop. Aucun écran du Mac
+n'est utilisé. Les sources récupérées Matteo `6f166d1` / main `8066ddf` passent
+la suite de compatibilité. Le contrôle visuel rapide qui acceptait une erreur
+comme succès est court-circuité dans nos adaptateurs ; le vérificateur complet
+prend le relais. **627 tests hors réseau passent.** Ce contrôle n'est pas encore
+une validation de l'expérience GUIDE avec un participant.
+
+Voir le [mode d'emploi cloud](native-cloud-pilot.md), le
+[catalogue H](scenarios/h-company-cloud-scenarios.md) et le
+[protocole de test humain](field-test-coaching.md).
