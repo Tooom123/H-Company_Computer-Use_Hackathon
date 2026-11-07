@@ -176,8 +176,8 @@ def test_labels_stay_distinct_and_no_human_label_is_inferred(tmp_path):
     episode(tmp_path, 'sess_two', review={'task_success_agent': 'success'})
     client, _ = factory(tmp_path)
     detail = client.get('/company/sessions/sess_one').text
-    assert 'Réussite : partial · Utilité : no' in detail
-    assert 'Réussite : success · Périmètre : unknown' in detail
+    assert 'Réussite : Partiel · Utilité : Non' in detail
+    assert 'Réussite : Réussi · Périmètre : Non évalué' in detail
     assert 'Pas utile' in detail
     assert '/private/location' not in detail and 'private-reference' not in detail
     missing = client.get('/company/sessions/sess_two').text
@@ -271,3 +271,21 @@ def test_terminal_failed_or_stopped_runs_remain_in_denominators(tmp_path, state)
     for metric in ['Sessions réelles terminées retenues', 'Retours humains confirmés', 'Revues IA disponibles']:
         assert f'<span>{metric}</span><strong>1</strong>' in listing
     assert f'<td>{state}</td>' in listing
+
+
+def test_review_rationale_is_escaped_collapsed_list_and_labels_unchanged(tmp_path):
+    directory = episode(tmp_path, 'sess_review',
+        human={'user_confirmed': True, 'task_success_user': 'failed', 'useful': 'unknown'},
+        review={'task_success_agent': 'partial', 'scope_compliance_agent': 'failure',
+                'rationale': ['First observation.', '<script>unsafe()</script>']})
+    before = (directory / 'agent-review.json').read_bytes()
+    client, _ = factory(tmp_path)
+    detail = client.get('/company/sessions/sess_review').text
+    assert 'Réussite : Échec · Utilité : Non évalué' in detail
+    assert 'Réussite : Partiel · Périmètre : Échec' in detail
+    assert '<details><summary>Lire l’analyse IA (2 point(s))</summary><ul>' in detail
+    assert '<li>First observation.</li>' in detail
+    assert '<li>&lt;script&gt;unsafe()&lt;/script&gt;</li>' in detail
+    assert '<script>' not in detail and '<details open' not in detail
+    assert (directory / 'agent-review.json').read_bytes() == before
+    assert json.loads((directory / 'labels.json').read_text())['task_success_user'] == 'failed'

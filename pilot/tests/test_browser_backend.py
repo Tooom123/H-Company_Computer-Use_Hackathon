@@ -223,31 +223,33 @@ def test_close_stops_only_owned_channel_and_runtime(backend):
         backend.preflight()
 
 
-def test_close_cancels_only_owned_v1_channel_after_local_stop(backend, monkeypatch):
+@pytest.mark.parametrize('state', ['pending', 'running', 'idle'])
+def test_close_preserves_remote_channel_after_local_stop(backend, monkeypatch, state):
     sid = backend._browser_channel()
     requests = []
-    statuses = iter(['pending', 'idle', 'interrupted'])
     real_client = module.httpx.Client
     def respond(request):
         assert backend._bridge.stop_event.is_set()
         assert backend._manager.stopped == [[sid]]
         assert request.url.path == f'/api/v1/trajectories/{sid}'
         requests.append(request.method)
-        if request.method == 'DELETE':
-            return module.httpx.Response(204)
-        return module.httpx.Response(200, json={'status': next(statuses)})
+        assert request.method == 'GET'
+        return module.httpx.Response(200, json={'status': state})
     monkeypatch.setattr(module.httpx, 'Client', lambda **kwargs:
         real_client(transport=module.httpx.MockTransport(respond), **kwargs))
     monkeypatch.setattr(backend, '_close_owned_channel',
                         lambda owned: module.BrowserHBackend._close_owned_channel(backend, owned))
     backend.close()
-    assert requests == ['GET', 'DELETE', 'GET', 'GET']
+    assert requests == ['GET']
     assert backend.runtime.closed == 1
-    assert backend._lifecycle_observations[-1]['status'] == 'interrupted'
+    assert backend._lifecycle_observations[-1] == {'session_id': sid,
+        'phase': 'remote_channel_preserved', 'status': state, 'remote_terminal_confirmed': False}
+    with pytest.raises(BrowserRuntimeError):
+        backend.preflight()
 
 
 @pytest.mark.parametrize('state', ['interrupted', 'completed', 'missing'])
-def test_already_ended_owned_channel_does_not_need_delete(backend, monkeypatch, state):
+def test_already_ended_owned_channel_is_only_observed(backend, monkeypatch, state):
     sid = backend._browser_channel()
     backend._bridge.stop_event.set()
     real_client = module.httpx.Client
@@ -257,6 +259,8 @@ def test_already_ended_owned_channel_does_not_need_delete(backend, monkeypatch, 
     monkeypatch.setattr(module.httpx, 'Client', lambda **kwargs:
         real_client(transport=module.httpx.MockTransport(respond), **kwargs))
     assert module.BrowserHBackend._close_owned_channel(backend, sid)
+    assert backend._lifecycle_observations[-1]['phase'] == 'remote_channel_terminal_observed'
+    assert backend._lifecycle_observations[-1]['remote_terminal_confirmed'] is True
 
 
 def test_cleanup_refuses_foreign_channel_or_open_dispatch_gate(backend, monkeypatch):
@@ -270,8 +274,7 @@ def test_cleanup_refuses_foreign_channel_or_open_dispatch_gate(backend, monkeypa
 def test_unconfirmed_channel_cleanup_still_closes_owned_browser(backend, monkeypatch):
     sid = backend._browser_channel()
     monkeypatch.setattr(backend, '_close_owned_channel', lambda owned: False)
-    with pytest.raises(BrowserRuntimeError, match='did not confirm shutdown'):
-        backend.close()
+    backend.close()
     assert backend._manager.stopped == [[sid]]
     assert backend.runtime.closed == 1
 
@@ -285,13 +288,44 @@ def test_cleanup_is_not_sent_if_local_bridge_failed_to_stop(backend, monkeypatch
     assert backend.runtime.closed == 1
 
 
-def test_stale_bridge_is_not_replaced_until_remote_cleanup_confirmed(backend, monkeypatch):
+def test_stale_bridge_is_not_replaced_when_remote_terminal_unconfirmed(backend, monkeypatch):
     backend._browser_channel()
     monkeypatch.setattr(backend, '_channel_status', lambda sid: 'completed')
     monkeypatch.setattr(backend, '_close_owned_channel', lambda sid: False)
     with pytest.raises(BrowserRuntimeError, match='did not confirm termination'):
         backend._browser_channel()
     assert backend._poisoned and len(backend._manager.started) == 1
+
+
+def test_channel_observation_error_preserves_remote_and_closes_local(backend, monkeypatch):
+    backend._browser_channel()
+    real_client = module.httpx.Client
+    def respond(request):
+        assert request.method == 'GET'
+        raise httpx.ConnectError('offline test', request=request)
+    monkeypatch.setattr(module.httpx, 'Client', lambda **kwargs:
+        real_client(transport=module.httpx.MockTransport(respond), **kwargs))
+    monkeypatch.setattr(backend, '_close_owned_channel',
+                        lambda owned: module.BrowserHBackend._close_owned_channel(backend, owned))
+    backend.close()
+    assert backend.runtime.closed == 1
+    assert backend._lifecycle_observations[-1]['phase'] == 'remote_channel_preserved'
+    assert backend._lifecycle_observations[-1]['status'] == 'unavailable'
+
+
+def test_failed_channel_start_cannot_create_more_channels(backend, monkeypatch):
+    starts = []
+    def fail_start(bridges):
+        starts.extend(bridges)
+        raise TimeoutError('uncertain channel startup')
+    monkeypatch.setattr(backend._manager, 'ensure', fail_start)
+    with pytest.raises(BrowserRuntimeError):
+        backend._browser_channel()
+    assert backend._poisoned and backend._bridge.stop_event.is_set()
+    assert backend.runtime.closed == 1
+    with pytest.raises(BrowserRuntimeError):
+        backend._browser_channel()
+    assert len(starts) == 1
 
 
 def test_grounding_guidance_and_desktop_channel_are_disabled(backend, monkeypatch):

@@ -40,6 +40,24 @@ def _e(value) -> str:
     return html.escape(str(value if value is not None else 'Non renseigné'), quote=True)
 
 
+def _verdict(value, default: str = 'Non évalué') -> str:
+    """Translate presentation only; persisted labels retain their contract values."""
+    if value is None:
+        return default
+    return {'success': 'Réussi', 'partial': 'Partiel', 'failure': 'Échec',
+            'failed': 'Échec', 'unknown': 'Non évalué', 'yes': 'Oui', 'no': 'Non'}.get(str(value), str(value))
+
+
+def _review_details(rationale) -> str:
+    if isinstance(rationale, list):
+        points = ''.join('<li>' + _e(point) + '</li>' for point in rationale)
+        return ('<details><summary>Lire l’analyse IA (' + str(len(rationale)) +
+                ' point(s))</summary><ul>' + points + '</ul></details>')
+    if rationale:
+        return '<details><summary>Lire l’analyse IA</summary><p>' + _e(rationale) + '</p></details>'
+    return '<p>Aucune revue disponible.</p>'
+
+
 def _safe_json(directory: Path, name: str) -> dict:
     """Never follow episode symlinks or read arbitrary filenames."""
     path = directory / name
@@ -305,9 +323,9 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
             labels, review = row['labels'], row['review']
             rows += '<tr><td><a href="/company/sessions/' + _e(row['id']) + '">' + _e(meta.get('scenario_id', row['id'])) + '</a><br><small>' + _e(row['id']) + '</small></td>'
             rows += '<td>' + _e(meta.get('state')) + (' · simulée' if meta.get('simulated') else '') + '</td>'
-            rows += '<td>' + _e(labels.get('task_success_user') if labels.get('user_confirmed') is True else 'Non recueilli') + '</td>'
-            rows += '<td>' + _e(labels.get('useful') if labels.get('user_confirmed') is True else 'Non recueillie') + '</td>'
-            rows += '<td>' + _e(review.get('task_success_agent', 'Non revue')) + '</td><td>' + _e(meta.get('export_status', 'Non renseigné')) + '</td></tr>'
+            rows += '<td>' + _e(_verdict(labels.get('task_success_user')) if labels.get('user_confirmed') is True else 'Non recueilli') + '</td>'
+            rows += '<td>' + _e(_verdict(labels.get('useful')) if labels.get('user_confirmed') is True else 'Non recueillie') + '</td>'
+            rows += '<td>' + _e(_verdict(review.get('task_success_agent'), 'Non revue')) + '</td><td>' + _e(meta.get('export_status', 'Non renseigné')) + '</td></tr>'
         body += '<section class="card scroll"><table><thead><tr><th>Session</th><th>État moteur</th><th>Réussite · humain</th><th>Utilité · humain</th><th>Réussite · revue IA</th><th>Archive</th></tr></thead><tbody>' + rows + '</tbody></table></section>'
         if store is not None:
             try:
@@ -336,8 +354,8 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
                         'Cette session est exclue des indicateurs de résultat et de l’entraînement. Aucune preuve ni transcription n’est servie ici.</p></section>')
         report, labels, review = row['report'], row['labels'], row['review']
         body = '<section class="card"><dl><dt>Session</dt><dd>' + _e(session_id) + '</dd><dt>État moteur</dt><dd>' + _e(row['meta'].get('state')) + '</dd><dt>Demande</dt><dd>' + _e(report.get('goal', row['meta'].get('title'))) + '</dd><dt>Archive</dt><dd>' + _e(row['meta'].get('export_status')) + '</dd></dl></section>'
-        body += '<section class="card"><h2>Retour humain</h2><p>Réussite : ' + _e(labels.get('task_success_user') if labels.get('user_confirmed') is True else 'Non recueilli') + ' · Utilité : ' + _e(labels.get('useful') if labels.get('user_confirmed') is True else 'Non recueillie') + '</p><p>' + _e(labels.get('comment', '') if labels.get('user_confirmed') is True else '') + '</p></section>'
-        body += '<section class="card"><h2>Revue IA indépendante</h2><p>Réussite : ' + _e(review.get('task_success_agent', 'Non revue')) + ' · Périmètre : ' + _e(review.get('scope_compliance_agent', 'Non revu')) + '</p><pre>' + _e(review.get('rationale', 'Aucune revue disponible.')) + '</pre><p>Une revue humaine est nécessaire avant toute sélection pour entraînement.</p></section>'
+        body += '<section class="card"><h2>Retour humain</h2><p>Réussite : ' + _e(_verdict(labels.get('task_success_user')) if labels.get('user_confirmed') is True else 'Non recueilli') + ' · Utilité : ' + _e(_verdict(labels.get('useful')) if labels.get('user_confirmed') is True else 'Non recueillie') + '</p><p>' + _e(labels.get('comment', '') if labels.get('user_confirmed') is True else '') + '</p></section>'
+        body += '<section class="card"><h2>Revue IA indépendante</h2><p>Réussite : ' + _e(_verdict(review.get('task_success_agent'), 'Non revue')) + ' · Périmètre : ' + _e(_verdict(review.get('scope_compliance_agent'), 'Non revu')) + '</p>' + _review_details(review.get('rationale')) + '<p>Une revue humaine est nécessaire avant toute sélection pour entraînement.</p></section>'
         declared, verification = report.get('declared') or {}, report.get('verification') or {}
         body += '<section class="card"><h2>Rapport moteur</h2><p>Déclaration : ' + _e(declared.get('summary', 'Non renseignée')) + '</p><p>Vérification observée : ' + _e(verification.get('observed', 'Non renseignée')) + '</p><p>Critère satisfait selon le vérificateur : ' + _e(verification.get('satisfied', 'Non renseigné')) + '</p><p>Escalade : ' + _e(report.get('needs_human', 'Non renseignée')) + '</p><p class="muted">Les captures, fichiers audio et téléchargements de traces ne sont pas exposés par cette console.</p></section>'
         return page(request, 'Détail de session', body)

@@ -294,12 +294,12 @@ class BrowserHBackend(HBackend):
             raise BrowserRuntimeError('The owned H browser channel could not be verified.') from None
 
     def _close_owned_channel(self, sid):
-        """Cancel only this stopped bridge's interactive trajectory, not H tasks.
+        """Observe the stopped bridge's remote channel without mutating it.
 
-        The bridge creates a v1 trajectory. The upstream engine uses the v1
-        DELETE route for its command channels; the v2 session endpoint is not
-        assumed compatible. Call only after closing dispatch and stopping the
-        private manager, otherwise its poll loop could recreate the channel.
+        The v1 DELETE contract is not documented as trace-preserving, and v2
+        cancellation is not assumed compatible with v1 channel IDs. Only GET is
+        used here. A live or unverifiable channel remains preserved remotely;
+        False means it must not be replaced/reopened as a recovery strategy.
         """
         if self._bridge is None or sid != self._bridge.session_id or not self._bridge.stop_event.is_set():
             return False
@@ -308,35 +308,21 @@ class BrowserHBackend(HBackend):
         terminal = {'completed', 'failed', 'timed_out', 'interrupted'}
         known = terminal | {'pending', 'running', 'idle'}
 
-        def check(client, phase):
-            try:
+        try:
+            with httpx.Client(timeout=3, trust_env=False, follow_redirects=False,
+                              headers={'Authorization': f'Bearer {wrapper._api_key}'}) as client:
                 response = client.get(endpoint)
                 state = 'missing' if response.status_code == 404 else (
                     response.json().get('status') if response.status_code == 200 else 'unavailable')
                 state = state if isinstance(state, str) and state in known | {'missing'} else 'unknown'
-            except Exception:
-                state = 'unavailable'
-            if len(self._lifecycle_observations) < 100:
-                self._lifecycle_observations.append({'session_id': sid, 'phase': phase, 'status': state})
-            return state in terminal | {'missing'}
-
-        try:
-            with httpx.Client(timeout=3, trust_env=False, follow_redirects=False,
-                              headers={'Authorization': f'Bearer {wrapper._api_key}'}) as client:
-                if check(client, 'channel_before_cancel'):
-                    return True
-                try:
-                    client.delete(endpoint)
-                except Exception:
-                    pass  # cancellation can succeed before a transport timeout
-                for delay in (0, 0.25, 0.5, 1.0):
-                    if delay:
-                        time.sleep(delay)
-                    if check(client, 'channel_after_cancel'):
-                        return True
         except Exception:
-            pass
-        return False
+            state = 'unavailable'
+        confirmed = state in terminal | {'missing'}
+        if len(self._lifecycle_observations) < 100:
+            self._lifecycle_observations.append({'session_id': sid,
+                'phase': 'remote_channel_terminal_observed' if confirmed else 'remote_channel_preserved',
+                'status': state, 'remote_terminal_confirmed': confirmed})
+        return confirmed
 
     def _browser_channel(self):
         with self._channel_lock:
@@ -362,6 +348,18 @@ class BrowserHBackend(HBackend):
                 self._manager.ensure([bridge])
             except Exception:
                 bridge.stop_event.set()
+                # Startup may have created a remote channel before failing.
+                # Keep this backend closed rather than create more channels.
+                self._bridge = bridge
+                self._poisoned = True
+                try:
+                    self._manager.stop([bridge.session_id])
+                except Exception:
+                    pass
+                try:
+                    self.runtime.close()
+                except Exception:
+                    pass
                 raise BrowserRuntimeError('The isolated H browser channel could not be opened.') from None
             self._bridge = bridge
             return bridge.session_id
@@ -554,8 +552,9 @@ class BrowserHBackend(HBackend):
                 self._bridge.stop_event.set()
                 try:
                     self._manager.stop([self._bridge.session_id])
-                    if not self._close_owned_channel(self._bridge.session_id):
-                        failed = True
+                    # Closing local resources does not claim remote termination.
+                    # An unresolved v1 channel stays preserved for provider review.
+                    self._close_owned_channel(self._bridge.session_id)
                 except Exception:
                     failed = True
             try:
@@ -563,7 +562,7 @@ class BrowserHBackend(HBackend):
             except Exception:
                 failed = True
             if failed:
-                raise BrowserRuntimeError('Owned browser resources did not confirm shutdown.')
+                raise BrowserRuntimeError('Owned local browser resources did not confirm shutdown.')
 
     def __enter__(self):
         self.preflight()

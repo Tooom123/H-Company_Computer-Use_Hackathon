@@ -80,6 +80,16 @@ la variante v3 l’autorise sur les seules fiches métier prévues. Aucun docume
 métier n’est modifié par cette exception. Les WebSockets de présence restent bloqués.
 Les erreurs n’exposent pas les arguments ni les credentials.
 
+À l’arrêt, le pilote ferme la porte d’exécution, le listener et le navigateur
+locaux. Il ne supprime pas les canaux interactifs distants v1 : seule une lecture
+de leur statut est effectuée, et un canal encore actif ou invérifiable produit
+le diagnostic `remote_channel_preserved`. Sa terminaison distante n’est pas
+revendiquée et sa récupération reste bloquée. La sémantique de `DELETE` sur ces
+canaux, leur rétention et leur éventuel effet sur les quotas doivent être clarifiés
+avec H. L’annulation documentée des sessions acteur/vérificateur via l’API v2
+reste distincte ; elle n’est pas utilisée comme remplacement supposé pour les
+identifiants de canaux v1.
+
 Le mode interactif **Guide-moi reste désactivé dans le benchmark headless** : un
 utilisateur ne peut pas suivre les étapes dans cette fenêtre invisible. Le pilote
 desktop et les essais humains constituent une condition distincte. Les données de
