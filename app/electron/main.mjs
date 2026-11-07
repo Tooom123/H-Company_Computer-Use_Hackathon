@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, net, screen, session } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, net, screen, session, systemPreferences } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -8,6 +8,7 @@ import { captureObservation } from './capture.mjs';
 import { runHolo } from './holo.mjs';
 import { boundedRect, screenPointToCapture, captureRectToDisplay, validateSettings } from './geometry.mjs';
 import { windowIdsFromMediaSources } from './window-ids.mjs';
+import { requestCameraAccess } from './camera-permission.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -15,7 +16,8 @@ const devURL = process.env.HCS_DEV_URL;
 if (devURL && devURL !== 'http://localhost:5173') throw new Error('Origine de développement non autorisée.');
 const origin = devURL || 'hcompanion://localhost';
 const binary = path.join(root, 'out/capture');
-const model = process.env.HCS_MODEL || 'holo3-1-35b-a3b';
+const model = process.env.HCS_MODEL || 'holo4-27b';
+const models = [...new Set([model, 'holo4-27b', 'holo4-35b-a3b', 'holo3-1-35b-a3b'])];
 const MAX_GAZE_AGE_MS = 1500;
 protocol.registerSchemesAsPrivileged([{ scheme: 'hcompanion', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 
@@ -28,6 +30,8 @@ let gaze = null;
 let operation = null;
 let shuttingDown = false;
 let displayGeneration = 0;
+let calibrationInteractive = false;
+const cameraRequests = new WeakMap();
 const state = {
   tracker: { state: 'off' }, candidate: null, sent: null, busy: null,
   settings: { selection: 'gaze', roiWidth: 800, roiHeight: 600, includeGlobal: true, overlay: true },
@@ -59,14 +63,16 @@ function makeWindow(options, hash) {
 }
 function resetTracker() {
   gaze = null;
-  state.tracker = { state: 'off' };
+  calibrationInteractive = false;
+  state.tracker = { state: 'off', calibrationErrorPx: state.tracker.calibrationErrorPx };
   if (tracker && !tracker.isDestroyed()) tracker.close();
   tracker = undefined;
+  setOverlayVisibility();
   broadcast();
 }
 function setOverlayVisibility() {
   if (!overlay || overlay.isDestroyed()) return;
-  if (state.settings.overlay) overlay.showInactive(); else overlay.hide();
+  if (state.settings.overlay && !calibrationInteractive) overlay.showInactive(); else overlay.hide();
 }
 function currentSelection(settings = state.settings, snapshot = gaze) {
   if (settings.selection === 'full') return { point: null, fallbackReason: null, gazeAgeMs: null };
@@ -104,7 +110,7 @@ ipcMain.handle('companion:status', event => {
   authorize(event);
   const captureAvailable = process.platform === 'darwin' && existsSync(binary);
   return {
-    platform: process.platform, model, apiKeyConfigured: Boolean(process.env.HAI_API_KEY?.trim()), captureAvailable,
+    platform: process.platform, model, models, apiKeyConfigured: Boolean(process.env.HAI_API_KEY?.trim()), captureAvailable,
     captureError: captureAvailable ? undefined : 'Capture propre disponible sur macOS 14+, après npm run native (Xcode Command Line Tools).',
     display: { id: display.id, bounds: display.bounds, scaleFactor: display.scaleFactor },
   };
@@ -126,13 +132,16 @@ ipcMain.handle('companion:start-tracker', event => {
   authorize(event);
   if (state.busy) throw new Error('Une opération est en cours.');
   resetTracker();
+  calibrationInteractive = true;
+  setOverlayVisibility();
   state.tracker = { state: 'calibrating', message: 'Autorisez la caméra puis calibrez le regard.' };
-  tracker = makeWindow({ ...display.bounds, title: 'H-Companion · Calibration', frame: false, transparent: true, resizable: false, movable: false, hasShadow: false, alwaysOnTop: true }, '#tracker');
-  tracker.setAlwaysOnTop(true, 'screen-saver');
+  tracker = makeWindow({ ...display.bounds, title: 'H-Companion · Calibration', frame: false, transparent: true, resizable: false, movable: false, hasShadow: false, alwaysOnTop: false }, '#tracker');
   const openedTracker = tracker;
   openedTracker.on('closed', () => {
     if (tracker !== openedTracker) return;
-    tracker = undefined; gaze = null; state.tracker = { state: 'off' }; broadcast();
+    tracker = undefined; gaze = null; calibrationInteractive = false;
+    state.tracker = { state: 'off', calibrationErrorPx: state.tracker.calibrationErrorPx };
+    setOverlayVisibility(); broadcast();
   });
   broadcast();
 });
@@ -142,10 +151,24 @@ ipcMain.handle('companion:stop-tracker', event => {
 });
 ipcMain.handle('companion:finish-calibration', event => {
   authorize(event, tracker);
+  calibrationInteractive = false;
   tracker.setIgnoreMouseEvents(true);
   tracker.setFocusable(false);
+  setOverlayVisibility();
   panel?.focus();
   broadcast();
+});
+ipcMain.handle('companion:request-camera', event => {
+  authorize(event, tracker);
+  const requestingWindow = tracker;
+  if (cameraRequests.has(requestingWindow)) return cameraRequests.get(requestingWindow);
+  const request = requestCameraAccess({
+    // Chromium's fake device must never open an OS permission prompt in smoke tests.
+    platform: app.commandLine.hasSwitch('use-fake-device-for-media-stream') ? 'synthetic' : process.platform,
+    preferences: systemPreferences, trackerWindow: requestingWindow, overlayWindow: overlay,
+  }).finally(() => cameraRequests.delete(requestingWindow));
+  cameraRequests.set(requestingWindow, request);
+  return request;
 });
 ipcMain.on('companion:gaze', (event, sample) => {
   try { authorize(event, tracker); } catch { return; }
@@ -203,13 +226,15 @@ ipcMain.handle('companion:analyze', async (event, input) => {
   if (!frame || input?.frameId !== frame.frameId) throw new Error('Observation expirée. Préparez une nouvelle capture.');
   if (typeof input.prompt !== 'string' || input.prompt.trim().length === 0 || input.prompt.length > 8000) throw new Error('Saisissez une consigne de 1 à 8 000 caractères.');
   if (!process.env.HAI_API_KEY?.trim()) throw new Error('Renseignez HAI_API_KEY dans app/.env puis relancez l’app.');
+  const selectedModel = input.model ?? model;
+  if (!models.includes(selectedModel)) throw new Error('Modèle non proposé dans cette session.');
   const capturedFrame = frame;
   operation = new AbortController();
   state.busy = 'inference';
   state.sent = { frameId: capturedFrame.frameId, rect: captureRectToDisplay(capturedFrame.cropRect, { width: capturedFrame.sourceWidth, height: capturedFrame.sourceHeight }, capturedFrame.screenBounds) };
   broadcast();
   try {
-    return await runHolo({ frame: capturedFrame, prompt: input.prompt.trim(), model, apiKey: process.env.HAI_API_KEY, signal: AbortSignal.any([operation.signal, AbortSignal.timeout(60_000)]) });
+    return await runHolo({ frame: capturedFrame, prompt: input.prompt.trim(), model: selectedModel, apiKey: process.env.HAI_API_KEY, signal: AbortSignal.any([operation.signal, AbortSignal.timeout(60_000)]) });
   } finally {
     operation = null; state.busy = null; broadcast();
   }
@@ -238,7 +263,7 @@ app.whenReady().then(() => {
   panel = makeWindow({ width: 1180, height: 850, minWidth: 760, minHeight: 650, title: 'H-Companion · Vision Lab', backgroundColor: '#f4f6f1' }, '');
   overlay = makeWindow({ ...display.bounds, title: 'H-Companion · Zone', transparent: true, frame: false, focusable: false, resizable: false, movable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, show: false }, '#overlay');
   overlay.setIgnoreMouseEvents(true);
-  overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.setAlwaysOnTop(true, 'floating');
   overlay.webContents.once('did-finish-load', () => { setOverlayVisibility(); updateCandidate(); });
   panel.on('closed', () => { if (!shuttingDown) app.quit(); });
   const invalidateDisplay = () => {

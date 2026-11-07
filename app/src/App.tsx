@@ -99,6 +99,7 @@ function ImageCard({
 export default function App() {
   const bridge = window.companion;
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+  const [selectedModel, setSelectedModel] = useState("");
   const [live, setLive] = useState<LiveState | null>(null);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [widthDraft, setWidthDraft] = useState(String(defaults.roiWidth));
@@ -130,6 +131,7 @@ export default function App() {
       .then(([status, state]) => {
         if (mounted.current) {
           setRuntime(status);
+          setSelectedModel(status.model);
           acceptState(state);
         }
       })
@@ -201,7 +203,11 @@ export default function App() {
     const frameId = frame.frameId;
     void run("inference", async () => {
       setResult(null);
-      const next = await bridge.analyze({ frameId, prompt: prompt.trim() });
+      const next = await bridge.analyze({
+        frameId,
+        prompt: prompt.trim(),
+        model: selectedModel,
+      });
       if (!mounted.current || frameRef.current !== next.frameId) return;
       setResult(next);
     });
@@ -246,8 +252,11 @@ export default function App() {
     runtime?.captureAvailable && !busy && tracker.state !== "calibrating",
   );
   const canAnalyze = Boolean(
-    frame && runtime?.apiKeyConfigured && !busy && prompt.trim(),
+    frame && runtime?.apiKeyConfigured && !busy && prompt.trim() && selectedModel,
   );
+  const availableModels = runtime
+    ? [...new Set([runtime.model, ...(runtime.models ?? [])])]
+    : [];
   const requestState = inferencePending
     ? "En cours"
     : shownResult?.status === "completed"
@@ -282,8 +291,19 @@ export default function App() {
           <p>Une zone utile, une image précise, des mesures observées.</p>
         </div>
         <div className="model-tag">
-          <span>MODÈLE</span>
-          <strong>{runtime?.model ?? "Chargement…"}</strong>
+          <label htmlFor="holo-model">MODÈLE POUR LE PROCHAIN ENVOI</label>
+          <select
+            id="holo-model"
+            aria-label="Modèle Holo"
+            value={selectedModel}
+            disabled={busy || !runtime}
+            onChange={(event) => setSelectedModel(event.target.value)}
+          >
+            {!runtime && <option value="">Chargement…</option>}
+            {availableModels.map((model) => (
+              <option key={model} value={model}>{model}</option>
+            ))}
+          </select>
           <small>Analyse visuelle · aucune action exécutée</small>
         </div>
       </section>
@@ -625,6 +645,15 @@ export default function App() {
                     : "Aucune requête mesurée"}
               </span>
             </div>
+            {(shownResult || inferencePending) && (
+              <p className="measured-model" aria-live="polite">
+                {inferencePending ? "Modèle interrogé : " : "Modèle mesuré : "}
+                <strong>{shownResult?.model ?? selectedModel}</strong>
+                {shownResult && shownResult.model !== selectedModel && (
+                  <span> · Ces mesures précèdent le changement de modèle.</span>
+                )}
+              </p>
+            )}
             <div className="metrics-grid">
               <Metric
                 label="Tokens d’entrée"
@@ -731,6 +760,7 @@ export default function App() {
                   <span className="badge warning">SIMULÉ</span>
                 )}
               </div>
+              <p className="response-model">Réponse de <strong>{shownResult.model}</strong></p>
               {shownResult.error && (
                 <p role="alert" className="warning-text">
                   {shownResult.error}

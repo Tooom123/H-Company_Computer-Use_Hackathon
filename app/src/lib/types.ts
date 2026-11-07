@@ -1,7 +1,7 @@
 export type Rect = { x: number; y: number; width: number; height: number };
 export type DisplayInfo = { id: number; bounds: Rect; scaleFactor: number };
 export type Settings = { selection: 'gaze' | 'cursor' | 'full'; roiWidth: number; roiHeight: number; includeGlobal: boolean; overlay: boolean };
-export type RuntimeStatus = { platform: string; model: string; apiKeyConfigured: boolean; captureAvailable: boolean; captureError?: string; display: DisplayInfo };
+export type RuntimeStatus = { platform: string; model: string; models?: string[]; apiKeyConfigured: boolean; captureAvailable: boolean; captureError?: string; display: DisplayInfo };
 export type TrackerStatus = { state: 'off' | 'calibrating' | 'tracking' | 'lost' | 'error'; message?: string; calibrationErrorPx?: number };
 export type LiveState = { tracker: TrackerStatus; candidate: Rect | null; sent: { frameId: string; rect: Rect } | null; busy: 'capture' | 'inference' | null; settings: Settings };
 export type EncodedImage = { dataUrl: string; width: number; height: number; sha256: string };
@@ -25,12 +25,13 @@ export interface CompanionBridge {
   startTracker(): Promise<void>;
   stopTracker(): Promise<void>;
   capture(): Promise<CaptureFrame>;
-  analyze(input: { frameId: string; prompt: string }): Promise<InferenceResult>;
+  analyze(input: { frameId: string; prompt: string; model?: string }): Promise<InferenceResult>;
   cancel(): Promise<void>;
   onState(callback: (state: LiveState) => void): () => void;
   // Restricted by main process to the tracker window; viewport coordinates on the primary display.
   reportGaze(sample: GazeSample | null): void;
   reportTracker(status: TrackerStatus): void;
   finishCalibration(): Promise<void>;
+  requestCamera(): Promise<void>;
 }
 declare global { interface Window { companion: CompanionBridge } }

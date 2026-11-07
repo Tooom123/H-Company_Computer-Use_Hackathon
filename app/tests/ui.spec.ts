@@ -10,6 +10,8 @@ async function installFixture(page: Page, keyConfigured = true) {
           moveCandidate: () => void;
           failCapture: () => void;
           requestFrame: string | null;
+          requestModel: string | null;
+          requests: Array<{ frameId: string; model: string; detailDataUrl?: string; globalDataUrl?: string }>;
         };
       };
       const fixtureWindow = window as unknown as FixtureWindow;
@@ -85,7 +87,7 @@ async function installFixture(page: Page, keyConfigured = true) {
             status === "completed"
               ? "Réponse de fixture. Aucune requête Holo réelle."
               : "",
-          model: "holo-fixture",
+          model: fixtureWindow.__labFixture.requestModel ?? "holo4-27b",
           status,
           error:
             status === "failed" ? "Service de fixture indisponible" : undefined,
@@ -104,11 +106,14 @@ async function installFixture(page: Page, keyConfigured = true) {
           latestFrame = null;
         },
         requestFrame: null,
+        requestModel: null,
+        requests: [],
       };
       window.companion = {
         getStatus: async () => ({
           platform: "fixture",
-          model: "holo-fixture",
+          model: "holo4-27b",
+          models: ["holo4-27b", "holo4-35b-a3b", "holo3-1-35b-a3b"],
           apiKeyConfigured: keyConfigured,
           captureAvailable: true,
           display: {
@@ -152,6 +157,13 @@ async function installFixture(page: Page, keyConfigured = true) {
         },
         analyze: async (input) => {
           fixtureWindow.__labFixture.requestFrame = input.frameId;
+          fixtureWindow.__labFixture.requestModel = input.model ?? "holo4-27b";
+          fixtureWindow.__labFixture.requests.push({
+            frameId: input.frameId,
+            model: input.model ?? "holo4-27b",
+            detailDataUrl: latestFrame?.detail.dataUrl,
+            globalDataUrl: latestFrame?.global?.dataUrl,
+          });
           state.sent = {
             frameId: input.frameId,
             rect: { x: 100, y: 150, width: 400, height: 300 },
@@ -174,6 +186,7 @@ async function installFixture(page: Page, keyConfigured = true) {
         reportGaze: () => {},
         reportTracker: () => {},
         finishCalibration: async () => {},
+        requestCamera: async () => {},
       };
     },
     { keyConfigured },
@@ -293,6 +306,36 @@ test("retains unknown usage for failed and cancelled requests", async ({
     "—",
     "100 ms",
   ]);
+});
+
+test("replays the same image with the selected model and labels prior measurements", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const model = page.getByRole("combobox", { name: "Modèle Holo" });
+  await expect(model).toHaveValue("holo4-27b");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  const crop = page.getByRole("img", { name: "Région détaillée", exact: true });
+  const original = await crop.getAttribute("src");
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  await expect(model).toBeDisabled();
+  await finishFixture(page, "completed");
+  await expect(page.locator(".measured-model")).toContainText("Modèle mesuré : holo4-27b");
+
+  await model.selectOption("holo3-1-35b-a3b");
+  await expect(crop).toHaveAttribute("src", original!);
+  await expect(page.locator(".measured-model")).toContainText("holo4-27b");
+  await expect(page.locator(".measured-model")).toContainText("Ces mesures précèdent le changement de modèle.");
+  await expect(page.locator(".response-model")).toContainText("holo4-27b");
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  const requests = await page.evaluate(() => (window as any).__labFixture.requests);
+  expect(requests.map((request: { model: string }) => request.model)).toEqual(["holo4-27b", "holo3-1-35b-a3b"]);
+  expect(requests[1].frameId).toBe(requests[0].frameId);
+  expect(requests[1].detailDataUrl).toBe(requests[0].detailDataUrl);
+  expect(requests[1].globalDataUrl).toBe(requests[0].globalDataUrl);
+  await finishFixture(page, "completed");
+  await expect(page.locator(".measured-model")).toContainText("Modèle mesuré : holo3-1-35b-a3b");
+  await expect(page.locator(".response-model")).toContainText("holo3-1-35b-a3b");
+  await expect(page.getByText("Ces mesures précèdent le changement de modèle.")).toHaveCount(0);
 });
 
 test("invalidates the previous image when a subsequent capture fails", async ({

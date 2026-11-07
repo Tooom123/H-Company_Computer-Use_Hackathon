@@ -30,17 +30,23 @@ npm start
 ```
 
 Le processus principal lit `app/.env` ; la clé n’est jamais exposée au renderer.
-Le modèle par défaut est `holo3-1-35b-a3b`. Définir `HCS_MODEL` pour un autre modèle accessible
-à votre clé (par exemple `holo4-27b`). Le transport utilise la [Models API officielle](https://hub.hcompany.ai/models-api/overview).
+Le modèle par défaut est `holo4-27b`. Le sélecteur du panneau propose aussi `holo4-35b-a3b`
+et `holo3-1-35b-a3b`. Changer de modèle conserve la même image pour un nouvel appel explicite ;
+les mesures affichent le modèle qui les a réellement produites. `HCS_MODEL` permet de choisir
+le défaut au démarrage. Le transport utilise la [Models API officielle](https://hub.hcompany.ai/models-api/overview).
 
 ## Parcours de démonstration
 
 1. Ouvrir un logiciel avec des données fictives sur l’écran principal.
 2. Activer la caméra depuis le panneau, puis confirmer dans la fenêtre de calibration.
-   Accepter la permission macOS. Fixer puis cliquer les neuf cibles ; rester sur chacune
+   La calibration et l’overlay se masquent pendant la demande macOS : cliquer **Autoriser**
+   dans le dialogue système. La calibration revient après la réponse. Si l’accès avait déjà
+   été refusé : Réglages Système → Confidentialité et sécurité → Caméra → Electron, puis
+   relancer l’app. **Échap** permet de quitter la calibration. Fixer puis cliquer les neuf cibles ; rester sur chacune
    pendant la collecte. Quatre autres positions servent à la validation sans apprentissage.
 3. Commencer le suivi. La fenêtre de calibration devient transparente et laisse passer
-   les clics. Aucun point de regard n’est montré ; le rectangle pointillé est la zone candidate.
+   les clics. L’erreur de validation reste affichée dans le panneau, y compris après arrêt du suivi.
+   Aucun point de regard n’est montré ; le rectangle pointillé est la zone candidate.
 4. Choisir le regard, le curseur ou l’écran complet, les dimensions de la région en pixels
    source et l’ajout éventuel d’un aperçu global (largeur maximale 640 px).
 5. Cliquer **Capturer dans 3 s**, puis regarder la partie utile du logiciel. L’image reste
@@ -151,6 +157,13 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
   basée uniquement sur le PID : elle utilise désormais les identifiants natifs des fenêtres.
 - La précision du regard sur webcam réelle nécessite la calibration de l’utilisateur ;
   elle n’est pas validée par ces deux contrôles.
+- Un essai humain ultérieur a terminé les neuf cibles puis les quatre cibles de validation :
+  médiane affichée de **393 px d’affichage**, suivi actif confirmé dans le panneau. Cette
+  précision grossière ne valide pas une petite région ; la couverture de la cible dans
+  la capture reste à vérifier, avec une région élargie et l’aperçu global.
+- Deux sondes visuelles réelles sur la même image fictive ont ensuite confirmé le fonctionnement
+  de `holo4-27b` (554 tokens, 3 174 ms) et `holo4-35b-a3b` (559 tokens, 2 386 ms), avec la bonne
+  réponse dans les deux cas. Un appel par modèle ne permet pas de classer leurs performances.
 
 ## Limites et dépendances
 
@@ -161,6 +174,8 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
   demandée n’est pas retrouvée. Il ne s’appuie pas sur `setContentProtection`, insuffisant
   avec ScreenCaptureKit.
 - L’overlay peut influencer le regard. Le désactiver pour le lot de mesures principales.
+- La calibration n’est jamais `alwaysOnTop`. L’overlay est caché pendant les permissions et
+  la calibration, puis revient au niveau `floating` ; aucun niveau `screen-saver` n’est utilisé.
 - Aucun entraînement implicite sur les clics du logiciel ou de l’agent. Les profils ne sont
   pas conservés entre sessions. Garder l’éclairage et la position après calibration.
 - WebGazer **3.5.3** est épinglé. Sa licence **GPL-3.0-or-later**, le bundle et les assets

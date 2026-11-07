@@ -18,15 +18,22 @@ try {
   const status = await panel.evaluate(() => window.companion.getStatus());
   assert.equal(status.apiKeyConfigured, false);
   assert.equal((await panel.evaluate(() => window.companion.getState())).tracker.state, 'off');
-  const opened = instance.waitForEvent('window', page => page.url().includes('tracker'));
+  // The window event can fire before navigation populates page.url().
+  const opened = instance.waitForEvent('window', { timeout: 15_000 });
   await panel.getByRole('button', { name: 'Activer la caméra et calibrer' }).click();
   const tracker = await opened;
+  await tracker.waitForURL('**/tracker.html#tracker', { timeout: 15_000 });
+  const windowLevels = await instance.evaluate(({ BrowserWindow }) => {
+    const windows = BrowserWindow.getAllWindows();
+    return { trackerOnTop: windows.find(w => w.webContents.getURL().includes('#tracker'))?.isAlwaysOnTop(), overlayVisible: windows.find(w => w.webContents.getURL().includes('#overlay'))?.isVisible() };
+  });
+  assert.deepEqual(windowLevels, { trackerOnTop: false, overlayVisible: false });
   await tracker.getByRole('button', { name: /Activer la caméra et calibrer/ }).click();
   await tracker.getByRole('heading', { name: 'Fixez la cible, puis cliquez dessus.' }).waitFor({ timeout: 30_000 });
   await tracker.waitForFunction(() => {
     const video = document.getElementById('webgazerVideoFeed');
     return video?.readyState >= 2 && video.srcObject?.active;
-  }, { timeout: 20_000 });
+  }, undefined, { timeout: 20_000 });
   // Wait for one inference to exercise MediaPipe/WASM under the production CSP.
   await tracker.waitForTimeout(2000);
   assert.equal(await tracker.evaluate(() => window.webgazer.params.faceMeshSolutionPath.startsWith('hcompanion://localhost/')), true);

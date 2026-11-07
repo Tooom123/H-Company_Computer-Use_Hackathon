@@ -109,12 +109,20 @@ export default function Tracker() {
       else { setError(message); changePhase('error'); }
     };
     const onUnload = () => instance.dispose();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        instance.dispose(); collection.current = null;
+        void window.companion.stopTracker();
+      }
+    };
     window.addEventListener('resize', onResize);
     window.addEventListener('beforeunload', onUnload);
+    window.addEventListener('keydown', onKeyDown);
     return () => {
       window.clearInterval(watchdog);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('beforeunload', onUnload);
+      window.removeEventListener('keydown', onKeyDown);
       collection.current = null;
       instance.dispose();
       if (tracker.current === instance) tracker.current = null;
@@ -125,6 +133,8 @@ export default function Tracker() {
     changePhase('starting');
     window.companion.reportTracker({ state: 'calibrating', message: 'Initialisation de la webcam et du modèle local' });
     try {
+      await window.companion.requestCamera();
+      if (!tracker.current || phaseRef.current !== 'starting') return;
       await tracker.current?.start();
       if (!tracker.current || phaseRef.current !== 'starting') return;
       setPoint(0);
@@ -177,7 +187,7 @@ export default function Tracker() {
   return <main className="tracker-screen">
     <header className="tracker-header">
       <div className="tracker-wordmark"><span className="tracker-logo">H</span> COMPANION <span className="tracker-tag">REGARD</span></div>
-      <button className="tracker-close" onClick={stopTracker}>Fermer la calibration</button>
+      <button className="tracker-close" onClick={stopTracker}>Fermer la calibration · Échap</button>
     </header>
 
     {phase === 'intro' && <section className="tracker-card">
@@ -186,7 +196,7 @@ export default function Tracker() {
       <p>Neuf cibles pour apprendre, quatre autres pour mesurer. Gardez la tête dans une position confortable, face à l’écran.</p>
       <div className="tracker-privacy"><strong>La webcam reste sur ce Mac.</strong><span>Les images de votre visage ne sont pas envoyées à Holo. Vous pourrez arrêter le suivi depuis le panneau H-Companion.</span></div>
       <button className="tracker-primary" onClick={() => void startCamera()}>Activer la caméra et calibrer <span>↗</span></button>
-      <small>La caméra démarre uniquement après ce clic et votre autorisation.</small>
+      <small>La fenêtre s’efface pendant l’autorisation macOS, puis revient. Échap permet de quitter.</small>
     </section>}
 
     {phase === 'starting' && <section className="tracker-card" role="status">
@@ -218,7 +228,7 @@ export default function Tracker() {
       <h1>Votre zone est prête.</h1>
       <div className="tracker-result"><strong>{Math.round(calibrationError ?? 0)}</strong><span>px logiques<br />d’erreur médiane</span></div>
       <p>Mesure sur quatre cibles distinctes : écart entre la prédiction et la fixation demandée. Ce n’est pas une mesure du regard réel par un appareil de référence.</p>
-      <p>Gardez la même position. Le panneau affichera une zone large ; aucune croix de regard ne restera à l’écran.</p>
+      <p>Après « Commencer le suivi », cette fenêtre devient invisible. L’erreur de validation reste visible dans le panneau, à côté du statut du regard.</p>
       <button className="tracker-primary" onClick={() => void finish()}>Commencer le suivi <span>↗</span></button>
       <button className="tracker-secondary" onClick={() => window.location.reload()}>Refaire la calibration</button>
     </section>}
