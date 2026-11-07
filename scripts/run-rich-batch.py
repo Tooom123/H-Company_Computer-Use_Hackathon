@@ -97,6 +97,8 @@ def main():
             while True:
                 snap = api('GET', '/pilot/episodes/' + active)
                 if snap['state'] != last or time.monotonic() - heartbeat > 30:
+                    row.update(state=snap['state'], export_status=snap.get('pilot', {}).get('export_status', 'pending'))
+                    save('results.json', rows)
                     print(json.dumps({'scenario': scenario, 'state': snap['state'], 'steps': len(snap.get('steps', []))}), flush=True)
                     last, heartbeat = snap['state'], time.monotonic()
                 if snap['state'] in TERMINAL and (snap.get('report_ready') or snap['state'] == 'preflight_failed'):
