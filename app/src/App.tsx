@@ -377,7 +377,11 @@ export default function App() {
         observation={live?.observation}
         disabled={!canCapture}
         startDisabled={gazeNeedsCalibration}
-        startHint={gazeNeedsCalibration ? "Calibrez le regard avant cet essai, ou choisissez Curseur / Écran complet pour tester sans webcam." : undefined}
+        calibrationState={gazeNeedsCalibration ? (tracker.state === "calibrating" ? "running" : "needed") : undefined}
+        onCalibrate={() => void run("tracker-start", () => bridge.startTracker())}
+        modeLabel={selectionLabels[settings.selection]}
+        trackerLabel={trackerLabels[tracker.state]}
+        startHint={gazeNeedsCalibration ? "La calibration est nécessaire après chaque lancement. Terminez les cibles, cliquez sur « Commencer le suivi », puis revenez lancer l’essai. Curseur et Écran complet fonctionnent sans webcam." : undefined}
         shortcutAvailable={runtime?.observationShortcutAvailable === true}
         onStart={startObservation}
         onSelect={selectPreparedFrame}

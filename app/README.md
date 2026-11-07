@@ -70,6 +70,10 @@ sur les cibles de validation, mais n’ajuste pas encore automatiquement la tail
 
 1. Préparer le logiciel cible, puis choisir **Curseur** pour vérifier le recadrage sans caméra,
    ou **Regard** après calibration. Garder la même taille, par exemple 800 × 600, entre essais.
+   En mode Regard, si la caméra est arrêtée, la carte propose **Activer le regard et calibrer**.
+   La calibration est à refaire après chaque lancement de l’app. Après les neuf cibles et
+   les quatre cibles de validation, cliquer **Commencer le suivi**, puis lancer l’observation
+   depuis le panneau ; la calibration seule ne lance pas les captures.
 2. Dans **Cadre de la région**, comparer **Écran** puis **Fenêtre regardée**. Le second mode
    utilise la fenêtre visible sous le point de regard ou le curseur et borne le crop à son
    rectangle. Sans fenêtre éligible, le panneau indique le retour à la région d’écran.

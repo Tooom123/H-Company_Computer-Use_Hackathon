@@ -22,6 +22,9 @@ async function installFixture(page: Page, keyConfigured = true) {
           finishObservation: () => void;
           selectedObservations: string[];
           annotationCalls: Array<{ frameId: string; label: string }>;
+          trackerStartCalls: number;
+          deferCalibration: () => void;
+          setTrackerState: (state: "tracking" | "error") => void;
         };
       };
       const fixtureWindow = window as unknown as FixtureWindow;
@@ -45,6 +48,7 @@ async function installFixture(page: Page, keyConfigured = true) {
       let configurationDeferred = false;
       let configurationRejected = false;
       let fullSizeCapture = false;
+      let calibrationDeferred = false;
       const configurationResolvers: Array<() => void> = [];
       let resolveInference: ((value: any) => void) | null = null;
       let observationFrames: any[] = [];
@@ -133,6 +137,9 @@ async function installFixture(page: Page, keyConfigured = true) {
         observationOptions: null,
         selectedObservations: [],
         annotationCalls: [],
+        trackerStartCalls: 0,
+        deferCalibration: () => { calibrationDeferred = true; },
+        setTrackerState: next => { state.tracker = { state: next }; emit(); },
         finishObservation: () => {
           observationFrames = [1, 2].map(index => ({
             frameId: `observed-fixture-${index}`,
@@ -176,7 +183,8 @@ async function installFixture(page: Page, keyConfigured = true) {
           emit();
         },
         startTracker: async () => {
-          state.tracker = { state: "tracking" };
+          fixtureWindow.__labFixture.trackerStartCalls += 1;
+          state.tracker = { state: calibrationDeferred ? "calibrating" : "tracking" };
           emit();
         },
         stopTracker: async () => {
@@ -287,8 +295,8 @@ async function finishFixture(page: Page, outcome: "completed" | "failed") {
 test("starts a local hidden-panel observation with applied dimensions and locks competing actions", async ({ page }) => {
   await installFixture(page);
   await page.goto("/");
-  await expect(page.getByRole("button", {name: "Observer et masquer le panneau"})).toBeDisabled();
-  await expect(page.getByText("Calibrez le regard avant cet essai", {exact: false})).toBeVisible();
+  await expect(page.getByRole("button", {name: "Activer le regard et calibrer"})).toBeEnabled();
+  await expect(page.getByRole("button", {name: "Observer et masquer le panneau"})).toHaveCount(0);
   await page.getByRole("radio", {name: "Curseur", exact: true}).check();
   await page.getByRole("combobox", {name: "Cadre de la région"}).selectOption("window");
   await page.getByRole("spinbutton", {name: "Largeur de la région"}).fill("896");
@@ -302,6 +310,36 @@ test("starts a local hidden-panel observation with applied dimensions and locks 
   const start = await page.evaluate(() => (window as any).__labFixture.observationOptions);
   expect(start).toMatchObject({durationSeconds: 15, showOverlay: false, settings: {selection: "cursor", roiWidth: 896, roiHeight: 704, regionScope: "window"}});
   expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+  expect(await page.evaluate(() => (window as any).__labFixture.trackerStartCalls)).toBe(0);
+});
+
+test("offers gaze calibration in the observation card and waits for an explicit observation start", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await expect(card.getByLabel("Mode et suivi de l’essai")).toHaveText("Mode : Regard · Caméra arrêtée");
+  await expect(card.getByText("La calibration est nécessaire après chaque lancement.", {exact: false})).toBeVisible();
+  await page.evaluate(() => (window as any).__labFixture.deferCalibration());
+  await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
+  await expect(card.getByRole("button", {name: "Calibration en cours…"})).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.trackerStartCalls)).toBe(1);
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+  await page.evaluate(() => (window as any).__labFixture.setTrackerState("tracking"));
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+  await card.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toMatchObject({settings: {selection: "gaze"}});
+});
+
+test("offers a calibration retry in the observation card after a tracker error", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.evaluate(() => (window as any).__labFixture.setTrackerState("error"));
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await expect(card.getByRole("button", {name: "Activer le regard et calibrer"})).toBeEnabled();
+  await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
 });
 
 test("reviews and annotates stopped observations without mixing them with Holo success or sending the reference", async ({ page }) => {

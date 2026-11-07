@@ -7,6 +7,10 @@ type Props = {
   disabled: boolean;
   startDisabled?: boolean;
   startHint?: string;
+  calibrationState?: "needed" | "running";
+  onCalibrate: () => void;
+  modeLabel: string;
+  trackerLabel: string;
   shortcutAvailable: boolean;
   onStart: (options: { durationSeconds: 15 | 30 | 60; showOverlay: boolean }) => void;
   onSelect: (frame: CaptureFrame) => void;
@@ -14,7 +18,7 @@ type Props = {
 };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export default function ObservationPanel({ bridge, observation, disabled, startDisabled, startHint, shortcutAvailable, onStart, onSelect, onClear }: Props) {
+export default function ObservationPanel({ bridge, observation, disabled, startDisabled, startHint, calibrationState, onCalibrate, modeLabel, trackerLabel, shortcutAvailable, onStart, onSelect, onClear }: Props) {
   const [durationSeconds, setDurationSeconds] = useState<15 | 30 | 60>(30);
   const [showOverlay, setShowOverlay] = useState(false);
   const [samples, setSamples] = useState<ObservationSample[]>([]);
@@ -109,6 +113,7 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
       <div><span className="eyebrow">Essai en situation</span><h2>Observer sans le panneau</h2></div>
       <span className="badge neutral">Local · aucun envoi automatique</span>
     </div>
+    <p className="field-note" aria-label="Mode et suivi de l’essai">Mode : <strong>{modeLabel}</strong> · {trackerLabel}</p>
     <p className="continuous-intro">Le panneau se masque pendant l’essai. Environ une capture par seconde, puis retour pour vérifier la zone retenue.</p>
     <div className="continuous-controls">
       <label className="continuous-duration">Durée de l’essai
@@ -118,7 +123,8 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
       </label>
       <label className="continuous-overlay"><input type="checkbox" checked={showOverlay} disabled={disabled || active} onChange={event => setShowOverlay(event.target.checked)} /> Montrer le contour pendant l’essai</label>
       {active ? <button className="button secondary" disabled={observation?.status === "stopping"} onClick={() => void bridge.stopObservation().catch(cause => setError(errorText(cause)))}>{observation?.status === "stopping" ? "Arrêt en cours…" : "Arrêter l’observation"}</button>
-        : <button className="button primary" disabled={disabled || startDisabled || reviewBusy || !shortcutAvailable} onMouseDown={event => event.preventDefault()} onClick={() => onStart({ durationSeconds, showOverlay })}>Observer et masquer le panneau</button>}
+        : calibrationState ? <button className="button primary" disabled={disabled || calibrationState === "running" || reviewBusy} onClick={onCalibrate}>{calibrationState === "running" ? "Calibration en cours…" : "Activer le regard et calibrer"}</button>
+          : <button className="button primary" disabled={disabled || startDisabled || reviewBusy || !shortcutAvailable} onMouseDown={event => event.preventDefault()} onClick={() => onStart({ durationSeconds, showOverlay })}>Observer et masquer le panneau</button>}
     </div>
     {startHint && !active && <p className="field-note">{startHint}</p>}
     <p className="continuous-shortcut">Retour anticipé : <kbd>⌘ / Ctrl</kbd> + <kbd>Maj</kbd> + <kbd>Espace</kbd>. Le panneau revient aussi à la fin de la durée choisie.</p>
