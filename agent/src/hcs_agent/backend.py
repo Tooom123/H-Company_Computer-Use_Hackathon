@@ -229,11 +229,13 @@ class HBackend:
 
         Opening a channel per session costs ~5 s, gets rate-limited, and leaves orphans when the process dies.
         """
-        if self._desktop_session_id is None:
-            from hai_agents_local.desktop import PyautoguiDesktopBridge
-            from hai_agents_local.manager import ensure_bridges
+        from hai_agents_local.desktop import PyautoguiDesktopBridge
+        from hai_agents_local.manager import ensure_bridges, serving_bridges
 
-            wrapper = self._client._client_wrapper
+        wrapper = self._client._client_wrapper
+        if self._desktop_session_id is not None and not self._channel_healthy(self._desktop_session_id):
+            self._desktop_session_id = None  # stale: the bridge died or the platform closed the channel
+        if self._desktop_session_id is None:
             bridge = PyautoguiDesktopBridge(
                 "user-mac", api_key=wrapper._api_key, base_url=wrapper.get_base_url(),
                 max_width=self.screenshot_max_width,
@@ -242,6 +244,21 @@ class HBackend:
             ensure_bridges([bridge])
             self._desktop_session_id = bridge.session_id
         return self._desktop_session_id
+
+    def _channel_healthy(self, session_id: str) -> bool:
+        """The bridge thread still serves it and the platform still knows the channel as open."""
+        import httpx
+        from hai_agents_local.manager import serving_bridges
+
+        if not serving_bridges([session_id]):
+            return False
+        wrapper = self._client._client_wrapper
+        try:
+            r = httpx.get(f"{wrapper.get_base_url().rstrip('/')}/api/v1/trajectories/{session_id}",
+                          headers={"Authorization": f"Bearer {wrapper._api_key}"}, timeout=10)
+            return r.status_code == 200 and r.json().get("status") not in {"failed", "completed", "interrupted"}
+        except Exception:  # noqa: BLE001 - network blip: keep the channel, the session will tell
+            return True
 
     # ----------------------------------------------------------------- preflight
 

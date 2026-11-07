@@ -102,11 +102,9 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
              scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
              overlay: bool = True, ov=None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
+    # The Magnet is the authority: 0 = show only, 1 = guide + takeover when stuck, 2 = the agent does it.
     request.autonomy = _MAGNET["level"]
-    if request.autonomy >= 2:
-        request.mode = Mode.act
-    elif request.mode is Mode.act and request.autonomy == 0:
-        request.mode = Mode.guide
+    request.mode = Mode.act if request.autonomy >= 2 else Mode.guide
     it = Intervention(request, backend, ProcedureRegistry(), _print_event, runs_dir)
     _MAGNET["current"] = it
     if ov is not None:
