@@ -22,7 +22,13 @@ from .procedures import ProcedureRegistry
 from .runner import Intervention
 
 
+_LAST_LOOKUP_AT = 0.0
+
+
 def _print_event(e: AgentEvent) -> None:
+    global _LAST_LOOKUP_AT
+    if e.type == "knowledge":
+        _LAST_LOOKUP_AT = time.time()
     tag = "SIM " if e.simulated else ""
     msg = e.message or ""
     if e.type == "step":
@@ -191,7 +197,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
 class _ScreenWatcher:
     """Detects that the user acted: the screen differs from when the step was shown, then holds still."""
 
-    def __init__(self, min_dwell_s: float = 2.5, settle_s: float = 1.2, threshold: float = 6.0) -> None:
+    def __init__(self, min_dwell_s: float = 1.0, settle_s: float = 0.8, threshold: float = 6.0) -> None:
         self.min_dwell_s, self.settle_s, self.threshold = min_dwell_s, settle_s, threshold
         self._base = None
         self._armed_at = 0.0
@@ -228,7 +234,7 @@ class _ScreenWatcher:
         import numpy as np
 
         now = time.time()
-        if now - self._last_t < 0.7:
+        if now - self._last_t < 0.4:
             return False
         self._last_t = now
         frame = self._grab()
@@ -274,8 +280,23 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             ov.hide()
         it.next(NextCommand(done=done, note=note))
 
+    def status_badge() -> None:
+        if ov is None:
+            return
+        if it.state is State.awaiting_user:
+            ov.badge(None)
+        elif time.time() - _LAST_LOOKUP_AT < 4:
+            ov.badge("Je cherche sur le web…", pulsing=True)
+        elif it.state is State.running:
+            ov.badge("Je regarde l'écran…", pulsing=True)
+        elif it.state is State.verifying:
+            ov.badge("Je vérifie le résultat…", pulsing=True)
+        elif it.state.terminal:
+            ov.badge(None)
+
     def tick() -> None:
         nonlocal shown_step, prompted
+        status_badge()
         if it.state is State.awaiting_user and it.guidance:
             g = it.guidance[-1]
             if g.index != shown_step:

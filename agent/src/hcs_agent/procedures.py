@@ -222,10 +222,14 @@ Rules:
   with target null and an instruction like "Bring the Odoo tab to the front", nothing else.
 - After each answer the user tells you they did the step (or could not). Look at the screen again before
   the next step; adapt to what is actually displayed.
+- When several consecutive steps use controls that are ALL visible right now (e.g. type a value, then click
+  the button next to it), return them together in `steps` (max 3) so the user is not kept waiting. Never
+  include a step whose control is not yet on screen.
 - Set last=true only when the goal is visibly achieved on screen.
 - If the user cannot proceed because of an error or missing permission, quote the message you see in
   `blocker` and set last=true, blocked=true.
-- Use the documentation tool when unsure about a menu path or a feature's purpose.
+- If you are not sure what a menu or a field is for, or where a feature lives, call `lookup_docs` and
+  put the answer in `why`, briefly. Say "I am not sure" rather than guessing.
 """
 
 

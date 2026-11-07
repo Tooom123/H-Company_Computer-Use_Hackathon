@@ -77,9 +77,21 @@ def _lenient(model: type[BaseModel], raw: Any) -> BaseModel | None:
         return None
 
 
-class GuideAnswer(BaseModel):
-    """One guidance step, answered by the H agent in guide mode."""
+class GuideSubStep(BaseModel):
+    instruction: str = Field(description="One short imperative line, max 12 words.")
+    where: str = ""
+    why: str = ""
+    target_x: int | None = None
+    target_y: int | None = None
 
+
+class GuideAnswer(BaseModel):
+    """Guidance answered by the H agent in guide mode: the next step, plus following steps visible on the same screen."""
+
+    steps: list[GuideSubStep] = Field(
+        default_factory=list,
+        description="Up to 3 consecutive steps whose controls are ALL visible on the current screen, in order. "
+                    "The first one must also be repeated in the top-level fields.")
     instruction: str = Field(description="What the user should do now. One short line, max 12 words.")
     where: str = Field(default="", description="Where the control is on screen, in words.")
     why: str = Field(default="", description="One or two sentences: what this step achieves for the user.")
@@ -199,8 +211,8 @@ class HBackend:
 
     # ----------------------------------------------------------------- agent specs
 
-    def _agent_spec(self, name: str, instructions: str, lazy: bool = False) -> dict[str, Any]:
-        return {
+    def _agent_spec(self, name: str, instructions: str, lazy: bool = False, fast: bool = False) -> dict[str, Any]:
+        spec: dict[str, Any] = {
             "name": _agent_name(name),
             "description": "Customer-success assistant driving the user's own desktop.",
             "model": self.model,
@@ -209,9 +221,12 @@ class HBackend:
                 # host=user_device is what makes the SDK serve this Mac from this process; without it H
                 # provisions a cloud desktop and the screen seen by the agent is not the user's.
                 {"id": "user-mac", "kind": "desktop", "host": "user_device", "lazy": lazy,
-                 "screenshot_max_width": self.screenshot_max_width}
+                 "screenshot_max_width": min(self.screenshot_max_width, 1024) if fast else self.screenshot_max_width}
             ],
         }
+        if fast:
+            spec["reasoning_effort"] = "low"  # guide steps are short observations, not plans
+        return spec
 
     # ----------------------------------------------------------------- session helpers
 
@@ -287,7 +302,7 @@ class HBackend:
         if stop_event.is_set():
             return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
         tools = [make_lookup_tool(self.knowledge, bound.request.software, on_lookup)]
-        agent = self._agent_spec(f"hcs-guide-{proc.id}", bound.guide_instructions)
+        agent = self._agent_spec(f"hcs-guide-{proc.id}", bound.guide_instructions, fast=True)
         done = threading.Event()
         guidance: list[GuidanceStep] = []
         sid = None
@@ -310,12 +325,28 @@ class HBackend:
                 if ans is None:
                     declared = DeclaredResult(outcome="unclear", summary=str(result.answer or ""))
                     break
-                pointer = _to_screen_points(ans.target_x, ans.target_y, self.screenshot_max_width)
-                gs = GuidanceStep(index=n, instruction=ans.instruction, where=ans.where, why=ans.why,
-                                  pointer=pointer, last=ans.last or ans.blocked)
-                guidance.append(gs)
-                if gs.last:
-                    on_guidance(gs)  # published to the user; the runner does not wait on a last step
+                width = min(self.screenshot_max_width, 1024)
+                subs = ans.steps or [GuideSubStep(instruction=ans.instruction, where=ans.where, why=ans.why,
+                                                  target_x=ans.target_x, target_y=ans.target_y)]
+                if ans.blocked or ans.last:
+                    subs = subs[:1]
+                replies: list[str] = []
+                aborted = False
+                for k, sub in enumerate(subs[:3]):
+                    gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where,
+                                      why=sub.why, pointer=_to_screen_points(sub.target_x, sub.target_y, width),
+                                      last=(ans.last or ans.blocked))
+                    guidance.append(gs)
+                    reply = on_guidance(gs)  # blocks until the user did it (or stop); None on last steps
+                    if gs.last:
+                        break
+                    if reply is None or stop_event.is_set():
+                        aborted = True
+                        break
+                    did, note = reply
+                    replies.append(("I did it." if did else "I could not do it.") + (f" {note}" if note else ""))
+                    if not did:
+                        break  # the user is stuck: let the agent look again now
                 if ans.blocked:
                     declared = DeclaredResult(outcome="blocked", summary=ans.instruction, blocker=ans.blocker,
                                               steps_taken=[g.instruction for g in guidance])
@@ -324,12 +355,9 @@ class HBackend:
                     declared = DeclaredResult(outcome="done", summary=ans.instruction,
                                               steps_taken=[g.instruction for g in guidance])
                     break
-                reply = on_guidance(gs)  # blocks until the user clicks Next / reports a problem / stops
-                if reply is None or stop_event.is_set():
+                if aborted:
                     break
-                did, note = reply
-                msg = ("I did it." if did else "I could not do it.") + (f" {note}" if note else "")
-                handle.send_message(msg + " Look at the screen and give me the next step.")
+                handle.send_message(" ".join(replies) + " Look at the screen and give me the next step(s).")
             else:
                 declared = DeclaredResult(outcome="unclear", summary="Too many guidance steps.")
             if stop_event.is_set():
