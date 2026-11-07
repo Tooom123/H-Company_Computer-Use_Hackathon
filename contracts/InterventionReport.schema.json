@@ -62,6 +62,35 @@
           ],
           "default": null,
           "title": "Size"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element bounds (x, y, w, h) in screen points.",
+          "title": "Box"
         }
       },
       "title": "Annotation",
@@ -343,12 +372,42 @@
           "description": "Screen coordinates the agent pointed at.",
           "title": "Pointer"
         },
+        "box": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element bounds (x, y, w, h) in screen points.",
+          "title": "Box"
+        },
         "kind": {
           "default": "click",
-          "description": "click / type: act; info: read, moves on by itself; wait: the agent polls the screen.",
+          "description": "click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.",
           "enum": [
             "click",
             "type",
+            "key",
             "info",
             "wait"
           ],
