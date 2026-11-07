@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>H Companion</title>
+<meta name="description" content="H Companion — help, one key away. A desktop assistant that does it with you inside your software, verifies the result and hands support a ready-to-act case.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..800&family=Fira+Code:wght@400;500&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "rough-notation": "https://cdn.jsdelivr.net/npm/rough-notation@0.5.1/lib/rough-notation.esm.js"
+} }
+</script>
+</head>
+<body>
+<!-- ink filter: slightly ragged edges, like a felt pen on paper -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="ink"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="3"/><feDisplacementMap in="SourceGraphic" scale="1.6"/></filter>
+</svg>
+
+<main>
+  <section class="hero" id="hero">
+    <canvas class="dots" id="dots" aria-hidden="true"></canvas>
+    <h1 class="title" aria-label="H Company">
+      <span class="key-slot" aria-hidden="true"><svg class="taps" id="taps" viewBox="-40 -40 40 40"><path d="M-2 -12 L-2 -30"/><path d="M-10 -10 L-24 -24"/><path d="M-12 -2 L-30 -2"/></svg><canvas id="key"></canvas></span>
+      <span class="word" id="word" aria-hidden="true"><span>Compan</span><span class="y">y<svg class="ink pen-strike" viewBox="0 0 42 60" preserveAspectRatio="none"><path pathLength="1" d="M-2 40 C 10 33, 24 26, 44 17"/><path pathLength="1" d="M0 47 C 14 40, 28 34, 43 27"/></svg><span class="pen ion">ion</span></span></span>
+      <span class="buddies" id="grade" aria-hidden="true"><svg class="ink" viewBox="0 0 80 60"><path style="--i:0" pathLength="1" d="M22.5 3.5 C 17 3, 15 8, 16 11.5 C 17.5 16, 25 17, 28 13 C 30.5 9, 28 3.8, 22 4"/><path style="--i:1" pathLength="1" d="M22 17.5 C 22.6 24, 21.6 31, 22.3 38"/><path style="--i:2" pathLength="1" d="M22.3 38 L 15 53"/><path style="--i:2" pathLength="1" d="M22.3 38 L 29.5 53.5"/><path style="--i:3" pathLength="1" d="M22.2 24 L 12 33"/><path style="--i:3" pathLength="1" d="M22.2 24 C 29 27, 34 29, 40 30.5"/><path style="--i:4" pathLength="1" d="M58.5 3.8 C 53 3.2, 51 8.5, 52 12 C 53.5 16.4, 61 17, 64 13 C 66.4 9, 64 4, 58 4.3"/><path style="--i:5" pathLength="1" d="M58 17.8 C 57.5 25, 58.6 31, 58 38"/><path style="--i:6" pathLength="1" d="M58 38 L 50.5 53.5"/><path style="--i:6" pathLength="1" d="M58 38 L 65.5 53"/><path style="--i:7" pathLength="1" d="M58 24.2 L 68.5 32.5"/><path style="--i:7" pathLength="1" d="M58 24.2 C 51 27.5, 46 29.5, 40 30.5"/></svg></span>
+    </h1>
+    <div class="sub">
+      <p class="slogan" id="slogan" aria-live="polite">
+        <span>Get&nbsp;</span><span class="help-word"><svg class="hmark" viewBox="838 195 197 220" aria-label="H"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg>elp<svg class="ink pen-under" viewBox="0 0 100 10" preserveAspectRatio="none"><path pathLength="1" d="M1 6 C 30 2, 62 9, 99 3"/></svg></span><span>, one key away.</span>
+      </p>
+    </div>
+  </section>
+
+  <div class="paper">
+  <!-- a stick figure sliding down the red margin line, like a firefighter down the pole -->
+  <svg class="pompier" id="pompier" viewBox="0 0 44 72" aria-hidden="true">
+    <g class="speed"><path d="M18 -10 L18 2"/><path d="M24 -16 L24 0"/><path d="M30 -9 L30 3"/></g>
+    <g class="sparks"><path d="M8 6 L5 3"/><path d="M8 12 L4.5 13"/><path d="M8 16 L5 14.5"/><path d="M8 22 L4.5 23.5"/></g>
+    <g class="man">
+      <g class="effort"><path d="M33 8 L 36 5"/><path d="M34.5 13 L 38.5 12"/><path d="M33.5 18 L 37 19.5"/></g>
+      <g class="head"><path d="M24.5 9.6 C 19.6 9.2, 17.6 13.6, 18.4 16.6 C 19.6 20.6, 26.4 21.2, 29 17.6 C 31.2 14, 28.8 9.8, 24.2 10.1"/></g>
+      <path d="M23.8 22 C 23.6 29, 23.4 36, 22.8 44"/>
+      <g class="armA"><path d="M23.8 26 C 20 22, 16.5 15, 13 9.5"/></g><path class="gripA" d="M9.8 9.6 L 14.6 9.6"/>
+      <g class="armB"><path d="M23.6 28.5 C 20 26, 16.5 22.5, 13 19.5"/></g><path class="gripB" d="M9.8 19.4 L 14.6 19.4"/>
+      <g class="legWrap"><path d="M22.8 44 C 18 46.5, 15 49, 13.2 52 L 12.6 57"/></g>
+      <g class="legFree"><path d="M22.8 44 C 25.5 49, 27.5 54, 25.5 60 L 28 64"/></g>
+    </g>
+  </svg>
+
+  <section class="section" id="before" data-annotate>
+    <p class="eyebrow mono">Before</p>
+    <h2>Support <span class="fix"><span data-mark="strike-through" data-order="1">today</span><span class="pen above" data-write data-order="2">yesterday</span></span>.</h2>
+    <ol class="ledger">
+      <li><p><span data-mark="strike-through" data-order="3">“It doesn't work.” — the entire ticket.</span></p><span class="pen note" data-write data-order="4">what doesn't? → it sees your screen</span></li>
+      <li><p><span data-mark="strike-through" data-order="5">“Could you send us a screenshot?”</span></p><span class="pen note" data-write data-order="6">it already has one ✓</span></li>
+      <li><p><span data-mark="strike-through" data-order="7">“Have you tried turning it off and on again?”</span></p><span class="pen note" data-write data-order="8">try → verify → escalate</span></li>
+      <li><p><span data-mark="strike-through" data-order="9">6 emails · 3 days · 1 user who gave up</span></p><span class="pen note" data-write data-order="10">1 session. Verified.</span></li>
+    </ol>
+  </section>
+
+  <section class="section" id="how" data-annotate>
+    <p class="eyebrow mono">How it works</p>
+    <h2>From “I'm stuck” to <span data-mark="circle" data-order="1">verified</span>, with you in control.</h2>
+    <ol class="steps">
+      <li><span class="num mono">01</span><h3>Ask</h3><p>Say what you want and who you are. “New sales rep — schedule the follow-up on Acme for Friday.”</p></li>
+      <li><span class="num mono">02</span><h3>Approve</h3><p>H Companion shows exactly what it will change. <span data-mark="underline" data-order="2">Nothing moves until you say yes.</span></p></li>
+      <li><span class="num mono">03</span><h3>Act</h3><p>The H agent clicks and types in your real app, on screen. A <span data-mark="circle" data-order="3">stop</span> button is always one click away.</p></li>
+      <li class="bugged"><span class="num mono">04</span><h3><span data-mark="box" data-order="4">Verify</span></h3><p>“The agent said so” is not enough. It reopens the record and checks the result.</p><span class="pen note small" data-write data-order="5">bug: “done” ≠ done → check it!</span></li>
+      <li><span class="num mono">05</span><h3>Escalate</h3><p>Blocked? It stops, and support receives the goal, what was seen, what was tried and <span data-mark="underline" data-order="6">the decision needed</span>.</p></li>
+    </ol>
+  </section>
+
+  <section class="section" id="trust" data-annotate>
+    <p class="eyebrow mono">Control by design</p>
+    <div class="grid3">
+      <div class="card"><h3><span data-mark="underline" data-order="1">You</span> trigger it</h3><p>No background watching. It starts when you ask, and only on what you approved.</p></div>
+      <div class="card"><h3>Stop, <span data-mark="circle" data-order="2">anytime</span></h3><p>Stop blocks new actions locally and cancels the agent. Nothing restarts without a new yes.</p></div>
+      <div class="card"><h3>Your screenshots, <span data-mark="highlight" data-order="3">your call</span></h3><p>Support only sees the screenshots you agreed to share. Facts, claims and guesses stay labelled.</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="pricing" data-annotate>
+    <p class="eyebrow mono">Pricing</p>
+    <h2>Pay for <span class="fix"><span data-mark="strike-through">tickets</span><span class="pen above" data-write>fixes</span></span>, not for hope.</h2>
+    <div class="plans">
+      <article class="plan">
+        <h3>Starter</h3>
+        <p class="price"><b>€0</b><span>/ month</span></p>
+        <ul><li>25 assisted sessions a month</li><li>Verified results, every time</li><li>Escalation files for support</li></ul>
+        <a class="btn btn-ghost" href="#hero">Start free</a>
+      </article>
+      <article class="plan featured">
+        <span class="pen badge" data-write>best value ✓</span>
+        <h3>Pro</h3>
+        <p class="price"><b data-mark="circle">€49</b><span>/ month</span></p>
+        <ul><li><span data-mark="underline">Unlimited</span> assisted sessions</li><li>Support dashboard &amp; difficulty grouping</li><li>Approval, stop and audit trail</li></ul>
+        <button class="btn" data-plan="pro">Subscribe with Stripe</button>
+      </article>
+      <article class="plan">
+        <h3>Fix pack</h3>
+        <p class="price"><b>€79</b><span>one-time</span></p>
+        <ul><li>100 verified fixes</li><li><span data-mark="highlight">A credit is used only when the fix is observed</span></li><li>No subscription</li></ul>
+        <button class="btn" data-plan="fixpack">Buy with Stripe</button>
+      </article>
+    </div>
+    <p class="billing-msg pen" id="billingMsg" role="status" aria-live="polite"></p>
+    <p class="fine">Enterprise, on-premise or SSO? Talk to us. Payments by Stripe Checkout — <b>test mode</b>, no real charge.</p>
+    <p class="pen sign" data-write>Reviewed ✓ — ready to ship</p>
+  </section>
+
+  </div>
+</main>
+
+<footer class="foot">
+  <span>H Companion — built at the Computer Use Hackathon (H Company × 42AI, Paris, Nov 2026).</span>
+  <span class="muted">Powered by H Company's agents. Not an official H Company product.</span>
+</footer>
+<script type="module" src="main.js"></script>
+<script type="module" src="annotate.js"></script>
+<script type="module" src="margin.js"></script>
+<script type="module" src="billing.js"></script>
+</body>
+</html>
