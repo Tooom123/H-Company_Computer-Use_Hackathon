@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Provision an explicitly human-operated H SSO session, separate from benchmarks.
+"""Inspect or stop an H profile diagnostic, separate from benchmarks.
 
-Never reads personal Chrome cookies or asks for a Google password. Requires an
-empty H profile inventory so it cannot overwrite an existing default. Login
-screens are not downloaded by this helper or exposed in the company console.
+The observed Agent View only exposes supervision/replay; it has not provided an
+interactive login surface. Creating another waiting session does not sign in.
+Preparation is opt-in diagnostic work, not the supported SSO onboarding path.
+Never reads personal Chrome cookies or asks for a Google password.
 """
 import argparse
 import json
@@ -23,7 +24,10 @@ def main():
     p.add_argument('--private-root', type=Path, required=True)
     p.add_argument('--browser-profile-id', help='Explicit existing dedicated profile to refresh; never select a profile implicitly.')
     p.add_argument('--retry-rejected-create', action='store_true', help='Only after a confirmed 4xx rejection; preserves the idempotency key.')
+    p.add_argument('--diagnostic-only', action='store_true', help='Acknowledge that Agent View is not a verified interactive login surface.')
     args = p.parse_args()
+    if args.action == 'prepare' and not args.diagnostic_only:
+        p.error('Agent View is a tracking page here, not an interactive login browser. Use the dedicated Linux-profile procedure in docs/native-cloud-pilot.md. --diagnostic-only is reserved for investigating this limitation.')
     os.umask(0o077)
     root = args.private_root.expanduser().resolve()
     if any((x / '.git').exists() for x in (root, *root.parents)):
@@ -69,7 +73,8 @@ def main():
     sid = state.get('session_id')
     if not sid:
         raise SystemExit('Creation is unconfirmed; inspect the saved idempotency key before retrying.')
-    if args.action == 'finish':
+    session = c.sessions.get_session(sid, request_options=options)
+    if args.action == 'finish' and session.status.status not in {'completed', 'failed', 'timed_out', 'interrupted'}:
         # v2 cancellation stops this owned login session and saves its profile;
         # it does not use the legacy trajectory deletion endpoint.
         c.sessions.cancel_session(sid, request_options=options)

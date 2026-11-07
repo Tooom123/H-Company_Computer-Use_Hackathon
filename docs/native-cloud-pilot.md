@@ -69,27 +69,42 @@ annulation v2 pour confirmer la libération du navigateur ; l'état fournisseur
 ## Google / SSO
 
 Un coffre contient des identifiants ; un profil contient l'état d'un navigateur
-connecté. Pour Google/SSO, la connexion est réalisée par l'humain dans un
-navigateur dédié. Ne pas importer son profil Chrome personnel du Mac.
+connecté. La connexion au tableau de bord H dans Chrome **ne connecte pas** le
+navigateur cloud de l'agent. Se déconnecter puis se reconnecter dans Chrome
+ne répare donc pas le profil cloud. Ne pas importer son profil Chrome personnel.
 
-```bash
-python scripts/prepare-h-cloud-login.py prepare \
-  --private-root "$HOME/Library/Application Support/HCompanionResearch/cloud-pilot"
-# Ouvrir l'agent_view_url retournée et se connecter dans le navigateur distant.
-python scripts/prepare-h-cloud-login.py finish \
-  --private-root "$HOME/Library/Application Support/HCompanionResearch/cloud-pilot"
-python scripts/prepare-h-cloud-login.py status \
-  --private-root "$HOME/Library/Application Support/HCompanionResearch/cloud-pilot"
-```
+**Correction après observation réelle du 8 novembre :** les deux liens
+`agent_view_url` préparés ouvrent ici le suivi/replay et une réponse « Ready for
+manual sign-in ». Aucun contrôle interactif, aucune URL live/VNC et aucun
+événement de navigateur contrôlable n'ont été observés. La mention d'Agent View
+dans la documentation des profils ne suffit pas à valider ce parcours. Le
+helper `prepare-h-cloud-login.py prepare` refuse désormais de présenter cette
+vue comme un écran de connexion. `--diagnostic-only` réserve sa création à
+l'investigation ; `status` et `finish` servent à inspecter/fermer les diagnostics.
 
-Le helper refuse de remplacer implicitement un profil préexistant. Le paramètre
-`--browser-profile-id` permet de rafraîchir explicitement un profil dédié déjà
-créé, dans un nouveau répertoire de préparation. Pour l'initialisation sur
-un compte sans profil, il crée le profil par défaut ; les campagnes emploient
-ensuite **son identifiant explicite**, `use_default_browser_profile=false` et
-`persist_browser_profile=false`. Plusieurs lecteurs peuvent le charger en
-parallèle, sans se battre pour la sauvegarde finale. Le profil expirera un jour :
-une connexion refusée reste un blocage, pas un résultat inventé.
+Le chemin d'import effectivement décrit par H est :
+
+1. Préparer un **Chromium Linux dédié**, avec la version compatible indiquée
+   dans la documentation H. La connexion macOS n'est pas portable par simple
+   copie, car ses cookies sont chiffrés avec le trousseau du système.
+2. Ouvrir l'interface de ce navigateur Linux et y effectuer soi-même la
+   connexion Google/SSO à H. Vérifier que l'espace H s'ouvre à l'intérieur.
+3. Fermer Chromium proprement pour enregistrer son état, puis préparer le
+   profil à importer. Traiter l'archive comme un secret : limiter les données
+   au besoin de H-Companion et ne pas envoyer les accès personnels à d'autres
+   sites. Vérifier ce périmètre avant l'upload.
+4. Utiliser `initiate_browser_profile_upload`, le POST multipart présigné,
+   puis `complete_browser_profile_upload`, conformément à la documentation.
+5. Tester **une** session de lecture seule avec ce profil explicite avant
+   d'ouvrir la concurrence. Seule une ouverture réussie de la session de
+   démonstration valide l'authentification ; l'existence du profil ne suffit pas.
+
+Au contrôle du 8 novembre, Docker est installé sur le Mac mais son daemon est
+arrêté. Aucun conteneur de connexion ni profil Linux connecté n'a encore été
+préparé. Les campagnes emploieront `browser_profile_id` explicitement,
+`use_default_browser_profile=false` et `persist_browser_profile=false` :
+plusieurs lecteurs pourront charger le profil sans sauvegardes concurrentes.
+L'expiration de la connexion restera un blocage explicite.
 
 L'opérateur prépare `account.json` hors Git avec `browser_profile_id`, les
 bindings `session_id` / `session_url` de HC07–HC10, et des
