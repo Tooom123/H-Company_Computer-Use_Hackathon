@@ -1,0 +1,92 @@
+# Candidate Odoo 20 procedure; static validation is not a real H run.
+id: odoo_purchase_audit_completed
+software: odoo
+software_version: '20.0'
+session_type: onboarding
+title: Relire le bilan final sans modifier de document
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 45
+max_time_s_per_attempt: 420
+parameters:
+- name: run_reference
+  description: Référence exacte du passage réservé par l’opérateur.
+  required: true
+- name: expected_ordered
+  description: Valeur attendue réservée à la vérification.
+  default: '6'
+- name: expected_unit_price
+  description: Valeur attendue réservée à la vérification.
+  default: '4'
+- name: expected_total
+  description: Valeur attendue réservée à la vérification.
+  default: '24'
+- name: expected_first_receipt
+  description: Valeur attendue réservée à la vérification.
+  default: '4'
+- name: expected_second_receipt
+  description: Valeur attendue réservée à la vérification.
+  default: '2'
+- name: expected_ginger_stock
+  description: Valeur attendue réservée à la vérification.
+  default: '16'
+- name: expected_apple_stock
+  description: Valeur attendue réservée à la vérification.
+  default: '8'
+- name: expected_hibiscus_stock
+  description: Valeur attendue réservée à la vérification.
+  default: '6'
+preconditions:
+- Odoo 20 est ouvert et connecté avec holo-demo sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a vérifié l’état initial de cette étape.
+- L’opérateur a vérifié le stade done de {run_reference} avant ce bilan.
+objective: 'Faire le bilan de {run_reference} : quantité commandée, montant, réceptions liées, absence de doublon
+  de commande et stocks physiques de Gingembre, Pomme et Hibiscus.'
+planned_changes:
+- Aucune modification métier ; navigation et lecture uniquement.
+allowed_actions:
+- Lire les demandes de prix et commandes filtrées par référence.
+- Ouvrir les documents liés et les trois fiches produit pour les comparer.
+forbidden_actions:
+- Quitter l’onglet Odoo, saisir des identifiants, agir dans une autre société ou lancer un reset.
+- Envoyer un message, créer une facture ou un paiement, modifier un prix catalogue ou les droits.
+- Créer, modifier, supprimer, archiver ou valider un enregistrement métier.
+agent_instructions: 'Retrouve {run_reference} et vérifie dans les listes qu’il n’existe pas de deuxième commande
+  portant cette référence.
+
+  Lis la quantité commandée, le prix unitaire et le montant total. Inspecte les réceptions liées
+
+  et leurs quantités réellement terminées, puis les stocks physiques des produits
+
+  HACK-GING-033, HACK-POM-075 et HACK-HIB-033.
+
+  Donne un bilan fondé sur ces écrans. Ne déduis pas les réceptions du seul état de la commande.
+
+  S’il manque une preuve, indique précisément ce qui n’a pas pu être vérifié. Ne corrige aucun document.'
+postcondition:
+  description: Les observations suivantes sont vérifiées dans la seule base de démonstration.
+  checks:
+  - key: unique_order
+    prompt: Il existe une seule commande portant exactement {run_reference} dans la société de démonstration.
+  - key: order_amount
+    prompt: Cette commande contient {expected_ordered} HACK-GING-033 à {expected_unit_price} EUR, total {expected_total}
+      EUR.
+  - key: receipts_done
+    prompt: Exactement deux réceptions liées sont terminées, pour {expected_first_receipt} puis {expected_second_receipt}
+      unités, sans reliquat ouvert.
+  - key: ginger_stock
+    prompt: Le stock physique de Gingembre vaut {expected_ginger_stock}.
+  - key: other_stocks
+    prompt: Les stocks physiques Pomme et Hibiscus valent {expected_apple_stock} et {expected_hibiscus_stock}.
+  verification_instructions: 'En lecture seule, recoupe la commande, les réceptions liées et les trois fiches produit.
+    L’opérateur conserve le contrôle indépendant done ; un statut du modèle ne remplace pas ce contrôle.
+
+    Ne modifie ni ne valide aucun document. Une attente n’est pas une preuve : lis chaque valeur. Une preuve absente
+    ou illisible produit false.'
+escalation:
+  when:
+  - Un document, une valeur, la société ou la permission nécessaire ne peut pas être identifié sans ambiguïté.
+  - La postcondition reste non vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état de la démonstration avant toute reprise ; aucune correction
+    hors du périmètre approuvé.
+  default_category: unknown

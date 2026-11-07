@@ -1,0 +1,90 @@
+import { useEffect, useState } from "react";
+import type { LiveState, Rect } from "./lib/types";
+
+function Zone({
+  rect,
+  label,
+  sent,
+}: {
+  rect: Rect;
+  label: string;
+  sent: boolean;
+}) {
+  return (
+    <div
+      className={`screen-zone ${sent ? "screen-zone-sent" : "screen-zone-candidate"}`}
+      style={{
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }}
+    >
+      <span>{label}</span>
+    </div>
+  );
+}
+
+export default function Overlay() {
+  const [state, setState] = useState<LiveState | null>(null);
+  useEffect(() => {
+    document.documentElement.classList.add("overlay-document");
+    let active = true;
+    const bridge = window.companion;
+    if (!bridge)
+      return () => {
+        document.documentElement.classList.remove("overlay-document");
+      };
+    const unsubscribe = bridge.onState((value) => {
+      if (active) setState(value);
+    });
+    void bridge
+      .getState()
+      .then((value) => {
+        if (active) setState(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe();
+      document.documentElement.classList.remove("overlay-document");
+    };
+  }, []);
+  const target = state?.benchmarkTarget;
+  useEffect(() => {
+    if (!target) return;
+    let second = 0;
+    // Acknowledge after two animation frames, not merely when React receives
+    // the coordinates. Main records receipt on its own monotonic clock.
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => window.companion.reportTargetPresented({ runId: target.runId, index: target.index }));
+    });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [target?.runId, target?.index]);
+  if (!state) return null;
+  if (target) return <div className="screen-overlay" aria-hidden="true">
+    <div data-testid="benchmark-target" style={{
+      position: 'absolute', left: target.x - target.radius, top: target.y - target.radius,
+      width: 2 * target.radius, height: 2 * target.radius, borderRadius: '50%',
+      boxSizing: 'border-box', background: '#ef233c', border: '2px solid white',
+    }} />
+  </div>;
+  const showCaptured = state.observation?.status === 'running' || state.settings.regionScope === 'window';
+  return (
+    <div className="screen-overlay" aria-hidden="true">
+      {showCaptured && state.observed && (
+        <Zone rect={state.observed.rect} label="DERNIÈRE CAPTURE LOCALE" sent={false} />
+      )}
+      {!showCaptured && state.candidate && (
+        <Zone rect={state.candidate} label="ZONE CANDIDATE" sent={false} />
+      )}
+      {state.sent && (
+        <Zone
+          rect={state.sent.rect}
+          label={`ENVOYÉE À HOLO · ${state.sent.frameId}`}
+          sent
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,75 @@
+# One approved episode: create + confirm + receive 4 of 6. Not draft-only.
+# Independent ORM verification at confirmed/partial is performed by the operator.
+id: odoo_purchase_partial_receipt
+software: odoo
+software_version: "20.0"
+session_type: support
+title: Commander six bouteilles et en réceptionner quatre
+reversible: false
+max_attempts: 1
+max_steps_per_attempt: 70
+max_time_s_per_attempt: 720
+parameters:
+  - name: run_reference
+    description: Référence unique réservée par l’opérateur pour ce passage.
+    required: true
+preconditions:
+  - La société HACKATHON — Boutique Démo — DONNÉES FICTIVES est visible et le compte holo-demo est connecté.
+  - L’opérateur a réservé {run_reference} et vérifié zéro commande ainsi que les stocks Gingembre 10, Pomme 8, Hibiscus 6.
+  - Aucune autre session ne contrôle le Mac et aucune commande avec {run_reference} n’existe.
+objective: >-
+  Commander 6 Holo Gingembre 33 cl à Fournisseur Holo Démo à 4 EUR pièce,
+  avec la référence fournisseur {run_reference}, puis réceptionner 4 unités
+  en conservant les 2 restantes dans un reliquat ouvert.
+planned_changes:
+  - Créer et confirmer une seule commande de 6 unités à 4 EUR dans la base de démonstration.
+  - Terminer une réception de 4 unités et conserver un reliquat ouvert de 2.
+allowed_actions:
+  - Naviguer dans Achats et Inventaire sur l’onglet Odoo visible.
+  - Créer une demande de prix pour le fournisseur et produit existants, puis confirmer cette seule commande.
+  - Saisir une quantité reçue de 4 sur la réception liée et créer le reliquat de 2.
+  - Lire le stock physique final et les documents liés pour vérifier le résultat.
+forbidden_actions:
+  - Envoyer un e-mail, créer un fournisseur ou produit, modifier un prix catalogue ou les droits.
+  - Créer une deuxième commande, une réception non liée, une facture, un paiement ou un ajustement de stock.
+  - Réceptionner les deux unités restantes, annuler le reliquat ou réduire la quantité commandée de 6.
+  - Quitter l’onglet Odoo, saisir des identifiants, exécuter un reset ou agir sur une autre société.
+agent_instructions: |
+  Assiste un commerçant dans Odoo {software_version}, uniquement dans la société fictive visible.
+  Recherche d’abord {run_reference}. Si un document existe déjà, n’en crée pas un autre :
+  arrête-toi avec son état visible pour que l’opérateur décide de la reprise.
+  Dans Achats, crée une demande de prix à Fournisseur Holo Démo.
+  Saisis {run_reference} dans Référence fournisseur et ajoute Holo Gingembre 33 cl
+  (HACK-GING-033), quantité 6, prix unitaire 4 EUR. Enregistre puis confirme.
+  Ne clique pas sur Envoyer une demande de prix. Vérifie la réception liée.
+  Dans cette réception, laisse la demande à 6 et mets la quantité effectivement reçue à 4.
+  Valide, puis choisis Créer un reliquat si le dialogue apparaît. Laisse le reliquat ouvert.
+  Relis les documents et le stock physique. Ne valide pas le reliquat de deux unités.
+  Après une réponse incertaine ou un délai, relis l’état avant de répéter une validation.
+  Si le produit, la référence, la société ou la quantité est ambigu, arrête-toi sans nouvel essai.
+postcondition:
+  description: >-
+    Une commande unique {run_reference} de 6 unités à 4 EUR est confirmée,
+    4 unités ont été réceptionnées, 2 restent ouvertes et le stock Gingembre vaut 14.
+  checks:
+    - key: unique_order
+      prompt: Une seule commande porte la référence {run_reference} dans la société de démonstration.
+    - key: correct_order
+      prompt: Cette commande confirmée contient 6 HACK-GING-033 à 4 EUR, total 24 EUR, chez Fournisseur Holo Démo.
+    - key: partial_receipt
+      prompt: Une réception liée est terminée pour 4 unités et son reliquat de 2 reste ouvert.
+    - key: ginger_stock
+      prompt: Le stock physique de Gingembre est 14 unités.
+    - key: other_stocks
+      prompt: Les stocks physiques Pomme et Hibiscus sont toujours 8 et 6.
+  verification_instructions: |
+    Vérifie en lecture seule la commande {run_reference}, ses réceptions liées et les trois stocks.
+    Ne confirme ni ne valide aucun document. Si une preuve est invisible, retourne false.
+    Les attentes ci-dessus ne sont pas des observations. Le contrôle ORM de l’opérateur
+    reste une preuve métier indépendante de cette vérification visuelle.
+escalation:
+  when:
+    - Une référence existe déjà avant création, un document est ambigu ou une permission manque.
+    - La postcondition n’est pas vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état des documents avant toute reprise ou remise à zéro de la démo.
+  default_category: unknown
