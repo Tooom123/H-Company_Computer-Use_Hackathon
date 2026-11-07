@@ -500,7 +500,7 @@ class _MagnetView(AppKit.NSView):
         rnd = random.Random(7)
         b = self.bounds()
         W, H = b.size.width, b.size.height
-        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 1
+        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 10_000  # draw everything, no reveal
         _draw_paper(6, 6, W - 12, H - 12, rnd)
         _ink().setStroke()
         # Rail with three notches; the active one gets a scribbled knob.
@@ -511,8 +511,11 @@ class _MagnetView(AppKit.NSView):
             cx = 12 + seg_w * (i + 0.5)
             _stroke([(cx, y - 6), (cx, y + 6)], rnd, 1.4, 0.8)
             if i == self.level:
-                for k in range(3):
-                    _circle(cx, y, rnd, 9 - k, 8 - k)
+                # Knob: a scribbled, filled dot on the rail.
+                AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE).setFill()
+                AppKit.NSBezierPath.bezierPathWithOvalInRect_(((cx - 7, y - 7), (14, 14))).fill()
+                for k in range(2):
+                    _circle(cx, y, rnd, 11 - k * 2, 10 - k * 2)
         attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
         Foundation.NSString.stringWithString_(f"Magnet : {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
             ((14, H - 30), (W - 28, 18)), attrs)
