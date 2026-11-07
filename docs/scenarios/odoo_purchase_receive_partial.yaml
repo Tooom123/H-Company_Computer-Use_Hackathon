@@ -1,0 +1,71 @@
+# Candidate Odoo 20 procedure; static validation is not a real H run.
+id: odoo_purchase_receive_partial
+software: odoo
+software_version: '20.0'
+session_type: support
+title: Recevoir quatre unités d’une commande existante
+reversible: false
+max_attempts: 1
+max_steps_per_attempt: 35
+max_time_s_per_attempt: 360
+parameters:
+- name: run_reference
+  description: Référence exacte du passage réservé par l’opérateur.
+  required: true
+preconditions:
+- Odoo 20 est ouvert et connecté avec holo-demo sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a vérifié l’état initial de cette étape.
+- Le stade confirmed de {run_reference} est vérifié ; aucune unité reçue et stock Gingembre 10.
+objective: Réceptionner 4 des 6 Holo Gingembre 33 cl de la commande déjà confirmée {run_reference}, en conservant
+  un reliquat ouvert de 2.
+planned_changes:
+- Valider 4 unités sur la réception liée et conserver le reliquat de 2 généré par Odoo.
+allowed_actions:
+- Lire la commande confirmée et ouvrir sa réception.
+- Renseigner la quantité reçue 4 et valider avec création du reliquat.
+- Lire le reliquat et les stocks.
+forbidden_actions:
+- Quitter l’onglet Odoo, saisir des identifiants, agir dans une autre société ou lancer un reset.
+- Envoyer un message, créer une facture ou un paiement, modifier un prix catalogue ou les droits.
+- Créer une commande ou une réception indépendante, modifier les 6 unités commandées, annuler le reliquat.
+- Valider le reliquat de 2 ou effectuer un ajustement de stock.
+agent_instructions: 'Retrouve la commande confirmée {run_reference} dans la société de démonstration.
+
+  Vérifie une commande unique de 6 HACK-GING-033 à 4 EUR et une réception liée non terminée.
+
+  Si une réception partielle a déjà eu lieu, arrête-toi en donnant l’état observé ; ne crée pas un nouveau mouvement.
+
+  Ouvre la réception liée. Laisse la quantité demandée à 6 et mets la quantité effectivement reçue à 4.
+
+  Valide puis choisis Créer un reliquat dans le dialogue éventuel. Laisse ce reliquat de 2 ouvert.
+
+  Relis la réception terminée, le reliquat et le stock physique de Gingembre.
+
+  Ne modifie pas la commande, ne réceptionne pas les deux unités restantes et ne crée aucun document indépendant.
+
+  Après une réponse incertaine, relis l’état avant de répéter une validation.'
+postcondition:
+  description: Les observations suivantes sont vérifiées dans la seule base de démonstration.
+  checks:
+  - key: unique_order_unchanged
+    prompt: La commande unique {run_reference} conserve 6 HACK-GING-033 à 4 EUR pour 24 EUR.
+  - key: received_four
+    prompt: Une réception liée à cette commande est terminée pour exactement 4 unités.
+  - key: open_backorder_two
+    prompt: Un seul reliquat lié à cette réception reste ouvert pour exactement 2 unités.
+  - key: ginger_stock
+    prompt: Le stock physique de Gingembre est 14 unités.
+  - key: other_stocks
+    prompt: Les stocks physiques Pomme et Hibiscus restent 8 et 6.
+  verification_instructions: 'Relis les documents liés et les stocks sans valider le reliquat. Le contrôle partial
+    de l’opérateur vérifie indépendamment quantité reçue, reliquat, unicité et stocks.
+
+    Ne modifie ni ne valide aucun document. Une attente n’est pas une preuve : lis chaque valeur. Une preuve absente
+    ou illisible produit false.'
+escalation:
+  when:
+  - Un document, une valeur, la société ou la permission nécessaire ne peut pas être identifié sans ambiguïté.
+  - La postcondition reste non vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état de la démonstration avant toute reprise ; aucune correction
+    hors du périmètre approuvé.
+  default_category: unknown

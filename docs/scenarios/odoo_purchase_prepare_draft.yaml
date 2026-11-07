@@ -1,0 +1,70 @@
+# Candidate Odoo 20 procedure; static validation is not a real H run.
+id: odoo_purchase_prepare_draft
+software: odoo
+software_version: '20.0'
+session_type: support
+title: Préparer une demande de prix sans la confirmer
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 35
+max_time_s_per_attempt: 360
+parameters:
+- name: run_reference
+  description: Référence exacte du passage réservé par l’opérateur.
+  required: true
+preconditions:
+- Odoo 20 est ouvert et connecté avec holo-demo sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a vérifié l’état initial de cette étape.
+- Passage {run_reference} réservé ; baseline sans commande, stocks Gingembre/Pomme/Hibiscus 10/8/6.
+objective: Enregistrer un seul brouillon de demande de prix à Fournisseur Holo Démo pour 6 Holo Gingembre 33 cl
+  à 4 EUR pièce, avec la référence fournisseur {run_reference}, puis s’arrêter avant toute confirmation.
+planned_changes:
+- Créer et enregistrer uniquement un brouillon de demande de prix de 6 unités à 4 EUR.
+allowed_actions:
+- Rechercher la référence et consulter les demandes de prix.
+- Créer et enregistrer un seul brouillon avec le fournisseur et le produit existants.
+forbidden_actions:
+- Quitter l’onglet Odoo, saisir des identifiants, agir dans une autre société ou lancer un reset.
+- Envoyer un message, créer une facture ou un paiement, modifier un prix catalogue ou les droits.
+- Confirmer une commande, ouvrir un processus de réception ou valider un mouvement de stock.
+- Créer un fournisseur ou produit, un doublon, ou modifier un autre document.
+agent_instructions: 'Dans Achats, vérifie d’abord qu’aucun document ne porte {run_reference}.
+
+  Si la référence existe déjà, arrête-toi en rapportant son état ; ne duplique pas la demande.
+
+  Crée une demande de prix pour le fournisseur existant Fournisseur Holo Démo.
+
+  Saisis {run_reference} dans Référence fournisseur et ajoute HACK-GING-033,
+
+  quantité 6, prix unitaire d’achat 4 EUR. Enregistre le brouillon et montre le total.
+
+  Arrête-toi sur ce brouillon : ne clique ni Confirmer la commande ni Envoyer par e-mail.
+
+  Ne crée ni ne valide de réception. Après un délai ou une réponse incertaine, relis la liste avant toute nouvelle
+  création.'
+postcondition:
+  description: Les observations suivantes sont vérifiées dans la seule base de démonstration.
+  checks:
+  - key: unique_draft
+    prompt: Un seul document porte {run_reference} et il est encore à l’état brouillon/demande de prix non confirmée.
+  - key: correct_supplier
+    prompt: Le fournisseur du brouillon est Fournisseur Holo Démo.
+  - key: correct_line
+    prompt: La ligne du brouillon contient 6 HACK-GING-033 à 4 EUR, total 24 EUR.
+  - key: no_receipt
+    prompt: Aucune réception n’a été créée pour ce brouillon.
+  - key: stock_unchanged
+    prompt: Le stock physique de Gingembre est toujours 10 unités.
+  verification_instructions: 'Relis le brouillon par sa référence, sa ligne, son état et les éventuels documents
+    liés, puis la fiche Gingembre. Ne confirme pas la commande. L’opérateur vérifie indépendamment unicité et absence
+    de réception.
+
+    Ne modifie ni ne valide aucun document. Une attente n’est pas une preuve : lis chaque valeur. Une preuve absente
+    ou illisible produit false.'
+escalation:
+  when:
+  - Un document, une valeur, la société ou la permission nécessaire ne peut pas être identifié sans ambiguïté.
+  - La postcondition reste non vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état de la démonstration avant toute reprise ; aucune correction
+    hors du périmètre approuvé.
+  default_category: unknown

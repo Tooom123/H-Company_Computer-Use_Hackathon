@@ -203,6 +203,19 @@ et environ 2,8 Tio de disque libre. Deux moteurs vLLM sont déjà actifs. Les im
 ARM vLLM 0.28/0.30 et PyTorch NVIDIA 26.08 sont présentes ; cela ne valide pas encore
 notre modèle. Aucun service, modèle chargé ou configuration distante n’a été modifié.
 
+Contrôle complémentaire : le serveur sur le port 8011 est configuré avec
+`Holo4-35B-A3B-NVFP4`, nom servi `holo4-35b-a3b`, contexte maximal 65 536 ; celui
+sur 8010 sert Holo3.1-4B. Les checkpoints Holo4 sont donc déjà présents : aucun
+nouveau téléchargement n’est nécessaire pour tester cette base. Les endpoints
+répondent 401 sans authentification ; le raccordement attend la configuration
+d’accès habituelle de l’opérateur. Le contrôle porte sur les processus et leurs
+paramètres non secrets, pas sur une réponse d’inférence ni un test LoRA.
+
+Le premier essai de collecte peut utiliser le moteur cloud déjà disponible avec
+export de ses sessions. La bascule vers Spark doit utiliser le runtime local et
+son propre recorder : les sessions locales ne sont pas automatiquement archivées
+dans H Platform. Ne pas mélanger les deux provenances dans les métriques.
+
 **Proposition : un seul H200 141 Go à la demande sur Verda.** Cette capacité laisse
 plus de marge pour le LoRA multimodal que 80 Go, sans complexifier le pilote par du
 multi-GPU. Prendre Holo4-27B dense comme premier candidat conserve la base du Lab ;

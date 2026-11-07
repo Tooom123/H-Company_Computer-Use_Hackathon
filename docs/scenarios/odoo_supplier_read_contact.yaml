@@ -1,0 +1,60 @@
+# Candidate Odoo 20 procedure; static validation is not a real H run.
+id: odoo_supplier_read_contact
+software: odoo
+software_version: '20.0'
+session_type: onboarding
+title: Retrouver le contact du fournisseur
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 240
+parameters:
+- name: supplier_name
+  description: Nom du fournisseur demandé.
+  default: Fournisseur Holo Démo
+- name: expected_email
+  description: Valeur attendue réservée à la vérification.
+  default: fournisseur@example.invalid
+preconditions:
+- Odoo 20 est ouvert et connecté avec holo-demo sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a vérifié l’état initial de cette étape.
+objective: Ouvrir la fiche de {supplier_name} dans Achats, lire son adresse e-mail et laisser la fiche ouverte.
+planned_changes:
+- Aucune modification métier ; navigation et lecture uniquement.
+allowed_actions:
+- Naviguer dans Achats et la liste des fournisseurs.
+- Rechercher et ouvrir une fiche fournisseur existante pour lire son e-mail.
+forbidden_actions:
+- Quitter l’onglet Odoo, saisir des identifiants, agir dans une autre société ou lancer un reset.
+- Envoyer un message, créer une facture ou un paiement, modifier un prix catalogue ou les droits.
+- Créer, modifier, supprimer, archiver ou valider un enregistrement métier.
+agent_instructions: 'Dans la société fictive d’Odoo {software_version}, ouvre Achats puis la liste des fournisseurs.
+
+  Recherche {supplier_name}, ouvre sa fiche existante et lis son adresse e-mail.
+
+  Indique seulement la valeur visible et laisse la fiche ouverte. N’envoie aucun message.
+
+  Si la fiche est absente, ambiguë ou ne montre pas l’adresse, rapporte précisément ce manque.
+
+  Ne crée pas de fournisseur de remplacement.'
+postcondition:
+  description: Les observations suivantes sont vérifiées dans la seule base de démonstration.
+  checks:
+  - key: correct_company
+    prompt: La société visible est HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+  - key: correct_supplier
+    prompt: La fiche ouverte est celle de {supplier_name}.
+  - key: email_visible
+    prompt: L’adresse e-mail visible de ce fournisseur est {expected_email}.
+  verification_instructions: 'Relis la fiche fournisseur, son nom et son adresse e-mail dans l’interface. Reste
+    en lecture seule.
+
+    Ne modifie ni ne valide aucun document. Une attente n’est pas une preuve : lis chaque valeur. Une preuve absente
+    ou illisible produit false.'
+escalation:
+  when:
+  - Un document, une valeur, la société ou la permission nécessaire ne peut pas être identifié sans ambiguïté.
+  - La postcondition reste non vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état de la démonstration avant toute reprise ; aucune correction
+    hors du périmètre approuvé.
+  default_category: unknown

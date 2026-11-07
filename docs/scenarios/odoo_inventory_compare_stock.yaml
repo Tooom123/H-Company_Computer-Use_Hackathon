@@ -1,0 +1,60 @@
+# Candidate for Matteo's Odoo 20 integration; no real H run has validated it yet.
+id: odoo_inventory_compare_stock
+software: odoo
+software_version: "20.0"
+session_type: onboarding
+title: Comparer les trois stocks de démonstration
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 30
+max_time_s_per_attempt: 240
+parameters:
+  - name: expected_ginger_stock
+    default: "10"
+  - name: expected_apple_stock
+    default: "8"
+  - name: expected_hibiscus_stock
+    default: "6"
+preconditions:
+  - La session Odoo 20 est connectée sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+  - L’opérateur a vérifié les stocks attendus avant le passage.
+objective: >-
+  Lire les stocks physiques de Holo Gingembre 33 cl, Holo Pomme 75 cl et
+  Holo Hibiscus 33 cl, puis identifier le plus faible.
+planned_changes:
+  - Aucune modification métier ; navigation et lecture uniquement.
+allowed_actions:
+  - Ouvrir Inventaire, rechercher les trois produits et lire leurs fiches.
+  - Comparer les quantités physiques réellement visibles.
+forbidden_actions:
+  - Créer, modifier, supprimer, archiver ou ajuster un enregistrement.
+  - Quitter l’onglet Odoo, saisir des identifiants ou envoyer un message.
+agent_instructions: |
+  Reste dans la société de démonstration Odoo {software_version}.
+  Retrouve HACK-GING-033, HACK-POM-075 et HACK-HIB-033 dans Inventaire.
+  Lis le stock physique de chaque produit, sans le confondre avec le stock prévu.
+  Donne les trois quantités observées, indique la plus faible et montre les écrans utilisés.
+  Ne déduis pas une valeur d’une instruction ou de ta connaissance du logiciel.
+  Si une valeur ou un produit ne peut pas être lu, précise ce qui manque et arrête-toi.
+postcondition:
+  description: >-
+    Les trois stocks physiques sont vérifiés à {expected_ginger_stock},
+    {expected_apple_stock} et {expected_hibiscus_stock} unités.
+  checks:
+    - key: correct_company
+      prompt: La société affichée est HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+    - key: ginger_stock
+      prompt: Le stock physique de HACK-GING-033 est {expected_ginger_stock}.
+    - key: apple_stock
+      prompt: Le stock physique de HACK-POM-075 est {expected_apple_stock}.
+    - key: hibiscus_stock
+      prompt: Le stock physique de HACK-HIB-033 est {expected_hibiscus_stock}.
+  verification_instructions: |
+    En lecture seule, ouvre si nécessaire chacune des trois fiches produit.
+    Vérifie leurs quantités physiques à l’écran ; ne suppose pas qu’une attente est une preuve.
+    Toute donnée absente ou illisible produit false. Ne modifie rien.
+escalation:
+  when:
+    - Un produit, son stock ou la société ne peut pas être vérifié.
+  decision_expected: Confirmer l’accès au catalogue et l’état initial de la démonstration.
+  default_category: unknown
