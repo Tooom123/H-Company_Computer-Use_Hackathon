@@ -157,6 +157,8 @@ async function installFixture(page: Page, keyConfigured = true) {
             requestedRegion: { width: state.settings.roiWidth, height: state.settings.roiHeight },
             regionDisposition: "crop", screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
             selection: state.settings.selection, fallbackReason: null,
+            headRegionPolicy: state.settings.selection === "head" ? state.settings.headRegionPolicy ?? "point" : undefined,
+            headZone: state.settings.headRegionPolicy === "zones" ? "center" : undefined,
             signalUsed: headFallback ? "head" : state.settings.selection,
             signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
             headAgeMs: headFallback ? 45 : null,
@@ -244,6 +246,8 @@ async function installFixture(page: Page, keyConfigured = true) {
             regionDisposition: "crop",
             screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
             selection: state.settings.selection,
+            headRegionPolicy: state.settings.selection === "head" ? state.settings.headRegionPolicy ?? "point" : undefined,
+            headZone: state.settings.headRegionPolicy === "zones" ? "center" : undefined,
             signalUsed: headFallback ? "head" : state.settings.selection,
             signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
             headAgeMs: headFallback ? 45 : null,
@@ -791,4 +795,21 @@ test("overlay preserves the sent rectangle when the candidate moves", async ({
     "pointer-events",
     "none",
   );
+});
+
+
+test("persists the experimental head policy and labels the immutable capture", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", { name: "Tête", exact: true }).check();
+  const policy = page.getByRole("combobox", { name: "Politique de zone tête" });
+  await expect(policy).toHaveValue("point");
+  await policy.selectOption("zones");
+  await expect(page.getByText(/Une fenêtre maximisée peut couvrir tout l’écran/)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__labFixture.configurationCalls.at(-1).headRegionPolicy)).toBe("zones");
+  await page.getByRole("button", { name: /Capturer dans 3 s/ }).click();
+  await expect(page.getByText("Politique tête de cette capture : 5 zones stables · center.", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__labFixture.captureSettings.at(-1).headRegionPolicy)).toBe("zones");
+  await policy.selectOption("point");
+  await expect(policy).toHaveValue("point");
 });

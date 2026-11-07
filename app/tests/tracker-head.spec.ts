@@ -161,6 +161,7 @@ test('calibrates and validates head-only tracking without eye labels, then rejec
   expect(tracking.gaze.every((sample: unknown) => sample === null)).toBe(true);
   await expect(page.locator('.tracker-screen')).toHaveCount(0);
 
+  await expect.poll(() => page.evaluate(() => (window as any).__headTrackerFixture.headSamples.at(-1)?.zonePrediction?.reason)).toBe('valid');
   await page.evaluate(() => (window as any).__headTrackerFixture.loseFace());
   await expect.poll(() => page.evaluate(() => (window as any).__headTrackerFixture.headSamples.at(-1))).toBeNull();
   expect(await page.evaluate(() => (window as any).__headTrackerFixture.statuses.at(-1).state)).toBe('lost');

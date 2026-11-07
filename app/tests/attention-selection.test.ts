@@ -133,3 +133,16 @@ it('clears orientation values after its receipt becomes stale', () => {
   expect(headDiagnostics(head, 11401)).toEqual({ available: false, ageMs: 1501, yaw: null, pitch: null, roll: null });
   expect(headDiagnostics(null, 10000)).toEqual({ available: false, ageMs: null, yaw: null, pitch: null, roll: null });
 });
+
+it('selects a coarse head zone independently while retaining signal and calibration guards', () => {
+  const packet = acceptHeadSample({ ...head, point: null, reason: 'outside-screen',
+    zonePrediction: { zone: 'bottom-right', reason: 'valid' } }, bounds, 9994);
+  const options = { head: packet, headRegionPolicy: 'zones' };
+  expect(select('head', options)).toMatchObject({ point: { x: -1, y: 899 }, signalUsed: 'head',
+    headZone: 'bottom-right', headRegionPolicy: 'zones', headDiagnostic: { reason: 'zone-valid' } });
+  expect(select('head', { ...options, headRegionPolicy: 'point' }).signalUsed).toBe('full');
+  expect(select('head', { ...options, now: 12000 })).toMatchObject({ signalUsed: 'full', headDiagnostic: { reason: 'stale' } });
+  expect(select('head', { ...options, head: null }).signalUsed).toBe('full');
+  expect(select('head', { ...options, tracker: { ...tracker, headCalibrated: false } }).signalUsed).toBe('full');
+  expect(select('head', { ...options, head: { ...packet, zonePrediction: { zone: 'invalid', reason: 'valid' } } }).signalUsed).toBe('full');
+});

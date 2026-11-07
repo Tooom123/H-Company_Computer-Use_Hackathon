@@ -6,6 +6,7 @@
  * https://github.com/tensorflow/tfjs-models/tree/master/face-landmarks-detection.
  * Camera mirroring/sign conventions are learned by the separate calibration.
  */
+import { HeadZoneClassifier } from './head-zones';
 export type HeadPose = { yaw: number; pitch: number; roll: number };
 export type ScreenPoint = { x: number; y: number };
 export type HeadPredictionReason = 'uncalibrated' | 'invalid-pose' | 'outside-calibration-domain' | 'outside-screen' | 'valid';
@@ -81,6 +82,7 @@ function solve(matrix: number[][], rhs: number[]): number[] | null {
 export class HeadScreenMapper {
   private labels: Label[] = [];
   private model: Model | null = null;
+  readonly zones = new HeadZoneClassifier();
 
   addSample(pose: HeadPose, target: ScreenPoint): boolean {
     if (!validPose(pose) || !target || !Number.isFinite(target.x) || !Number.isFinite(target.y)
@@ -88,11 +90,13 @@ export class HeadScreenMapper {
     this.labels.push({ pose: { ...pose }, target: { ...target } });
     // Adding training data invalidates an earlier model; callers explicitly refit.
     this.model = null;
+    this.zones.reset();
     return true;
   }
 
   fit({ width, height }: { width: number; height: number }): HeadCalibrationResult {
     this.model = null;
+    this.zones.reset();
     const fail = (reason: string): HeadCalibrationResult => ({ ready: false, reason, sampleCount: this.labels.length });
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return fail('Dimensions d’écran invalides.');
     if (this.labels.some(label => label.target.x >= width || label.target.y >= height)) return fail('Une cible de calibration est hors de l’écran.');
@@ -134,6 +138,7 @@ export class HeadScreenMapper {
     const trainingError = Math.sqrt(rows.reduce((sum, row, i) => sum + (dot(x as Vector, row) - samples[i].target.x / width) ** 2 + (dot(y as Vector, row) - samples[i].target.y / height) ** 2, 0) / rows.length);
     if (trainingError > 0.3) return fail('Les mouvements de tête ne correspondent pas assez aux cibles. Recalibrez.');
     this.model = { x, y, center, scale, min, max, width, height };
+    this.zones.configure(samples, { width, height });
     return { ready: true, sampleCount: this.labels.length };
   }
 
@@ -162,5 +167,5 @@ export class HeadScreenMapper {
 
   predict(pose: HeadPose): ScreenPoint | null { return this.predictWithDiagnostics(pose).point; }
 
-  reset(): void { this.labels = []; this.model = null; }
+  reset(): void { this.labels = []; this.model = null; this.zones.reset(); }
 }

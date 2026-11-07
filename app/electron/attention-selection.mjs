@@ -2,6 +2,8 @@
 // exposure times and must never be presented as end-to-end webcam latency.
 export const MAX_SIGNAL_AGE_MS = 1500;
 const HEAD_MAPPING_REASONS = ['uncalibrated', 'invalid-pose', 'outside-calibration-domain', 'outside-screen', 'valid'];
+const HEAD_ZONES = ['center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const ZONE_REASONS = ['uncalibrated', 'invalid-pose', 'outside-zone-domain', 'stabilizing', 'valid'];
 const HEAD_REASON_LABELS = {
   'tracker-inactive': 'Suivi tête arrêté', uncalibrated: 'Tête non calibrée',
   'no-pose': 'Visage ou orientation non détectés', stale: 'Mesure tête trop ancienne',
@@ -10,6 +12,10 @@ const HEAD_REASON_LABELS = {
   'outside-screen': 'Position tête prédite trop loin hors de l’écran',
   'point-rejected': 'Orientation reçue, mais aucune position écran exploitable',
   valid: 'Position tête disponible',
+  'zone-valid': 'Zone tête disponible',
+  'zone-unavailable': 'Classification tête indisponible',
+  'outside-zone-domain': 'Orientation au-delà de la plage élargie des zones',
+  stabilizing: 'Direction tête en cours de stabilisation (250 ms)',
 };
 
 function localPoint(point, bounds) {
@@ -33,6 +39,9 @@ export function acceptHeadSample(sample, bounds, receivedAt) {
     ...(HEAD_MAPPING_REASONS.includes(sample.reason) ? { reason: sample.reason } : {}),
     ...(sample.rawPoint && ['x', 'y'].every(key => Number.isFinite(sample.rawPoint[key]))
       ? { rawPoint: { x: sample.rawPoint.x, y: sample.rawPoint.y } } : {}),
+    ...(sample.zonePrediction && ZONE_REASONS.includes(sample.zonePrediction.reason)
+      && (sample.zonePrediction.zone === null || HEAD_ZONES.includes(sample.zonePrediction.zone))
+      ? { zonePrediction: { zone: sample.zonePrediction.zone, reason: sample.zonePrediction.reason } } : {}),
   };
 }
 
@@ -51,6 +60,8 @@ export function headDiagnostics(head, now) {
     pitch: available ? head.pose.pitch : null,
     roll: available ? head.pose.roll : null,
     ...(head?.reason ? { mappingReason: head.reason, mappingMessage: HEAD_REASON_LABELS[head.reason] } : {}),
+    ...(available && head?.zonePrediction ? { zoneMessage: head.zonePrediction.zone && head.zonePrediction.reason === 'valid'
+      ? `Zone tête : ${head.zonePrediction.zone}` : HEAD_REASON_LABELS[head.zonePrediction.reason] } : {}),
   };
 }
 
@@ -67,26 +78,35 @@ export function calibratedForSelection(mode, tracker) {
 }
 
 /** Select only from the frozen samples supplied by the caller. No live reads. */
-export function selectAttention({ mode, bounds, tracker, gaze, head, cursor, now }) {
+export function selectAttention({ mode, bounds, tracker, gaze, head, cursor, now, headRegionPolicy = 'point' }) {
   const gazeAgeMs = ageOf(gaze, now);
   const headAgeMs = ageOf(head, now);
   const active = ['tracking', 'lost'].includes(tracker.state);
   const gazeValid = active && tracker.gazeCalibrated !== false && localPoint(gaze, bounds)
     && gazeAgeMs !== null && gazeAgeMs <= MAX_SIGNAL_AGE_MS;
-  const headValid = active && tracker.headCalibrated === true && localPoint(head?.point, bounds)
+  const coarse = mode === 'head' && headRegionPolicy === 'zones';
+  const zone = head?.zonePrediction?.reason === 'valid' && HEAD_ZONES.includes(head.zonePrediction.zone)
+    ? head.zonePrediction.zone : null;
+  const headPoint = coarse ? (!zone ? null : zone === 'center' ? { x: bounds.width / 2, y: bounds.height / 2 }
+    : { x: zone.endsWith('left') ? 0 : bounds.width - 1, y: zone.startsWith('top') ? 0 : bounds.height - 1 }) : head?.point;
+  const headValid = active && tracker.headCalibrated === true && localPoint(headPoint, bounds)
     && headAgeMs !== null && headAgeMs <= MAX_SIGNAL_AGE_MS;
   const globalPoint = point => ({ x: bounds.x + point.x, y: bounds.y + point.y });
   const headReason = !active ? 'tracker-inactive' : tracker.headCalibrated !== true ? 'uncalibrated'
     : !head ? 'no-pose' : headAgeMs === null ? 'invalid-timing'
-      : headAgeMs > MAX_SIGNAL_AGE_MS ? 'stale' : headValid ? 'valid'
+      : headAgeMs > MAX_SIGNAL_AGE_MS ? 'stale' : headValid ? (coarse ? 'zone-valid' : 'valid')
+        : coarse ? (ZONE_REASONS.includes(head.zonePrediction?.reason) && head.zonePrediction.reason !== 'valid'
+          ? head.zonePrediction.reason : 'zone-unavailable')
         : HEAD_MAPPING_REASONS.includes(head.reason) && head.reason !== 'valid' ? head.reason : 'point-rejected';
   const headDiagnostic = { reason: headReason, message: HEAD_REASON_LABELS[headReason],
     ...(head?.rawPoint ? { rawPoint: { ...head.rawPoint } } : {}) };
   const use = (point, signalUsed, signalReason) => ({
     point: globalPoint(point), signalUsed, signalReason, fallbackReason: null, gazeAgeMs, headAgeMs, headDiagnostic,
+    ...(coarse ? { headZone: zone, headRegionPolicy: 'zones' } : {}),
   });
   const fallback = reason => ({ point: null, signalUsed: 'full', signalReason: reason,
-    fallbackReason: reason, gazeAgeMs, headAgeMs, headDiagnostic });
+    fallbackReason: reason, gazeAgeMs, headAgeMs, headDiagnostic,
+    ...(coarse ? { headRegionPolicy: 'zones' } : {}) });
 
   if (mode === 'full') return { point: null, signalUsed: 'full', fallbackReason: null, gazeAgeMs: null, headAgeMs: null };
   if (mode === 'cursor') {
@@ -98,7 +118,7 @@ export function selectAttention({ mode, bounds, tracker, gaze, head, cursor, now
   }
   if (mode === 'gaze') return gazeValid ? use(gaze, 'gaze')
     : fallback('Regard indisponible, non calibré ou trop ancien : plein écran');
-  if (mode === 'head') return headValid ? use(head.point, 'head')
+  if (mode === 'head') return headValid ? use(headPoint, 'head', coarse ? `Zones tête · ${zone} · décision stabilisée` : undefined)
     : fallback(`Tête : ${headDiagnostic.message} ; plein écran`);
   if (mode === 'hybrid') {
     if (gazeValid && headValid) return use({ x: gaze.x * 0.7 + head.point.x * 0.3, y: gaze.y * 0.7 + head.point.y * 0.3 },

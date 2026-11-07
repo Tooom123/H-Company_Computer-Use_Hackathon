@@ -187,6 +187,9 @@ export function validateSettings(input) {
   if (input.regionScope !== undefined && !['screen', 'window'].includes(input.regionScope)) {
     throw new RangeError('Unknown region scope');
   }
+  if (input.headRegionPolicy !== undefined && !['point', 'zones'].includes(input.headRegionPolicy)) {
+    throw new RangeError('Unknown head region policy');
+  }
   return {
     selection: input.selection,
     roiWidth: input.roiWidth,
@@ -194,5 +197,6 @@ export function validateSettings(input) {
     includeGlobal: input.includeGlobal,
     overlay: input.overlay,
     ...(input.regionScope === undefined ? {} : { regionScope: input.regionScope }),
+    ...(input.headRegionPolicy === undefined ? {} : { headRegionPolicy: input.headRegionPolicy }),
   };
 }

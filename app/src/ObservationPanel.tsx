@@ -196,6 +196,7 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
       <p className="field-note">Centre de la cible inclus : {fraction(autoSummary.centerHits, autoSummary.scored)} · {autoSummary.unscored} capture(s) exclue(s), notamment pendant la stabilisation.</p>
       <p className="field-note">Cible entière aux bords : {fraction(autoSummary.edge.fullHits, autoSummary.edge.scored)} · à l’intérieur : {fraction(autoSummary.interior.fullHits, autoSummary.interior.scored)}.</p>
       {autoSummary.scored === 0 && <p className="warning-text">Aucune capture évaluable : aucun taux de couverture ne peut être conclu pour cet essai.</p>}
+      {samples[0]?.headRegionPolicy && <p className="field-note">Politique tête de cet essai : {samples[0].headRegionPolicy === "zones" ? "5 zones stables · expérimental" : "Point continu · référence"}.</p>}
       {samples[0]?.calibrationProfile && <p className="field-note">Profil de calibration de cet essai : {samples[0].calibrationProfile === "wide" ? "Bords étendus" : "Standard"}.</p>}
       <p className="field-note">Comparez le même numéro de parcours, la même durée, les mêmes dimensions et le même cadre de région. Notez le profil de calibration. Un plein écran peut contenir la cible sans produire de recadrage utile. La surface conservée ne mesure pas les tokens économisés.</p>
       <p className="field-note">Ce score mesure la couverture géométrique d’une cible demandée, pas le regard réel ni la réussite d’une tâche dans le logiciel.</p>

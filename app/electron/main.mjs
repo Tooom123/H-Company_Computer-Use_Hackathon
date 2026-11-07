@@ -134,7 +134,8 @@ function setOverlayVisibility() {
 }
 function currentSelection(settings = state.settings) {
   return selectAttention({ mode: settings.selection, bounds: display.bounds, tracker: state.tracker,
-    gaze, head, cursor: settings.selection === 'cursor' ? screen.getCursorScreenPoint() : null, now: performance.now() });
+    gaze, head, cursor: settings.selection === 'cursor' ? screen.getCursorScreenPoint() : null,
+    headRegionPolicy: settings.headRegionPolicy, now: performance.now() });
 }
 function updateCandidate() {
   if (!display) return;
@@ -143,7 +144,7 @@ function updateCandidate() {
   if (['tracking', 'lost'].includes(state.tracker.state)) {
     // The tracker remains alive if either calibrated signal is fresh. Selection
     // still applies the requested mode, with an explicit per-frame fallback.
-    const available = Boolean(selectAttention({ mode: 'hybrid', bounds: display.bounds,
+    const available = Boolean(currentSelection().point || selectAttention({ mode: 'hybrid', bounds: display.bounds,
       tracker: state.tracker, gaze, head, now }).point);
     const nextState = available ? 'tracking' : 'lost';
     if (nextState !== state.tracker.state) state.tracker = { ...state.tracker, state: nextState,

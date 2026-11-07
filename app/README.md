@@ -366,6 +366,36 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
   surface conservée 100 %, première préparation 433 ms. Ce contrôle positif valide le
   calcul géométrique et l’arrêt, **pas la précision webcam**. Aucun appel Holo.
 
+## Essai expérimental : cinq zones tête
+
+Dans **Tête → Cadre piloté par la tête**, choisir **5 zones stables · expérimental**.
+**Point continu · référence** reste le réglage par défaut. Les deux politiques réutilisent
+la même calibration de cinq poses et ses quatre validations. La réussite de la calibration
+affine reste une précondition du nouveau classifieur : ce mode n’est pas sans calibration.
+La médiane en pixels affichée après calibration mesure encore le pointeur fin, pas les cinq zones.
+
+Le classifieur compare la pose aux prototypes centre et quatre coins, normalisés par
+l’amplitude apprise de chaque axe. Il ne transforme pas une projection fine rejetée en
+point valide. Une zone neutre avec hystérésis et une confirmation de 250 ms limitent les
+oscillations. Une plage élargie mais bornée autorise les directions dépassant légèrement
+les poses d’apprentissage ; visage absent, pose extrême, signal périmé ou démarrage non
+stabilisé produisent toujours un repli explicite. Aucun apprentissage sur la cible du test.
+
+- **Cadre Écran** : centre ou crop collé au coin, aux dimensions demandées en pixels source.
+- **Cadre Fenêtre regardée** : au centre, prendre la première fenêtre visible sous le centre
+  de l’écran et la conserver entière, limitée à la capture ; aux coins, limiter le crop à
+  la fenêtre sous le coin, si elle existe. Sinon, conserver le crop du coin sur l’écran.
+- Une fenêtre maximisée peut donc produire un plein écran **sans repli** et sans réduction
+  de surface. Le contour candidat ne connaît la fenêtre retenue qu’après capture ; la
+  région observée et le buffer affiché font foi.
+- Chaque capture et ligne de score conserve `headRegionPolicy` et, si disponible,
+  `headZone`. Comparer le même parcours, les mêmes dimensions, durée et cadre. La réduction
+  des replis seule ne prouve pas une meilleure couverture ni une économie de tokens.
+
+Ce bras est couvert par des contrôles synthétiques de calibration, signes caméra,
+transitions, perte de visage, mapping des fenêtres et IPC. Il reste à comparer sur webcam
+réelle, puis avec les usages et latences retournés par Holo.
+
 ## Limites et dépendances
 
 - Capture : macOS 14+ uniquement ; un écran principal. Pas encore de packaging/signature

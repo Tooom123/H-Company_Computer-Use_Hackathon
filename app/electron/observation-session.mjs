@@ -66,7 +66,7 @@ export class ObservationSession {
             frameId: frame.frameId, capturedAt: frame.capturedAt,
             fallbackReason: frame.fallbackReason, headDiagnostic: frame.headDiagnostic,
             headAgeMs: frame.headAgeMs, preparationMs: frame.preparationMs,
-            calibrationProfile: frame.calibrationProfile });
+            calibrationProfile: frame.calibrationProfile, headRegionPolicy: frame.headRegionPolicy, headZone: frame.headZone });
           this.state.capturedCount += 1;
           if (bytes <= this.maxBytes) {
             while (this.samples.length && this.bytes + bytes > this.maxBytes) {
@@ -116,7 +116,7 @@ export class ObservationSession {
       gazeAgeMs: f.gazeAgeMs, fallbackReason: f.fallbackReason, regionDisposition: f.regionDisposition,
       selectedWindow: f.selectedWindow, annotation,
       signalUsed: f.signalUsed, signalReason: f.signalReason, headAgeMs: f.headAgeMs, headDiagnostic: f.headDiagnostic,
-      benchmark: f.benchmark, calibrationProfile: f.calibrationProfile,
+      benchmark: f.benchmark, calibrationProfile: f.calibrationProfile, headRegionPolicy: f.headRegionPolicy, headZone: f.headZone,
     }));
   }
   select(id) {

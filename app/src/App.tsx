@@ -17,6 +17,7 @@ const defaults: Settings = {
   includeGlobal: true,
   overlay: true,
   regionScope: "screen",
+  headRegionPolicy: "point",
 };
 const selectionLabels = {
   gaze: "Regard",
@@ -315,7 +316,8 @@ export default function App() {
     : settings.selection === "hybrid" ? "Calibrer les yeux et la tête" : "Activer le regard et calibrer";
   const headStatus = requiresHead || tracker.headCalibrated
     ? [tracker.headMessage || (tracker.headCalibrated ? "Tête calibrée" : "Tête non calibrée"),
-      live?.head?.available && live.head.mappingReason !== "valid" ? live.head.mappingMessage : null].filter(Boolean).join(" · ")
+      settings.selection === "head" && settings.headRegionPolicy === "zones" ? live?.head?.zoneMessage
+        : live?.head?.available && live.head.mappingReason !== "valid" ? live.head.mappingMessage : null].filter(Boolean).join(" · ")
     : undefined;
   const headAngles = live?.head?.available
     ? `Orientation approximative : rotation ${degrees(live.head.yaw)} · haut/bas ${degrees(live.head.pitch)} · inclinaison ${degrees(live.head.roll)}`
@@ -403,7 +405,7 @@ export default function App() {
         calibrationState={needsCalibration ? (tracker.state === "calibrating" ? "running" : "needed") : undefined}
         calibrationLabel={calibrationLabel}
         onCalibrate={calibrate}
-        modeLabel={selectionLabels[settings.selection]}
+        modeLabel={`${selectionLabels[settings.selection]}${settings.selection === "head" ? (settings.headRegionPolicy === "zones" ? " · 5 zones" : " · point continu") : ""}`}
         trackerLabel={trackerLabels[tracker.state]}
         headStatus={headStatus}
         headAngles={headAngles}
@@ -445,6 +447,17 @@ export default function App() {
               ))}
             </fieldset>
             {settings.selection === "head" && <p className="field-note">Orientez doucement le visage vers la zone voulue. La tête indique une direction approximative, pas le point exact regardé.</p>}
+            {settings.selection === "head" && <>
+              <label className="region-scope-label">Cadre piloté par la tête
+                <select aria-label="Politique de zone tête" value={settings.headRegionPolicy ?? "point"}
+                  disabled={busy || !live || tracker.state === "calibrating"}
+                  onChange={event => changeSettings({ headRegionPolicy: event.target.value as "point" | "zones" })}>
+                  <option value="point">Point continu · référence</option>
+                  <option value="zones">5 zones stables · expérimental</option>
+                </select>
+              </label>
+              {settings.headRegionPolicy === "zones" && <p className="field-note">Centre ou quatre coins, appris sur les cinq poses de calibration. Changement confirmé pendant 250 ms. Au centre, « Fenêtre regardée » conserve toute la fenêtre ; aux coins, le cadre garde les dimensions demandées. Une fenêtre maximisée peut couvrir tout l’écran.</p>}
+            </>}
             {settings.selection === "hybrid" && <p className="field-note">Essai combiné : 70 % regard, 30 % tête. Si un signal manque, la capture indique celui réellement utilisé.</p>}
             <label className="region-scope-label">Cadre de la région
               <select
@@ -765,6 +778,7 @@ export default function App() {
               </p>
             )}
             {frame?.selectedWindow && <p className="coordinates-note">Fenêtre retenue : {frame.selectedWindow.appName}</p>}
+            {frame?.headRegionPolicy && <p className="field-note">Politique tête de cette capture : {frame.headRegionPolicy === "zones" ? `5 zones stables${frame.headZone ? ` · ${frame.headZone}` : ""}` : "Point continu"}.</p>}
             {frame?.windowFallbackReason && <p className="field-note warning-text">{frame.windowFallbackReason}</p>}
           </section>
           <section

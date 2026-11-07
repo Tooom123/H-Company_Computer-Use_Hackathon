@@ -28,7 +28,8 @@ export function planObservationRegion({ source, screenBounds, settings, selectio
     if (windowRect) {
       const point = screenPointToCapture(selection.point, screenBounds, source);
       const within = boundedRect({ x: point.x - windowRect.x, y: point.y - windowRect.y }, requestedRegion, windowRect);
-      cropRect = { ...within, x: within.x + windowRect.x, y: within.y + windowRect.y };
+      cropRect = selection.headRegionPolicy === 'zones' && selection.headZone === 'center'
+        ? windowRect : { ...within, x: within.x + windowRect.x, y: within.y + windowRect.y };
       selectedWindow = {
         id: candidate.id, appName: typeof candidate.appName === 'string' ? candidate.appName : 'Application',
         bounds: { ...candidate.bounds },

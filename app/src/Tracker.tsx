@@ -76,8 +76,9 @@ export default function Tracker() {
         const headPrediction = pose && headCalibrated.current ? headMapper.current.predictWithDiagnostics(pose)
           : { point: null, reason: 'uncalibrated' as const };
         const headPoint = headPrediction.point;
+        const zonePrediction = headMapper.current.zones.predict(pose, performance.now());
         window.companion.reportGaze(gazePoint);
-        window.companion.reportHead(pose ? { ...headPrediction, pose, emittedAt: Date.now() } : null);
+        window.companion.reportHead(pose ? { ...headPrediction, zonePrediction, pose, emittedAt: Date.now() } : null);
         const state = gazePoint || headPoint ? 'tracking' : 'lost';
         if (state !== lastReportedTracking.current) {
           lastReportedTracking.current = state;

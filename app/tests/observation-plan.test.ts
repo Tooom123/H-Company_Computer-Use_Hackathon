@@ -97,3 +97,15 @@ it('ignores window metadata for screen scope, explicit full screen and lost gaze
   expect(lost.regionDisposition).toBe('full-fallback');
   expect(lost.selectedWindow).toBeUndefined();
 });
+
+it('takes the entire front window at the neutral zone, with clipping and source scale conversion', () => {
+  const window = { id: 32, appName: 'Odoo', bounds: { x: -1500, y: 200, width: 1300, height: 700 } };
+  const selected = { ...selection, point: { x: -720, y: 570 }, headZone: 'center', headRegionPolicy: 'zones' };
+  expect(plan({ settings: { ...windowSettings, selection: 'head' },
+    source: { width: 2880, height: 1800 }, screenBounds: { x: -1440, y: 120, width: 1440, height: 900 },
+    selection: selected, windows: [window],
+  })).toMatchObject({ cropRect: { x: 0, y: 160, width: 2480, height: 1400 }, selectedWindow: window, regionDisposition: 'crop' });
+  expect(plan({ settings: windowSettings, selection: { ...selection, headZone: 'center', headRegionPolicy: 'zones' },
+    windows: [{ id: 9, appName: 'Maximized', bounds: screenBounds }],
+  })).toMatchObject({ regionDisposition: 'full-size', includeGlobal: false, fallbackReason: null });
+});
