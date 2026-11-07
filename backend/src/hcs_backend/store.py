@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS events (
     event       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_session ON events(session_id);
+CREATE TABLE IF NOT EXISTS fixes (
+    case_id     TEXT PRIMARY KEY,
+    updated_at  TEXT NOT NULL,
+    fix         TEXT NOT NULL
+);
 """
 
 
@@ -121,6 +126,22 @@ class Store:
                     json.dumps(event, ensure_ascii=False),
                 ),
             )
+
+    # fixes ---------------------------------------------------------------------------------------
+    def save_fix(self, fix: dict[str, Any]) -> None:
+        fix = dict(fix)
+        fix.setdefault("created_at", now_iso())
+        fix["updated_at"] = now_iso()
+        with self._lock, self._db:
+            self._db.execute("INSERT OR REPLACE INTO fixes VALUES (?,?,?)",
+                             (fix["case_id"], fix["updated_at"], json.dumps(fix, ensure_ascii=False)))
+
+    def get_fix(self, case_id: str) -> dict[str, Any] | None:
+        row = self._db.execute("SELECT fix FROM fixes WHERE case_id=?", (case_id,)).fetchone()
+        return json.loads(row["fix"]) if row else None
+
+    def list_fixes(self) -> list[dict[str, Any]]:
+        return [json.loads(r["fix"]) for r in self._db.execute("SELECT fix FROM fixes ORDER BY updated_at DESC")]
 
     def list_events(self, session_id: str) -> list[dict[str, Any]]:
         rows = self._db.execute(

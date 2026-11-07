@@ -37,7 +37,7 @@ def seed(client: TestClient) -> None:
 
 def test_demo_cases_match_contract(client):
     seed(client)
-    assert len(client.get("/cases", auth=AUTH).json()) == 4
+    assert len(client.get("/cases", auth=AUTH).json()) == 5
 
 
 def test_ingest_requires_token(client):

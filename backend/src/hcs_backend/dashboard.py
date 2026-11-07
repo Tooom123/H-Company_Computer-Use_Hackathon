@@ -35,7 +35,7 @@ padding:0 5px;margin-left:6px;font-weight:600;letter-spacing:.03em}
 .hide-sm{display:none}}
 dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:4px 14px}dt{color:var(--muted)}dd{margin:0}
 .decision{border-left:4px solid var(--bad)}.muted{color:var(--muted)}ol{margin:0;padding-left:20px}
-.wrap{overflow-x:auto}.card>b{display:block;margin:0 0 8px}
+.wrap{overflow-x:auto}.fixcard{margin-top:12px;border-left:4px solid var(--accent)}.fixbtn{margin-top:4px;padding:8px 14px;border-radius:8px;border:0;background:var(--fg);color:var(--bg);font-weight:600;cursor:pointer}.card>b{display:block;margin:0 0 8px}
 """
 
 
@@ -168,7 +168,44 @@ def group_page(group: Group) -> str:
     return _page(f"Group {s['group_id']}", body)
 
 
-def case_page(case: StoredCase, group_id: str | None) -> str:
+def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
+    """Auto-fix with Devin: request button, session and pull request links."""
+    if not fix_repo and not fix:
+        return ""
+    if not fix:
+        auto = case.report.get("category") == "suspected_product_defect"
+        return (
+            '<div class="card fixcard"><b>Fix with Devin</b>'
+            f'<p class="muted">Repository on the allowlist: <code>{escape(fix_repo or "")}</code>. '
+            f'{"Suspected product defect: " if auto else ""}Devin reproduces the defect with a test, fixes it and '
+            "opens a pull request on a <code>feature/</code> branch.</p>"
+            f'<form method="post" action="/dashboard/cases/{escape(case.case_id)}/fix">'
+            '<button class="fixbtn" type="submit">Send to Devin</button></form></div>'
+        )
+    status = str(fix.get("status") or "")
+    sim = _flags(bool(fix.get("simulated")), False)
+    pr = fix.get("pr_url")
+    pr_html = (f'<a href="{escape(pr.split(" ")[0])}">{escape(pr)}</a> <span class="muted">({escape(str(fix.get("pr_state") or ""))})</span>'
+               if pr else '<span class="muted">not yet</span>')
+    sess = fix.get("session_url")
+    res = fix.get("result") or {}
+    rows = [
+        ("Status", f"<b>{escape(status)}</b> {escape(str(fix.get('status_detail') or ''))}"),
+        ("Pull request", pr_html),
+        ("Devin session", f'<a href="{escape(sess.split(" ")[0])}">{escape(fix.get("session_id") or "")}</a>' if sess else "—"),
+        ("Repository", f"<code>{escape(fix.get('repo') or '')}</code> · branch <code>{escape(fix.get('branch') or '')}</code>"),
+        ("Triggered", escape(f"{fix.get('trigger')} · {fix.get('created_at')}")),
+    ]
+    if res:
+        rows += [("Reproduced", _v(res.get("reproduced"))), ("Root cause", _v(res.get("root_cause"))),
+                 ("Fix", _v(res.get("fix_summary"))), ("Test added", _v(res.get("test_added")))]
+    if fix.get("error") or fix.get("last_error"):
+        rows.append(("Error", escape(str(fix.get("error") or fix.get("last_error")))))
+    dl = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)
+    return f'<div class="card fixcard"><b>Fix with Devin{sim}</b><dl>{dl}</dl></div>'
+
+
+def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, fix_repo: str | None = None) -> str:
     e = build_escalation(case)
     ctx, user, agent, obs = e["context"], e["user_declared"], e["agent_declared"], e["observed"]
     decision = ""
@@ -200,6 +237,7 @@ def case_page(case: StoredCase, group_id: str | None) -> str:
         f'{escape(str(ctx["software"]))} {escape(str(ctx["software_version"] or ""))} · {escape(str(ctx["os"]))}{group_link} · '
         f'<a href="/cases/{escape(e["case_id"])}/escalation.md">escalation file (.md)</a></p>'
         + decision
+        + _fix_card(case, fix, fix_repo)
         + '<div class="grid2" style="margin-top:12px">'
         '<div class="card"><b>Declared by the user</b><dl>'
         f"<dt>Role</dt><dd>{_v(user['role'])}</dd><dt>Goal</dt><dd>{_v(user['goal'])}</dd>"

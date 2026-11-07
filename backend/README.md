@@ -39,3 +39,26 @@ Invalid payloads get a 422 listing the schema errors.
   user's feedback has `allow_screenshots_to_support`; withheld screenshots are counted, not shown.
 - **Flags**: `simulated` and `demo_data` are displayed on every case and group.
 - **Access**: no unauthenticated read of cases; the agent and support use separate secrets.
+
+## Auto-fix with Devin (Cognition)
+
+When a case is a **suspected product defect** on a software whose repository is on the allowlist, the backend
+asks Devin to reproduce it with a failing test, fix it and open a pull request on `feature/hcs-fix-<case_id>`.
+The session and PR links appear on the case page ("Fix with Devin"), next to a **Send to Devin** button for
+manual requests.
+
+| Variable | Meaning |
+| --- | --- |
+| `HCS_FIX_REPOS` | allowlist `Software name=owner/repo; ...` (nothing else is ever targeted) |
+| `HCS_FIX_AUTO` | `1` = automatic on `suspected_product_defect` cases |
+| `DEVIN_API_KEY`, `DEVIN_ORG_ID` | Devin API v3 (`cog_...` service user); without them a simulated Devin runs |
+| `HCS_FIX_MAX_ACU` | ACU cap per session (default 5) |
+
+API (support auth): `POST /cases/{id}/fix`, `GET /cases/{id}/fix` (refreshes from Devin), `GET /fixes`.
+Sandbox: [Tooom123/hcs-sandbox-fake-crm](https://github.com/Tooom123/hcs-sandbox-fake-crm) (private, planted
+date bug) with demo case `demo-005`:
+
+```bash
+.venv/bin/hcs-backend seed-demo --reset
+.venv/bin/hcs-backend fix demo-005          # follows the Devin session until the PR (simulated without a key)
+```

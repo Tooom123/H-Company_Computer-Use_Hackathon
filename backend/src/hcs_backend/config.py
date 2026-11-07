@@ -38,6 +38,16 @@ class Settings:
     # Stripe Checkout (test mode) for the landing paywall
     stripe_secret_key: str = ""
     landing_url: str = "http://127.0.0.1:5173"
+    # Auto-fix with Devin (Cognition): allowlist "Software name=owner/repo; ..."
+    fix_repos: str = ""
+    fix_auto: bool = False
+    fix_provider: str = "auto"         # auto (devin if a key is set, else mock) | devin | mock
+    devin_api_key: str = ""
+    devin_org_id: str = ""
+    devin_api_base: str = "https://api.devin.ai"
+    fix_max_acu: int = 5
+    fix_poll_s: float = 30.0
+    fix_mock_run_s: float = 6.0
     generated_secrets: list[str] = field(default_factory=list)
 
     @classmethod
@@ -55,6 +65,16 @@ class Settings:
         s.dashboard_password = os.environ.get("HCS_DASHBOARD_PASSWORD", "")
         s.stripe_secret_key = os.environ.get("STRIPE_SECRET_KEY", "")
         s.landing_url = os.environ.get("HCS_LANDING_URL", s.landing_url)
+        s.fix_repos = os.environ.get("HCS_FIX_REPOS", "")
+        s.fix_auto = os.environ.get("HCS_FIX_AUTO", "0") == "1"
+        s.fix_provider = os.environ.get("HCS_FIX_PROVIDER", s.fix_provider)
+        s.devin_api_key = os.environ.get("DEVIN_API_KEY", "")
+        s.devin_org_id = os.environ.get("DEVIN_ORG_ID", "")
+        s.devin_api_base = os.environ.get("DEVIN_API_BASE", s.devin_api_base)
+        if v := os.environ.get("HCS_FIX_MAX_ACU"):
+            s.fix_max_acu = int(v)
+        if v := os.environ.get("HCS_FIX_POLL_S"):
+            s.fix_poll_s = float(v)
         if v := os.environ.get("HCS_GROUP_THRESHOLD"):
             s.group_threshold = float(v)
         s.ensure_secrets()

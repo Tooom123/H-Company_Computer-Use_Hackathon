@@ -15,12 +15,41 @@ def main(argv: list[str] | None = None) -> int:
     seed = sub.add_parser("seed-demo", help="load the demo cases (flagged demo_data + simulated) into the DB")
     seed.add_argument("--reset", action="store_true", help="delete existing demo cases first")
     sub.add_parser("reset-demo", help="delete every case flagged demo_data")
+    fx = sub.add_parser("fix", help="ask Devin to fix the defect behind a case and follow it until the PR")
+    fx.add_argument("case_id")
+    fx.add_argument("--timeout", type=float, default=3600, help="seconds to follow the session (default 1h)")
     args = parser.parse_args(argv)
 
     from .config import Settings
     from .store import Store
 
     settings = Settings.from_env()
+    if args.cmd == "fix":
+        import time
+
+        from .autofix import TERMINAL, AutoFixer
+
+        store = Store(settings.db_path)
+        case = store.get_case(args.case_id)
+        if case is None:
+            print(f"unknown case {args.case_id} (seed-demo first?)")
+            return 2
+        fixer = AutoFixer(settings, store)
+        fix = fixer.request(case, trigger="cli")
+        print(f"provider={fix['provider']} simulated={fix['simulated']} repo={fix['repo']} branch={fix['branch']}")
+        print(f"session {fix.get('session_id')}  {fix.get('session_url')}")
+        t0, last = time.time(), None
+        while fix and fix["status"] not in TERMINAL and fix["status"] != "error" and time.time() - t0 < args.timeout:
+            time.sleep(2 if fix["simulated"] else 20)
+            fix = fixer.refresh(args.case_id)
+            line = f"{fix['status']} {fix.get('status_detail') or ''} pr={fix.get('pr_url')}"
+            if line != last:
+                print(f"[{int(time.time() - t0):>4}s] {line}")
+                last = line
+        print(f"result: {fix.get('result')}")
+        print(f"error: {fix.get('error') or fix.get('last_error')}" if fix.get("error") or fix.get("last_error") else "")
+        return 0 if fix.get("pr_url") else 1
+
     if args.cmd in ("seed-demo", "reset-demo"):
         store = Store(settings.db_path)
         if args.cmd == "reset-demo" or args.reset:

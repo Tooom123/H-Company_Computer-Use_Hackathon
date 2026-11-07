@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import secrets
+import threading
+import time
 from typing import Annotated, Any
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, status
@@ -11,6 +13,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBasic, HTTPBasicCredentials, HTTPBearer
 
 from . import dashboard
+from .autofix import AutoFixer, DevinError
 from .billing import PLANS, BillingNotConfigured, create_checkout
 from .config import Settings
 from .escalation import build_escalation, escalation_markdown, needs_escalation
@@ -22,13 +25,33 @@ _basic = HTTPBasic(realm="HCS support dashboard", auto_error=False)
 _bearer = HTTPBearer(auto_error=False)
 
 
-def create_app(settings: Settings | None = None, store: Store | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, store: Store | None = None, fixer: AutoFixer | None = None,
+               start_poller: bool = True) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.ensure_secrets()
     store = store or Store(settings.db_path)
     app = FastAPI(title="HCS support backend", version="0.1.0")
     app.state.settings = settings
     app.state.store = store
+    fixer = fixer or AutoFixer(settings, store)
+    app.state.fixer = fixer
+
+    # Devin sessions take minutes: a background thread refreshes the open ones
+    if start_poller and settings.fix_poll_s > 0:
+        def _poll() -> None:
+            while True:
+                time.sleep(settings.fix_poll_s if fixer.provider and not fixer.provider.simulated else 2)
+                try:
+                    fixer.poll_open()
+                except Exception as e:  # never kill the thread
+                    print(f"[autofix] poll failed: {e}")
+        threading.Thread(target=_poll, name="autofix-poll", daemon=True).start()
+
+    def _auto_fix(case: StoredCase) -> bool:
+        if not fixer.auto_eligible(case) or store.get_fix(case.case_id):
+            return False
+        threading.Thread(target=lambda: fixer.request(case, trigger="auto"), daemon=True).start()
+        return True
     # the landing page (another origin) may call /billing/* only
     landing_origins = {settings.landing_url.rstrip("/"), "http://localhost:5173", "http://127.0.0.1:5173"}
     app.add_middleware(CORSMiddleware, allow_origins=sorted(landing_origins), allow_methods=["GET", "POST"],
@@ -100,7 +123,9 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
         except ContractError as e:
             raise HTTPException(422, {"schema": e.schema, "errors": e.errors}) from e
         case, created = store.add_case(report, user_ref=x_hcs_user)
+        fix_started = _auto_fix(case)
         return {
+            "fix_requested": fix_started,
             "case_id": case.case_id,
             "created": created,
             "group_id": group_of(case.case_id),
@@ -186,6 +211,37 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
 
     @app.get("/dashboard/cases/{case_id}", response_class=HTMLResponse, dependencies=[Support])
     def dash_case(case_id: str) -> str:
-        return dashboard.case_page(get_case_or_404(case_id), group_of(case_id))
+        case = get_case_or_404(case_id)
+        return dashboard.case_page(case, group_of(case_id), fix=store.get_fix(case_id),
+                                   fix_repo=fixer.repo_for(case))
+
+    @app.post("/dashboard/cases/{case_id}/fix", dependencies=[Support], include_in_schema=False)
+    def dash_case_fix(case_id: str) -> RedirectResponse:
+        request_fix(case_id)
+        return RedirectResponse(f"/dashboard/cases/{case_id}", status_code=303)
+
+    # auto-fix (support) ------------------------------------------------------------------------
+    @app.post("/cases/{case_id}/fix", dependencies=[Support])
+    def request_fix(case_id: str) -> dict[str, Any]:
+        """Ask Devin to fix the defect behind this case and open a PR (software must be on the allowlist)."""
+        case = get_case_or_404(case_id)
+        try:
+            return fixer.request(case, trigger="manual")
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        except DevinError as e:
+            raise HTTPException(503, str(e)) from e
+
+    @app.get("/cases/{case_id}/fix", dependencies=[Support])
+    def get_fix(case_id: str) -> dict[str, Any]:
+        get_case_or_404(case_id)
+        fix = fixer.refresh(case_id)
+        if fix is None:
+            raise HTTPException(404, "no fix requested for this case")
+        return fix
+
+    @app.get("/fixes", dependencies=[Support])
+    def list_fixes() -> list[dict[str, Any]]:
+        return store.list_fixes()
 
     return app

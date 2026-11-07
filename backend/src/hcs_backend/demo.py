@@ -180,6 +180,47 @@ def config_missing_type() -> dict[str, Any]:
     )
 
 
+def defect_due_date(case_id: str = "demo-005") -> dict[str, Any]:
+    """Suspected product defect on the sandbox vendor repo (Tooom123/hcs-sandbox-fake-crm): an activity
+    scheduled for 14 November in Paris is stored and shown on 13 November."""
+    return _base(
+        case_id,
+        software="Fake CRM", software_version="0.1.0",
+        session_type="support",
+        goal="Schedule a follow-up call on 'Acme Démo' for 14 November",
+        symptom="I picked 14 November but the activity says 13 November",
+        procedure_id="fakecrm.schedule_activity",
+        approved_scope=_PLAN_ACTIVITY,
+        steps=[
+            _step(0, 1, "action", "Opened 'Acme Démo' and scheduled a To Do due 2026-11-14 (user time zone Europe/Paris)", 1),
+            _step(1, 1, "observation", "Reopened the record: the activity is due 2026-11-13", 2),
+            _step(2, 2, "action", "Edited the due date back to 2026-11-14 and saved", 3),
+            _step(3, 2, "observation", "Reopened again: still 2026-11-13 — the date shifts by one day on every save", 4),
+        ],
+        declared={"outcome": "blocked", "summary": "Due date saved one day earlier than chosen",
+                  "blocker": "Activity due date stored as 2026-11-13 when 2026-11-14 is picked (Europe/Paris)",
+                  "blocker_category": "suspected_product_defect", "steps_taken": ["schedule activity", "edit due date"]},
+        verification={
+            "performed": True, "satisfied": False,
+            "postcondition": "A To Do activity due 2026-11-14 exists on 'Acme Démo'",
+            "observed": "Activity present but due 2026-11-13 after two attempts; the UTC user is not affected",
+            "checks": {"activity_present": True, "due_date_correct": False},
+            "evidence_refs": [], "user_confirmed": True,
+        },
+        status="escalated",
+        category="suspected_product_defect",
+        suspected_cause="Date conversion to UTC drops the user's day for time zones ahead of UTC",
+        needs_human=True,
+        escalation={
+            "blocked_on": "Activity due date shifted by one day for users in Europe/Paris",
+            "attempts": 2,
+            "decision_expected": "Confirm the product defect and ship a fix; meanwhile tell users to pick the day after",
+            "suggested_next_step": "Check the due date storage conversion in the activities module",
+        },
+        feedback={"useful": False, "comment": "My follow-up will be on the wrong day.", "allow_screenshots_to_support": False},
+    )
+
+
 def demo_cases() -> list[tuple[dict[str, Any], str]]:
     """(report, user_ref) pairs: one resolved, two similar permission blocks, one configuration gap."""
     return [
@@ -187,4 +228,5 @@ def demo_cases() -> list[tuple[dict[str, Any], str]]:
         (blocked_assign("demo-002", "Globex Démo", "It says access error when I save", "I just wanted to hand it over."), "demo-user-bob"),
         (blocked_assign("demo-003", "Umbrella Démo", "Cannot change the salesperson, error popup", None), "demo-user-chloe"),
         (config_missing_type(), "demo-user-alice"),
+        (defect_due_date(), "demo-user-dan"),
     ]
