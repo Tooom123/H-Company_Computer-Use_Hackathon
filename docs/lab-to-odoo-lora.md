@@ -194,6 +194,92 @@ l’adaptateur, puis obtenir une action multimodale exploitable. Extrapoler depu
 le nombre réel d’exemples ; si ce contrôle échoue, garder le modèle de base pour la
 démo et livrer le dataset/protocole comme résultat expérimental.
 
+### Matériel confirmé : Spark 128 Go et crédits Verda
+
+Edouard dispose d’un DGX Spark 128 Go, de 1 500 USD de crédits Verda et d’un accès
+Colab. Contrôle SSH en lecture seule du 7 novembre : architecture ARM64, GPU GB10,
+pilote 580.126.09, 121 Gio de mémoire système visible dont environ 45 Gio disponibles,
+et environ 2,8 Tio de disque libre. Deux moteurs vLLM sont déjà actifs. Les images
+ARM vLLM 0.28/0.30 et PyTorch NVIDIA 26.08 sont présentes ; cela ne valide pas encore
+notre modèle. Aucun service, modèle chargé ou configuration distante n’a été modifié.
+
+**Proposition : un seul H200 141 Go à la demande sur Verda.** Cette capacité laisse
+plus de marge pour le LoRA multimodal que 80 Go, sans complexifier le pilote par du
+multi-GPU. Prendre Holo4-27B dense comme premier candidat conserve la base du Lab ;
+Holo4-35B-A3B reste l’alternative Apache 2.0. Figer le choix avant de collecter le
+lot comparatif. Cette proposition n’est pas une validation du pic mémoire réel.
+
+Tarifs publics USD relus directement le 7 novembre, hors stockage et sous réserve
+du devis/éligibilité des crédits dans la console. Les extraits de moteur de recherche
+affichaient des prix plus anciens : utiliser la page directe et confirmer avant création.
+
+| Instance à la demande | USD/h | Calcul pour 8 heures |
+| --- | ---: | ---: |
+| H100 80 Go | 4,938 | 39,50 USD |
+| **H200 141 Go** | **6,440** | **51,52 USD** |
+| B200 180 Go | 9,138 | 73,10 USD |
+
+Source : [tarifs Verda USD](https://verda.com/pricing?currency=usd). H200 pendant
+12 heures représenterait 77,28 USD de calcul. Proposer une enveloppe initiale de
+100 USD couvrant le pilote et une marge ; ce n’est pas un plafond technique déjà
+configuré. Aucune instance n’est créée et aucun crédit n’est consommé par cet audit.
+Privilégier on-demand pour ce premier passage ; les instances spot peuvent être
+interrompues, selon [la documentation Verda](https://docs.verda.com/cpu-and-gpu-instances/set-up-a-gpu-instance/).
+
+Commencer sur Verda par base BF16, LoRA langage avec encodeur visuel gelé, une requête
+à la fois et contexte court représentatif des traces. Mesurer 20–50 microbatches,
+recharger l’adaptateur, vérifier image + tool call, puis seulement lancer le lot.
+Chronométrer la base et l’adaptation sur ce même serveur. Une réservation de huit
+heures est une enveloppe de travail, pas une durée d’entraînement prédite.
+
+Sur le Spark occupé, 45 Gio disponibles ne suffisent pas au 27B BF16 avec sa marge
+d’exécution. H publie aussi des poids FP8/NVFP4 ; sa recette Holo4 exige vLLM 0.28+.
+La commande Spark plus ancienne sur cette page sert Holo3.1 : ne pas la recopier
+telle quelle. Les débits affichés pour Holo3.1 ne sont pas des mesures Holo4.
+[Recette H](https://hub.hcompany.ai/agents-api/local-inference),
+[playbook NVIDIA](https://build.nvidia.com/spark/vllm/intermediate).
+
+La combinaison précise Holo4 + précision quantifiée + adapter + kernels GB10 reste
+à qualifier. Première voie : base + adapter séparé sur la partie langage. En cas
+d’incompatibilité du chargement, fusionner l’adapter dans une copie BF16 sur Verda,
+puis qualifier le checkpoint et son éventuelle quantification. Conserver base et
+adapter originaux ; une quantification peut modifier les résultats et nécessite
+un nouvel A/B à précision identique. Voir [LoRA vLLM](https://docs.vllm.ai/en/latest/features/lora/)
+et [fusion PEFT](https://huggingface.co/docs/peft/developer_guides/checkpoint).
+Si la mémoire ou le portage Spark bloque, le serveur Verda validé peut servir la démo.
+
+**Raccordement à Matteo : garder la boucle sur le Mac.** Le Spark expose l’API du
+modèle, pas l’API Agents cloud. La voie documentée utilise `Client.local` avec
+`Inference.self_hosted`, joignant le serveur Spark/Verda par tunnel SSH. Le modèle
+de l’agent fixe le format Holo4 ; le nom du serveur sélectionne la base ou l’adapter.
+Ce changement de client n’est pas encore implémenté dans le moteur audité.
+[Runtime local H](https://hub.hcompany.ai/agents-api/local-runtime).
+
+```python
+from hai_agents import Client
+from hai_agents_local.runtime import Inference
+
+# Exemple de raccordement à qualifier, pas un script exécuté.
+agent["model"] = "holo4-27b"
+inference = Inference.self_hosted(
+    "http://localhost:8000/v1",  # extrémité locale du tunnel
+    model="hcompanion-odoo",    # nom effectivement servi
+)
+with Client.local(inference=inference) as client:
+    # Créer la session selon le moteur et conserver approbation / arrêt / traces.
+    pass
+```
+
+Colab reste utile pour inspecter/préparer le dataset ; le GPU et les limites d’usage
+ne sont pas garantis sur les offres ordinaires. Il n’est donc pas le chemin principal
+de cette nuit. [FAQ Colab](https://research.google.com/colaboratory/faq.html).
+
+À la fin de la location Verda, sauvegarder et vérifier les artefacts avant de libérer
+l’instance. **Un simple shutdown continue à facturer le calcul** : la documentation
+demande la suppression de l’instance, en choisissant explicitement les volumes à
+conserver. Les volumes conservés restent facturés. Aucune suppression automatique
+n’a été programmée. [Cycle de vie Verda](https://docs.verda.com/cpu-and-gpu-instances/shutdown-hibernate-and-delete/).
+
 ## 7. Répartition et ordre de passage
 
 | Responsable | Prochain livrable | Critère de fin |
