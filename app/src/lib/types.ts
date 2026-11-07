@@ -9,6 +9,8 @@ export type CaptureFrame = {
   frameId: string; capturedAt: string; sourceWidth: number; sourceHeight: number;
   preparedAt?: string; captureInterval?: { startedAt: string; completedAt: string };
   cropRect: Rect; screenBounds: Rect; selection: Settings['selection']; fallbackReason: string | null;
+  requestedRegion?: { width: number; height: number };
+  regionDisposition?: 'crop' | 'full-requested' | 'full-fallback' | 'full-size';
   detail: EncodedImage; global: EncodedImage | null; preparationMs: number; gazeAgeMs: number | null;
   simulated: boolean; captureMethod: string;
 };

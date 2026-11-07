@@ -204,13 +204,13 @@ ipcMain.handle('companion:capture', async event => {
   try {
     await delay(3000, undefined, { signal: operation.signal });
     const settings = { ...state.settings };
-    // Freeze a sample BEFORE requesting the screenshot, never from after an action.
-    const gazeSnapshot = gaze ? { ...gaze } : null;
-    const cursorSnapshot = currentSelection(settings);
+    // Freeze coordinates, validity and receipt age together before native capture.
+    // A later lost/tracking callback must not change this observation's decision.
+    const selection = currentSelection(settings);
     const captured = await captureObservation({
       binary, display, settings, signal: operation.signal,
       excludeWindowIds: windowIdsFromMediaSources(BrowserWindow.getAllWindows().filter(window => !window.isDestroyed() && window.isVisible() && !window.isMinimized()).map(window => window.getMediaSourceId())),
-      selection: () => settings.selection === 'gaze' ? currentSelection(settings, gazeSnapshot) : cursorSnapshot,
+      selection,
     });
     controller.signal.throwIfAborted();
     if (generation !== displayGeneration) throw new Error('Écran modifié pendant la capture. Recommencez.');

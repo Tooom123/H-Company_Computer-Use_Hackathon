@@ -111,7 +111,13 @@ export default function App() {
   );
   const [error, setError] = useState<string | null>(null);
   const [operation, setOperation] = useState<string | null>(null);
+  const [configurationPending, setConfigurationPending] = useState(0);
   const operationRef = useRef(false);
+  const settingsRef = useRef<Settings>(defaults);
+  const settingsInitialized = useRef(false);
+  const configurationQueue = useRef<Promise<void>>(Promise.resolve());
+  const widthInput = useRef<HTMLInputElement>(null);
+  const heightInput = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   const frameRef = useRef<string | null>(null);
 
@@ -124,7 +130,13 @@ export default function App() {
     const acceptState = (state: LiveState) => {
       if (!mounted.current) return;
       setLive(state);
-      setSettings(state.settings);
+      // Main broadcasts every 100 ms. Older applied settings must not overwrite
+      // edits that are still waiting in the configuration queue.
+      if (!settingsInitialized.current) {
+        settingsInitialized.current = true;
+        settingsRef.current = state.settings;
+        setSettings(state.settings);
+      }
     };
     const unsubscribe = bridge.onState(acceptState);
     void Promise.all([bridge.getStatus(), bridge.getState()])
@@ -165,33 +177,56 @@ export default function App() {
       if (mounted.current) setOperation(null);
     }
   };
+  const persistSettings = (next: Settings) => {
+    settingsRef.current = next;
+    setSettings(next);
+    setConfigurationPending((count) => count + 1);
+    const request = configurationQueue.current
+      .catch(() => {})
+      .then(() => bridge.configure(next));
+    configurationQueue.current = request;
+    const finished = () => {
+      if (mounted.current) setConfigurationPending((count) => count - 1);
+    };
+    void request.then(finished, finished);
+    return request;
+  };
   const changeSettings = (patch: Partial<Settings>) => {
-    const next = { ...settings, ...patch };
-    void run("configuration", async () => {
-      await bridge.configure(next);
-      if (mounted.current) setSettings(next);
+    void persistSettings({ ...settingsRef.current, ...patch }).catch((reason) => {
+      if (mounted.current) setError(errorText(reason));
     });
+  };
+  const parseDimension = (draft: string) => {
+    const value = Number(draft);
+    if (!Number.isInteger(value) || value < 64 || value > 8192) {
+      throw new Error("La dimension doit être un nombre entier compris entre 64 et 8 192 pixels.");
+    }
+    return value;
   };
   const commitDimension = (
     dimension: "roiWidth" | "roiHeight",
     draft: string,
   ) => {
-    const value = Number(draft);
-    if (!Number.isInteger(value) || value < 64 || value > 8192) {
-      setError(
-        "La dimension doit être un nombre entier compris entre 64 et 8 192 pixels.",
-      );
-      if (dimension === "roiWidth") setWidthDraft(String(settings.roiWidth));
-      else setHeightDraft(String(settings.roiHeight));
-      return;
+    try {
+      const value = parseDimension(draft);
+      if (value !== settingsRef.current[dimension]) changeSettings({ [dimension]: value });
+    } catch (reason) {
+      setError(errorText(reason));
     }
-    if (value !== settings[dimension]) changeSettings({ [dimension]: value });
   };
   const capture = () =>
     void run("capture", async () => {
       frameRef.current = null;
       setFrame(null);
       setResult(null);
+      // A click on Capture also blurs the last edited input. Wait for every
+      // queued write and explicitly apply both visible values before capture.
+      // Reading the elements also handles native accessibility value edits.
+      await persistSettings({
+        ...settingsRef.current,
+        roiWidth: settingsRef.current.selection === "full" ? settingsRef.current.roiWidth : parseDimension(widthInput.current?.value ?? widthDraft),
+        roiHeight: settingsRef.current.selection === "full" ? settingsRef.current.roiHeight : parseDimension(heightInput.current?.value ?? heightDraft),
+      });
       const next = await bridge.capture();
       if (!mounted.current) return;
       frameRef.current = next.frameId;
@@ -412,6 +447,7 @@ export default function App() {
               <label>
                 <span>Largeur</span>
                 <input
+                  ref={widthInput}
                   aria-label="Largeur de la région"
                   type="number"
                   min="64"
@@ -420,7 +456,7 @@ export default function App() {
                   value={widthDraft}
                   disabled={busy || settings.selection === "full" || !live}
                   onChange={(event) => setWidthDraft(event.target.value)}
-                  onBlur={() => commitDimension("roiWidth", widthDraft)}
+                  onBlur={(event) => commitDimension("roiWidth", event.currentTarget.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
                   }}
@@ -432,6 +468,7 @@ export default function App() {
               <label>
                 <span>Hauteur</span>
                 <input
+                  ref={heightInput}
                   aria-label="Hauteur de la région"
                   type="number"
                   min="64"
@@ -440,13 +477,17 @@ export default function App() {
                   value={heightDraft}
                   disabled={busy || settings.selection === "full" || !live}
                   onChange={(event) => setHeightDraft(event.target.value)}
-                  onBlur={() => commitDimension("roiHeight", heightDraft)}
+                  onBlur={(event) => commitDimension("roiHeight", event.currentTarget.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
                   }}
                 />
               </label>
             </div>
+            <p className="field-note applied-region" role="status">
+              Réglage enregistré : {number(live?.settings.roiWidth)} × {number(live?.settings.roiHeight)} px
+              {configurationPending > 0 ? " · enregistrement…" : ""}
+            </p>
             <label className="toggle-row">
               <span>
                 <strong>Ajouter un aperçu global</strong>
@@ -495,6 +536,9 @@ export default function App() {
             <button
               className="button primary full-width"
               disabled={!canCapture}
+              // Capture flushes both inputs itself. Keep mouse-down from first
+              // triggering a blur write whose error could move this button.
+              onMouseDown={(event) => event.preventDefault()}
               onClick={capture}
             >
               {capturePending ? "Regardez le logiciel…" : "Capturer dans 3 s"}
@@ -532,7 +576,7 @@ export default function App() {
                   {frame
                     ? frame.global
                       ? "Zone détaillée + aperçu global"
-                      : frame.selection === "full" || frame.fallbackReason
+                      : frame.selection === "full" || frame.fallbackReason || frame.regionDisposition === "full-size"
                         ? "Écran complet"
                         : "Zone détaillée"
                     : "Image préparée pour Holo"}
@@ -565,6 +609,12 @@ export default function App() {
               <div className="notice compact warning" role="status">
                 <strong>Repli plein écran</strong>
                 <span>{frame.fallbackReason}</span>
+              </div>
+            )}
+            {frame?.regionDisposition === "full-size" && !frame.fallbackReason && (
+              <div className="notice compact warning" role="status">
+                <strong>La région demandée couvre tout l’écran</strong>
+                <span>Réduisez les dimensions de la région pour préparer un recadrage.</span>
               </div>
             )}
             <div
@@ -627,9 +677,15 @@ export default function App() {
             <p className="coordinates-note">
               Pixels de capture · origine en haut à gauche
               {frame?.gazeAgeMs != null
-                ? ` · âge du signal reçu : ${milliseconds(frame.gazeAgeMs)}`
+                ? ` · âge du signal au choix, avant capture : ${milliseconds(frame.gazeAgeMs)}`
                 : ""}
             </p>
+            {frame?.requestedRegion && (
+              <p className="coordinates-note requested-region">
+                Région demandée pour cette capture : {number(frame.requestedRegion.width)} × {number(frame.requestedRegion.height)} px
+                {` · surface conservée : ${Math.round(100 * frame.cropRect.width * frame.cropRect.height / (frame.sourceWidth * frame.sourceHeight))} %`}
+              </p>
+            )}
           </section>
           <section
             className="metrics-section"

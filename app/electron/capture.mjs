@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { nativeImage } from 'electron';
-import { boundedRect, screenPointToCapture } from './geometry.mjs';
+import { planObservationRegion } from './observation-plan.mjs';
 
 const exec = promisify(execFile);
 function encode(image) {
@@ -31,21 +31,18 @@ export async function captureObservation({ binary, display, settings, selection,
     if (image.isEmpty() || source.width !== metadata.width || source.height !== metadata.height) {
       throw new Error('Dimensions de capture incohérentes : observation rejetée.');
     }
-    const selected = selection();
-    const full = settings.selection === 'full' || selected.fallbackReason !== null;
-    const cropRect = full ? { x: 0, y: 0, ...source } : boundedRect(
-      screenPointToCapture(selected.point, display.bounds, source),
-      { width: settings.roiWidth, height: settings.roiHeight }, source,
-    );
+    const plan = planObservationRegion({ source, screenBounds: display.bounds, settings, selection });
+    const { cropRect } = plan;
     // PNG comes from a byte buffer with scaleFactor 1; crop uses real pixels.
     const detail = encode(image.crop(cropRect));
-    const global = !full && settings.includeGlobal ? encode(image.resize({ width: Math.min(640, source.width), quality: 'best' })) : null;
+    const global = plan.includeGlobal ? encode(image.resize({ width: Math.min(640, source.width), quality: 'best' })) : null;
     return {
       frameId: randomUUID(), capturedAt: metadata.captureCompletedAt, preparedAt: new Date().toISOString(),
       captureInterval: { startedAt: metadata.captureStartedAt, completedAt: metadata.captureCompletedAt },
       sourceWidth: source.width, sourceHeight: source.height,
-      cropRect, screenBounds: { ...display.bounds }, selection: settings.selection, fallbackReason: selected.fallbackReason,
-      detail, global, preparationMs: performance.now() - start, gazeAgeMs: selected.gazeAgeMs,
+      cropRect, screenBounds: { ...display.bounds }, selection: settings.selection, fallbackReason: plan.fallbackReason,
+      requestedRegion: plan.requestedRegion, regionDisposition: plan.regionDisposition,
+      detail, global, preparationMs: performance.now() - start, gazeAgeMs: plan.gazeAgeMs,
       simulated: false, captureMethod: 'ScreenCaptureKit · fenêtres H-Companion exclues',
     };
   } catch (error) {

@@ -12,6 +12,12 @@ async function installFixture(page: Page, keyConfigured = true) {
           requestFrame: string | null;
           requestModel: string | null;
           requests: Array<{ frameId: string; model: string; detailDataUrl?: string; globalDataUrl?: string }>;
+          deferConfigurations: () => void;
+          releaseConfiguration: () => void;
+          failConfigurations: () => void;
+          useFullSizeCapture: () => void;
+          configurationCalls: Array<Record<string, unknown>>;
+          captureSettings: Array<Record<string, unknown>>;
         };
       };
       const fixtureWindow = window as unknown as FixtureWindow;
@@ -31,6 +37,10 @@ async function installFixture(page: Page, keyConfigured = true) {
       let latestFrame: any = null;
       let counter = 0;
       let rejectCapture = false;
+      let configurationDeferred = false;
+      let configurationRejected = false;
+      let fullSizeCapture = false;
+      const configurationResolvers: Array<() => void> = [];
       let resolveInference: ((value: any) => void) | null = null;
       const listeners = new Set<(value: any) => void>();
       const emit = () =>
@@ -108,7 +118,15 @@ async function installFixture(page: Page, keyConfigured = true) {
         requestFrame: null,
         requestModel: null,
         requests: [],
+        deferConfigurations: () => { configurationDeferred = true; },
+        releaseConfiguration: () => { configurationResolvers.shift()?.(); },
+        failConfigurations: () => { configurationRejected = true; },
+        useFullSizeCapture: () => { fullSizeCapture = true; },
+        configurationCalls: [],
+        captureSettings: [],
       };
+      // Match main's frequent state broadcasts, including while an IPC write is pending.
+      window.setInterval(emit, 100);
       window.companion = {
         getStatus: async () => ({
           platform: "fixture",
@@ -124,6 +142,9 @@ async function installFixture(page: Page, keyConfigured = true) {
         }),
         getState: async () => structuredClone(state),
         configure: async (settings) => {
+          fixtureWindow.__labFixture.configurationCalls.push(structuredClone(settings));
+          if (configurationDeferred) await new Promise<void>(resolve => configurationResolvers.push(resolve));
+          if (configurationRejected) throw new Error("Réglage de fixture refusé");
           state.settings = settings;
           emit();
         },
@@ -136,23 +157,33 @@ async function installFixture(page: Page, keyConfigured = true) {
           emit();
         },
         capture: async () => {
+          fixtureWindow.__labFixture.captureSettings.push(structuredClone(state.settings));
           if (rejectCapture) throw new Error("Capture de fixture refusée");
           latestFrame = {
             frameId: `simulated-frame-${++counter}`,
             capturedAt: "2026-11-07T10:00:00.000Z",
             sourceWidth: 2880,
             sourceHeight: 1800,
-            cropRect: { x: 200, y: 300, width: 800, height: 600 },
+            cropRect: { x: 200, y: 300, width: state.settings.roiWidth, height: state.settings.roiHeight },
+            requestedRegion: { width: state.settings.roiWidth, height: state.settings.roiHeight },
+            regionDisposition: "crop",
             screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
             selection: state.settings.selection,
             fallbackReason: null,
-            detail: makeImage(800, 600),
+            detail: makeImage(state.settings.roiWidth, state.settings.roiHeight),
             global: state.settings.includeGlobal ? makeImage(480, 300) : null,
             preparationMs: 34,
             gazeAgeMs: 22,
             simulated: true,
             captureMethod: "explicit-browser-fixture",
           };
+          if (fullSizeCapture) Object.assign(latestFrame, {
+            sourceWidth: 1470, sourceHeight: 956,
+            requestedRegion: {width: 1600, height: 1200},
+            regionDisposition: "full-size",
+            cropRect: {x: 0, y: 0, width: 1470, height: 956},
+            detail: makeImage(1470, 956), global: null,
+          });
           return structuredClone(latestFrame);
         },
         analyze: async (input) => {
@@ -199,6 +230,65 @@ async function finishFixture(page: Page, outcome: "completed" | "failed") {
     outcome,
   );
 }
+
+test("captures the latest two dimensions after deferred setting writes and stale broadcasts", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await page.evaluate(() => (window as any).__labFixture.deferConfigurations());
+  const width = page.getByRole("spinbutton", { name: "Largeur de la région" });
+  const height = page.getByRole("spinbutton", { name: "Hauteur de la région" });
+  await width.fill("896");
+  await height.fill("704");
+  await height.press("Tab");
+  // This one click must queue the capture behind both pending writes, not be dropped.
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(0);
+  await expect(page.locator(".applied-region")).toContainText("800 × 600 px");
+  await page.waitForTimeout(250);
+  await expect(width).toHaveValue("896");
+  await expect(height).toHaveValue("704");
+  expect(await page.evaluate(() => (window as any).__labFixture.captureSettings.length)).toBe(1);
+
+  // The first capture used one configure; now width, height and the capture flush are serial.
+  for (const callCount of [2, 3, 4]) {
+    await expect.poll(() => page.evaluate(() => (window as any).__labFixture.configurationCalls.length)).toBe(callCount);
+    await page.evaluate(() => (window as any).__labFixture.releaseConfiguration());
+  }
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await expect(page.locator(".applied-region")).toContainText("896 × 704 px");
+  await expect(page.locator(".requested-region")).toContainText("896 × 704 px");
+  const captured = await page.evaluate(() => (window as any).__labFixture.captureSettings);
+  expect(captured).toHaveLength(2);
+  expect(captured[1]).toMatchObject({roiWidth: 896, roiHeight: 704});
+});
+
+test("discards the old observation and prevents capture when settings cannot be persisted", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await expect(page.locator(".applied-region")).toContainText("800 × 600 px");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await page.evaluate(() => (window as any).__labFixture.failConfigurations());
+  await page.getByRole("spinbutton", { name: "Largeur de la région" }).fill("960");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("alert")).toContainText("Réglage de fixture refusé");
+  await expect(page.getByRole("img")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__labFixture.captureSettings.length)).toBe(1);
+});
+
+test("distinguishes an oversized region from a tracking fallback", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.evaluate(() => (window as any).__labFixture.useFullSizeCapture());
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByText("La région demandée couvre tout l’écran", {exact: true})).toBeVisible();
+  await expect(page.getByText("Repli plein écran", {exact: true})).toHaveCount(0);
+  await expect(page.locator(".requested-region")).toContainText("1 600 × 1 200 px");
+  await expect(page.locator(".requested-region")).toContainText("surface conservée : 100 %");
+  await expect(page.getByRole("img")).toHaveCount(1);
+});
 
 test("blocks sending without an API key and shows no fabricated usage", async ({
   page,

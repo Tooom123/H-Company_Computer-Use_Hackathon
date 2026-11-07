@@ -49,6 +49,8 @@ le défaut au démarrage. Le transport utilise la [Models API officielle](https:
    Aucun point de regard n’est montré ; le rectangle pointillé est la zone candidate.
 4. Choisir le regard, le curseur ou l’écran complet, les dimensions de la région en pixels
    source et l’ajout éventuel d’un aperçu global (largeur maximale 640 px).
+   Les dimensions enregistrées sont affichées séparément de la saisie. Le bouton de capture
+   applique les deux champs et attend leur enregistrement avant de préparer l’image.
 5. Cliquer **Capturer dans 3 s**, puis regarder la partie utile du logiciel. L’image reste
    locale. macOS peut demander la permission d’enregistrement de l’écran au premier essai ;
    après accord, relancer l’app si nécessaire. Le helper reçoit les identifiants natifs des
@@ -71,6 +73,12 @@ sur les cibles de validation, mais n’ajuste pas encore automatiquement la tail
 - `cropRect` est en **pixels de capture**, origine en haut à gauche ; le rectangle de l’overlay
   est converti vers les points d’affichage à partir des dimensions réelles. `scaleFactor` ne
   sert qu’à estimer la zone candidate avant la première capture.
+- `requestedRegion` conserve les dimensions réellement appliquées à cette capture.
+  `regionDisposition` distingue une région recadrée (`crop`), un plein écran demandé
+  (`full-requested`), un repli (`full-fallback`) et des dimensions couvrant toute la source
+  (`full-size`). Par exemple, demander 1 600 × 1 216 sur une source 1 470 × 956 produit un
+  plein écran ; 896 × 704 reste un crop de cette taille, même au bord. Quand l’image détaillée
+  couvre déjà toute la source, aucun aperçu global redondant n’est ajouté.
 - `captureInterval` borne l’appel natif de capture ; `capturedAt` est sa fin, pas un timestamp
   matériel exact. `preparedAt` est la fin de préparation de l’observation.
 - `preparationMs` comprend capture native, recadrage et encodage, et exclut les trois secondes
@@ -78,11 +86,12 @@ sur les cibles de validation, mais n’ajuste pas encore automatiquement la tail
   Ce n’est ni le temps au premier token ni le temps d’une tâche complète.
 - Les tokens d’entrée/sortie/total/cache viennent de `usage`. Une valeur absente reste inconnue,
   y compris après échec. Aucun compteur de gains ou coût n’est inventé.
-- `gazeAgeMs` est l’âge depuis la **réception du callback** WebGazer, au moment où la sélection
-  est évaluée. WebGazer ne fournit pas un horodatage fiable de la frame caméra : ce champ ne
-  mesure pas la latence du tracker. Le signal est figé avant la demande de capture, puis un
-  repli plein écran est appliqué s’il est absent, hors écran, non calibré ou âgé de plus de
-  1 500 ms à la préparation. Un démarrage lent peut donc entraîner un repli.
+- `gazeAgeMs` est l’âge depuis la **réception du callback** WebGazer, au moment du choix,
+  **avant** la capture native. Ce n’est ni une latence webcam ni l’âge à la fin de préparation :
+  WebGazer ne fournit pas un horodatage fiable de la frame caméra. Coordonnées, validité et âge
+  sont figés ensemble avant la capture ; un changement ultérieur du suivi ne modifie pas cette
+  décision. Le repli s’applique si le signal est absent, hors écran, non calibré ou âgé de plus
+  de 1 500 ms au moment du choix. L’intervalle natif et le temps de préparation restent séparés.
 
 Les captures temporaires sont effacées dans un `finally`, y compris lors des erreurs.
 L’observation et le résultat ne persistent qu’en mémoire. Pas d’export automatique de captures
@@ -164,6 +173,11 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
 - Deux sondes visuelles réelles sur la même image fictive ont ensuite confirmé le fonctionnement
   de `holo4-27b` (554 tokens, 3 174 ms) et `holo4-35b-a3b` (559 tokens, 2 386 ms), avec la bonne
   réponse dans les deux cas. Un appel par modèle ne permet pas de classer leurs performances.
+- Après correction de l’enregistrement des dimensions, une capture humaine en mode regard
+  a réellement produit **800 × 600** sur une source **1 470 × 956** (origine 82, 158), soit
+  **34 % de surface**. Le panneau confirme la demande appliquée, un âge du signal de 15 ms
+  au choix et une préparation de 389 ms. Aucun appel Holo pour cet essai : ce pourcentage
+  décrit l’aire du crop seul, pas les économies de tokens ni la réussite d’une tâche.
 
 ## Limites et dépendances
 
