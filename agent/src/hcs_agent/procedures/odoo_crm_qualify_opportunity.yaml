@@ -1,0 +1,142 @@
+# Richer onboarding case: qualify an opportunity. Several fields, a stage change, explanations of the
+# pipeline logic. Reversible (stage and values can be edited back).
+id: odoo_crm_qualify_opportunity
+software: odoo
+software_version: "19.0"
+session_type: onboarding
+title: Qualify an opportunity (revenue, probability, stage)
+reversible: true
+max_attempts: 2
+max_steps_per_attempt: 45
+max_time_s_per_attempt: 480
+
+parameters:
+  - name: opportunity
+    description: Name of the opportunity
+    required: false
+    default: "Acme Demo"
+  - name: expected_revenue
+    description: Expected revenue, e.g. "12000"
+    required: false
+    default: "12000"
+  - name: customer
+    description: Customer name to link, e.g. "Acme Corp"
+    required: false
+    default: "Acme Corp"
+
+preconditions:
+  - Odoo is open in the browser on the main display and the user is logged in.
+  - The opportunity "{opportunity}" exists in the CRM pipeline.
+
+objective: >-
+  Qualify the opportunity "{opportunity}": set the customer "{customer}", the expected revenue {expected_revenue},
+  and move it to the "Qualified" stage.
+
+planned_changes:
+  - Open the opportunity "{opportunity}" and set Customer = "{customer}", Expected Revenue = {expected_revenue}.
+  - Move the opportunity from "New" to "Qualified". Nothing else is modified.
+
+allowed_actions:
+  - Navigate inside the Odoo CRM app and open the opportunity form.
+  - Edit the Customer and Expected Revenue fields; click the "Qualified" stage in the status bar; save.
+
+forbidden_actions:
+  - Sending any email or external message.
+  - Deleting or archiving any record.
+  - Marking the opportunity as Won or Lost.
+  - Leaving the Odoo browser tab or opening other applications.
+  - Entering credentials.
+
+agent_instructions: |
+  You are assisting a user inside Odoo CRM (version {software_version}) in a browser on macOS. Work only inside
+  the visible Odoo tab.
+  Procedure:
+  1. Open the CRM pipeline and click the card "{opportunity}" to open its form.
+  2. In the "Customer" field, type "{customer}" and pick "Create "{customer}"" if it does not exist yet.
+  3. In "Expected Revenue", type {expected_revenue}.
+  4. In the stage bar at the top-right of the form, click "Qualified".
+  5. Click the save icon (cloud) if the form shows unsaved changes. Confirm the stage shows "Qualified".
+  If something prevents a step, stop and report it as blocked with the exact message.
+
+guide_steps:
+  - instruction: "Clique sur la carte « {opportunity} »"
+    element: "the pipeline card titled {opportunity}"
+    why: "On qualifie toujours depuis la fiche : c'est là que vivent les infos de l'affaire."
+    annotations:
+      - element: "the column header New at the top of the first pipeline column"
+        text: "New = pas encore qualifié"
+        shape: underline
+      - element: "the column header Qualified at the top of the second pipeline column"
+        text: "Qualified = besoin + budget OK"
+        shape: underline
+  - instruction: "Regarde la fiche : trois zones comptent pour qualifier"
+    why: "Le haut = qui et combien ; la barre d'étapes = où en est l'affaire ; le chatter en bas = l'historique."
+    annotations:
+      - element: "the Expected Revenue field of the opportunity form"
+        text: "Montant espéré"
+        shape: circle
+      - element: "the stage status bar at the top-right of the form showing New, Qualified, Proposition, Won"
+        text: "Étapes du pipeline"
+        shape: box
+        size: [420, 40]
+      - element: "the chatter area at the bottom of the form with Send message and Log note"
+        text: "Historique + notes"
+        shape: box
+        size: [600, 80]
+  - instruction: "Tape « {customer} » dans Customer"
+    element: "the Customer field of the opportunity form"
+    why: "Lier un client permet de retrouver toutes ses affaires et factures ensemble."
+  - instruction: "Choisis « Create {customer} » dans la liste"
+    element: "the dropdown option Create {customer} under the Customer field"
+    why: "Odoo crée la fiche client à la volée ; tu complèteras l'adresse plus tard."
+    optional: true
+  - instruction: "Mets {expected_revenue} dans Expected Revenue"
+    element: "the Expected Revenue amount field of the opportunity form"
+    why: "C'est ce montant qui alimente les prévisions de ventes de l'équipe."
+  - instruction: "Clique sur Qualified dans la barre d'étapes"
+    element: "the Qualified stage in the status bar at the top-right of the opportunity form"
+    why: "Changer d'étape ici déplace la carte dans le pipeline ; c'est réversible."
+    annotations:
+      - element: "the Won button in the opportunity form header"
+        text: "Pas Won : ça clôture"
+        shape: label
+  - instruction: "Clique sur l'icône de sauvegarde (nuage)"
+    element: "the cloud save icon near the breadcrumb at the top-left of the form"
+    why: "Odoo sauvegarde souvent tout seul, mais un clic ici garantit que rien n'est perdu."
+    optional: true
+
+expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
+recovery_steps:
+  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
+    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
+  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
+    element: "the apps grid icon at the far top-left of the Odoo top bar"
+    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+    optional: true
+
+postcondition:
+  description: >-
+    After reopening the opportunity "{opportunity}", its stage is "Qualified", the customer is "{customer}"
+    and the expected revenue is {expected_revenue}.
+  checks:
+    - key: opportunity_opened
+      prompt: The form view of the opportunity "{opportunity}" is displayed.
+    - key: stage_qualified
+      prompt: The stage bar highlights "Qualified".
+    - key: customer_set
+      prompt: The Customer field shows "{customer}".
+    - key: revenue_set
+      prompt: The Expected Revenue field shows {expected_revenue}.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the browser
+    window and do not reload the page. Open the CRM pipeline from the app menu if needed and open the opportunity
+    "{opportunity}". Do not create, edit or delete anything. Report exactly what you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must confirm the user may edit opportunities and change stages (Sales user rights).
+  default_category: unknown

@@ -1,0 +1,130 @@
+# Success case for the demo: schedule a follow-up activity on a CRM opportunity in Odoo.
+id: odoo_crm_followup_activity
+software: odoo
+software_version: "19.0"
+session_type: configuration
+title: Schedule a follow-up activity on an opportunity
+reversible: true
+max_attempts: 2
+max_steps_per_attempt: 40
+max_time_s_per_attempt: 420
+
+# Values the request must provide (request.parameters). Used in templates below as {name}.
+parameters:
+  - name: opportunity
+    description: Name of the opportunity, e.g. "Acme Demo"
+    required: true
+  - name: due_date
+    description: Due date for the follow-up, e.g. "2026-11-14"
+    required: false
+    default: "+7d"
+  - name: activity_title
+    description: Title of the activity
+    required: false
+    default: "Follow up"
+  - name: assignee
+    description: Person responsible for the activity
+    required: false
+    default: "me"
+
+preconditions:
+  - Odoo is open in the browser on the main display and the user is logged in.
+  - The CRM app is installed and the opportunity "{opportunity}" exists in the pipeline.
+
+objective: >-
+  Create a "To Do" activity titled "{activity_title}" due on {due_date} on the opportunity
+  "{opportunity}" in Odoo CRM, assigned to {assignee}.
+
+planned_changes:
+  - Open the opportunity "{opportunity}" in the CRM pipeline.
+  - Add one activity of type "To Do", title "{activity_title}", due {due_date}, assigned to {assignee}.
+  - Save the opportunity. Nothing else is modified.
+
+allowed_actions:
+  - Navigate inside the Odoo CRM app (pipeline, opportunity form, activity dialog).
+  - Fill the activity dialog fields and click Schedule / Save.
+  - Use the CRM search bar to find the opportunity.
+
+forbidden_actions:
+  - Sending any email, SMS or external message.
+  - Deleting or archiving any record.
+  - Changing opportunity stage, amount, customer or any field other than activities.
+  - Leaving the Odoo browser tab or opening other applications.
+  - Entering credentials. If a login screen appears, stop and report it.
+
+# System-level instructions appended to the H agent prompt for this procedure.
+agent_instructions: |
+  You are assisting a user inside Odoo CRM (version {software_version}) running in a browser on macOS.
+  Work only inside the Odoo tab that is already visible. Do not open other apps or tabs.
+  Procedure:
+  1. Open the CRM app and find the opportunity "{opportunity}" (use the search bar if needed).
+  2. Open its form view.
+  3. In the chatter area, click "Activity" to open the "Schedule Activity" dialog.
+  4. Set Activity Type = "To Do", Summary = "{activity_title}", Due Date = {due_date}, Assigned to = {assignee}.
+  5. Click "Schedule" (not "Mark as Done"). Confirm the activity appears on the opportunity.
+  Guide mode only: if the pipeline is empty or "{opportunity}" does not exist, first guide the user to create
+  it (click "New" in the pipeline, type the title "{opportunity}", click "Add"), then continue with step 2.
+  If something prevents you from completing a step (missing permission, record not found, unexpected
+  dialog, login prompt), do NOT try workarounds outside this procedure: stop and report it as blocked
+  with a precise description of what you saw on screen.
+
+guide_steps:
+  - instruction: "Ouvre l'application CRM"
+    element: "the CRM app icon or menu entry"
+    why: "Les relances se planifient depuis la fiche de l'opportunité."
+    optional: true
+  - instruction: "Clique sur la carte « {opportunity} »"
+    element: "the pipeline card titled {opportunity}"
+    why: "Ça ouvre la fiche de l'opportunité."
+  - instruction: "Clique sur Activity"
+    element: "the Activity button (clock icon) in the chatter area of the opportunity form"
+    why: "Une activité est un rappel daté, assigné à quelqu'un : c'est la relance."
+  - instruction: "Choisis le type To Do"
+    element: "the Activity Type field of the Schedule Activity dialog"
+    why: "To Do = tâche simple, sans appel ni e-mail automatique."
+  - instruction: "Mets la date {due_date}"
+    element: "the Due Date field of the Schedule Activity dialog"
+    why: "C'est la date à laquelle Odoo te rappellera la relance."
+  - instruction: "Écris « {activity_title} » en résumé"
+    element: "the Summary text field of the Schedule Activity dialog"
+    why: "Le résumé apparaît dans ta liste d'activités."
+  - instruction: "Clique sur Schedule"
+    element: "the Schedule button at the bottom of the Schedule Activity dialog"
+    why: "Ça planifie l'activité ; Mark as Done la fermerait tout de suite."
+
+expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
+recovery_steps:
+  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
+    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
+  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
+    element: "the apps grid icon at the far top-left of the Odoo top bar"
+    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+    optional: true
+
+postcondition:
+  description: >-
+    After reopening the opportunity "{opportunity}", an activity with summary "{activity_title}",
+    type "To Do", due {due_date}, assigned to {assignee} is listed in its planned activities.
+  checks:
+    - key: opportunity_opened
+      prompt: The form view of the opportunity "{opportunity}" is displayed.
+    - key: activity_present
+      prompt: A planned activity with summary "{activity_title}" is listed on this opportunity.
+    - key: due_date_correct
+      prompt: That activity's due date is {due_date}.
+    - key: type_todo
+      prompt: That activity's type is "To Do".
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the
+    browser window and do not reload the page. Open the CRM pipeline from the Odoo app menu and open the opportunity "{opportunity}". Do not create, edit or delete anything. Only navigate and read.
+    Report exactly what you observe for each check.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must confirm whether the user has the CRM access rights to schedule activities on this
+    opportunity, or whether the opportunity exists under another name.
+  default_category: unknown
