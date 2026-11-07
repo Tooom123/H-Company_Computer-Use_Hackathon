@@ -61,6 +61,42 @@ def _wobble_path(points: list[tuple[float, float]], rnd: random.Random, width: f
     return paths
 
 
+PAPER = (1.0, 1.0, 0.985, 0.93)
+
+
+def _draw_paper(x: float, y: float, w: float, h: float, rnd: random.Random) -> None:
+    """A scrap of white paper behind the note: roughly cut edges, slight tilt, soft shadow (cutout collage)."""
+    tilt = rnd.uniform(-0.03, 0.03)
+    cx, cy = x + w / 2, y + h / 2
+
+    def rot(px: float, py: float) -> tuple[float, float]:
+        dx, dy = px - cx, py - cy
+        return (cx + dx * math.cos(tilt) - dy * math.sin(tilt), cy + dx * math.sin(tilt) + dy * math.cos(tilt))
+
+    # Walk the rectangle edge with a few uneven cuts per side.
+    pts = []
+    for side, n in (((x, y), (x + w, y)), 5), (((x + w, y), (x + w, y + h)), 3), (((x + w, y + h), (x, y + h)), 5), (((x, y + h), (x, y)), 3):
+        (ax, ay), (bx, by) = side
+        for i in range(n):
+            t = i / n
+            jx, jy = rnd.uniform(-3, 3), rnd.uniform(-3, 3)
+            pts.append(rot(ax + (bx - ax) * t + jx, ay + (by - ay) * t + jy))
+    path = AppKit.NSBezierPath.bezierPath()
+    path.moveToPoint_(pts[0])
+    for pt in pts[1:]:
+        path.lineToPoint_(pt)
+    path.closePath()
+    AppKit.NSGraphicsContext.saveGraphicsState()
+    shadow = AppKit.NSShadow.alloc().init()
+    shadow.setShadowOffset_((2, -3))
+    shadow.setShadowBlurRadius_(6)
+    shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedWhite_alpha_(0, 0.35))
+    shadow.set()
+    AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*PAPER).setFill()
+    path.fill()
+    AppKit.NSGraphicsContext.restoreGraphicsState()
+
+
 class _SketchView(AppKit.NSView):
     def initWithFrame_(self, frame):
         self = objc.super(_SketchView, self).initWithFrame_(frame)
@@ -99,7 +135,7 @@ class _SketchView(AppKit.NSView):
             text_x = anchor_x if right else anchor_x - 230
             text_y = min(ty + 34, bounds.size.height - 60)
             # Arrow from the note down to the circle, with a rough two-stroke head at the circle end.
-            start = (anchor_x + (6 if right else -6), text_y - 2)
+            start = (anchor_x + (6 if right else -6), text_y - 12)
             end = (tx + (44 if right else -44), ty + 16)
             mid = ((start[0] + end[0]) / 2 + (0 if right else 0), (start[1] + end[1]) / 2 + 10)
             for path in _wobble_path([start, mid, end], rnd, 1.4, 1.2):
@@ -120,9 +156,13 @@ class _SketchView(AppKit.NSView):
             AppKit.NSForegroundColorAttributeName: AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE),
         }
         s = Foundation.NSString.stringWithString_(self.text)
-        s.drawInRect_withAttributes_(((text_x, text_y), (340, 50)), attrs)
+        size = s.boundingRectWithSize_options_attributes_((340, 60), 1 << 0, attrs).size  # wraps on width
+        tw, th = min(size.width, 340) + 2, size.height + 2
+        _draw_paper(text_x - 10, text_y - 6, tw + 20, th + 12, rnd)
+        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE).setStroke()
+        s.drawInRect_withAttributes_(((text_x, text_y), (340, th + 4)), attrs)
         # A quick underline squiggle under the text, the way you'd stress a note.
-        under = [(text_x + i * 24, text_y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)]
+        under = [(text_x + i * (tw / 6), text_y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)]
         for path in _wobble_path(under, rnd, 1.0, 1.0):
             path.stroke()
 
