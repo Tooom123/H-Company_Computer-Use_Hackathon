@@ -58,7 +58,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_approve: bool = False,
              scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
-             overlay: bool = True) -> int:
+             overlay: bool = True, ov=None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
     it = Intervention(request, backend, ProcedureRegistry(), _print_event, runs_dir)
     print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, mode: {request.mode.value})")
@@ -86,7 +86,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
 
     try:
         if request.mode.value == "guide":
-            _guide_loop(it, auto=auto_next, overlay=overlay)
+            _guide_loop(it, auto=auto_next, overlay=overlay, ov=ov)
         else:
             it.wait()
     except KeyboardInterrupt:
@@ -108,18 +108,52 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
     registry = ProcedureRegistry()
     vocab = sorted({v for p in registry.all() for v in (p.software, p.title.split()[0])} | {"Odoo", "CRM", "Acme Demo"})
-    ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "f8"), vocabulary=vocab,
-                     on_state=lambda s: print(f"  [voice] {s}", flush=True))
+    ov = None
+    if not args.no_overlay and sys.platform == "darwin":
+        from .overlay import Overlay
+
+        ov = Overlay()
+    voice_state = {"s": None}
+
+    def on_state(s: str) -> None:
+        voice_state["s"] = s
+        print(f"  [voice] {s}", flush=True)
+        if ov is None:
+            return
+        if s == "recording":
+            ov.badge("Je t'écoute…", pulsing=True)
+        elif s == "transcribing":
+            ov.badge("Transcription…")
+        else:
+            ov.badge(None)
+
+    ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "f8"), vocabulary=vocab, on_state=on_state)
     router = IntentRouter(registry)
     backend = make_backend(args.mock)
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
           f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
+
+    def next_transcript() -> str:
+        """Wait for a transcript while keeping the overlay (badge) alive on the main thread."""
+        box: dict[str, str] = {}
+
+        def tick() -> None:
+            t = ptt.wait_transcript(timeout=0)
+            if t is not None:
+                box["text"] = t
+
+        if ov is not None:
+            ov.run_until(lambda: "text" in box, tick, 0.1, hide_at_end=False)
+        else:
+            while "text" not in box:
+                tick()
+                time.sleep(0.1)
+        return box["text"]
+
     try:
         while True:
-            text = ptt.wait_transcript(timeout=0.5)
-            if text is None:
-                continue
+            text = next_transcript()
             print(f"\nYou said: \"{text}\"")
             try:
                 intent = router.route(text)
@@ -138,7 +172,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             request = intent_to_request(intent)
             print(f"  -> procedure {request.procedure_id}, mode {request.mode.value}, params {request.parameters}")
             ptt.stop()
-            code = _execute(request, backend, Path(args.runs_dir), auto_approve=args.yes, overlay=not args.no_overlay)
+            code = _execute(request, backend, Path(args.runs_dir), auto_approve=args.yes, overlay=not args.no_overlay, ov=ov)
             if args.once:
                 return code
             ptt.start()
@@ -149,12 +183,11 @@ def cmd_talk(args: argparse.Namespace) -> int:
         return 0
 
 
-def _guide_loop(it: Intervention, auto: bool, overlay: bool) -> None:
+def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     """Main-thread loop for guide mode: draws the pencil overlay and reads Enter / notes / q from stdin."""
     import select
 
-    ov = None
-    if overlay and sys.platform == "darwin":
+    if ov is None and overlay and sys.platform == "darwin":
         try:
             from .overlay import Overlay
 

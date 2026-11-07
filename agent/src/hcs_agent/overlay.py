@@ -69,12 +69,15 @@ class _SketchView(AppKit.NSView):
         self.target = None  # AppKit coords (bottom-left origin) or None
         self.text = ""
         self.seed = 1
+        self.badge = None  # (text, pulsing) or None: the "listening" indicator
         return self
 
     def isOpaque(self):
         return False
 
     def drawRect_(self, rect):
+        if self.badge is not None:
+            self._draw_badge()
         if not self.text and self.target is None:
             return
         rnd = random.Random(self.seed)
@@ -113,6 +116,27 @@ class _SketchView(AppKit.NSView):
         under = [(text_x + i * 24, text_y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)]
         for path in _wobble_path(under, rnd, 1.0, 1.0):
             path.stroke()
+
+
+    def _draw_badge(self):
+        """Small pill at the bottom centre: a red dot (pulsing while recording) and a short label."""
+        import time
+
+        text, pulsing = self.badge
+        bounds = self.bounds()
+        w, h = 210.0, 36.0
+        x, y = bounds.size.width / 2 - w / 2, 28.0
+        pill = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(((x, y), (w, h)), h / 2, h / 2)
+        AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.08, 0.88).setFill()
+        pill.fill()
+        alpha = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(time.time() * 6)) if pulsing else 1.0
+        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.23, 0.2, alpha).setFill()
+        AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x + 14, y + h / 2 - 7), (14, 14))).fill()
+        attrs = {
+            AppKit.NSFontAttributeName: AppKit.NSFont.systemFontOfSize_(14),
+            AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor(),
+        }
+        Foundation.NSString.stringWithString_(text).drawInRect_withAttributes_(((x + 38, y + 8), (w - 46, 20)), attrs)
 
 
 class Overlay:
@@ -156,17 +180,37 @@ class Overlay:
             self.view.target = None
             self.view.text = ""
             self.view.setNeedsDisplay_(True)
-            self.window.orderOut_(None)
+            if self.view.badge is None:
+                self.window.orderOut_(None)
 
         _on_main(apply)
 
+    def badge(self, text: str | None, pulsing: bool = False) -> None:
+        """Show (or clear with None) the listening indicator."""
+
+        def apply() -> None:
+            self.view.badge = None if text is None else (text, pulsing)
+            self.view.setNeedsDisplay_(True)
+            if self.view.badge is None and not self.view.text and self.view.target is None:
+                self.window.orderOut_(None)
+            else:
+                self.window.orderFrontRegardless()
+
+        _on_main(apply)
+
+    def redraw(self) -> None:
+        _on_main(lambda: self.view.setNeedsDisplay_(True))
+
     # ------------------------------------------------------------------ main loop
 
-    def run_until(self, done: Callable[[], bool], tick: Callable[[], None] | None = None, interval: float = 0.2) -> None:
+    def run_until(self, done: Callable[[], bool], tick: Callable[[], None] | None = None, interval: float = 0.2,
+                  hide_at_end: bool = True) -> None:
         """Pump the AppKit run loop on the main thread until `done()`; `tick()` runs every interval."""
         while not done():
             if tick:
                 tick()
+            if self.view.badge is not None and self.view.badge[1]:
+                self.view.setNeedsDisplay_(True)  # pulse
             until = Foundation.NSDate.dateWithTimeIntervalSinceNow_(interval)
             while True:
                 event = self.app.nextEventMatchingMask_untilDate_inMode_dequeue_(
@@ -174,7 +218,8 @@ class Overlay:
                 if event is None:
                     break
                 self.app.sendEvent_(event)
-        self.hide()
+        if hide_at_end:
+            self.hide()
 
 
 def _on_main(fn: Callable[[], None]) -> None:
