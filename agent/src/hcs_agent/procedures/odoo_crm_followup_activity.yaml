@@ -16,7 +16,8 @@ parameters:
     required: true
   - name: due_date
     description: Due date for the follow-up, e.g. "2026-11-14"
-    required: true
+    required: false
+    default: "+7d"
   - name: activity_title
     description: Title of the activity
     required: false

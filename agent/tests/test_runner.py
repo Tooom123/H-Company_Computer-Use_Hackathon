@@ -98,7 +98,7 @@ def test_missing_parameter_fails_cleanly(tmp_path):
     it = Intervention(req, MockBackend(), ProcedureRegistry(), events.append, tmp_path)
     it.start()
     assert it.state is State.failed
-    assert "opportunity" in it.error and "due_date" in it.error
+    assert "opportunity" in it.error and "due_date" not in it.error  # due_date has a default (+7d)
 
 
 def test_preflight_failure_is_explained(tmp_path, monkeypatch):

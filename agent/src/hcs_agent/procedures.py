@@ -70,7 +70,7 @@ class Procedure(BaseModel):
             if p.name in given:
                 values[p.name] = given[p.name]
             elif p.default is not None:
-                values[p.name] = p.default
+                values[p.name] = _resolve_default(p.default)
             elif p.required:
                 missing.append(p.name)
         if missing:
@@ -83,6 +83,15 @@ class Procedure(BaseModel):
     def bound(self, request: InterventionRequest) -> BoundProcedure:
         values = self.resolve_parameters(request.parameters)
         return BoundProcedure(procedure=self, values=values, request=request)
+
+
+def _resolve_default(default: str) -> str:
+    """Defaults like '+7d' become a date relative to today."""
+    import re
+    from datetime import date, timedelta
+
+    m = re.fullmatch(r"\+(\d+)d", default.strip())
+    return (date.today() + timedelta(days=int(m.group(1)))).isoformat() if m else default
 
 
 class _SafeDict(dict):

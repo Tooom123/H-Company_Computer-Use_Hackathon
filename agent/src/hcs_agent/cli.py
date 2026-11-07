@@ -107,7 +107,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
     from .voice import IntentRouter, PushToTalk, intent_to_request
 
     registry = ProcedureRegistry()
-    vocab = sorted({v for p in registry.all() for v in (p.software, p.title.split()[0])} | {"Odoo", "CRM", "Acme Demo"})
+    vocab = sorted({p.software for p in registry.all()} | {
+        "Odoo", "CRM", "Acme Demo", "Acme", "relance", "opportunité", "activité", "pipeline", "gagnée", "To Do"})
     ov = None
     if not args.no_overlay and sys.platform == "darwin":
         from .overlay import Overlay
@@ -163,16 +164,20 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if not intent.procedure_id:
                 print("  I don't have a procedure for that yet. Known: " + ", ".join(p.id for p in registry.all()))
                 continue
-            while intent.missing:
-                name = intent.missing.pop(0)
-                desc = next((p.description for p in registry.get(intent.procedure_id).parameters if p.name == name), name)
-                val = input(f"  {desc}? ").strip()
+            proc = registry.get(intent.procedure_id)
+            for name in list(intent.missing):
+                param = next((p for p in proc.parameters if p.name == name), None)
+                if param is None or param.default is not None:
+                    intent.missing.remove(name)  # the procedure default applies (e.g. due date in one week)
+                    continue
+                val = input(f"  {param.description}? ").strip()
                 if val:
                     intent.parameters[name] = val
             request = intent_to_request(intent)
-            print(f"  -> procedure {request.procedure_id}, mode {request.mode.value}, params {request.parameters}")
+            print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             ptt.stop()
-            code = _execute(request, backend, Path(args.runs_dir), auto_approve=args.yes, overlay=not args.no_overlay, ov=ov)
+            code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                            overlay=not args.no_overlay, ov=ov)
             if args.once:
                 return code
             ptt.start()
@@ -294,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
     talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
-    talk.add_argument("-y", "--yes", action="store_true", help="Approve the plan without prompting")
+    talk.add_argument("--confirm", action="store_true", help="Ask for approval before running (default: the spoken request is the approval)")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")
     talk.add_argument("--mock", action="store_true")
     talk.add_argument("--no-overlay", action="store_true")
