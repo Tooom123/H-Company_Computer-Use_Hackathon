@@ -62,6 +62,8 @@ agent_instructions: |
   3. In the chatter area, click "Activity" to open the "Schedule Activity" dialog.
   4. Set Activity Type = "To Do", Summary = "{activity_title}", Due Date = {due_date}, Assigned to = {assignee}.
   5. Click "Schedule" (not "Mark as Done"). Confirm the activity appears on the opportunity.
+  Guide mode only: if the pipeline is empty or "{opportunity}" does not exist, first guide the user to create
+  it (click "New" in the pipeline, type the title "{opportunity}", click "Add"), then continue with step 2.
   If something prevents you from completing a step (missing permission, record not found, unexpected
   dialog, login prompt), do NOT try workarounds outside this procedure: stop and report it as blocked
   with a precise description of what you saw on screen.

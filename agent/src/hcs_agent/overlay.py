@@ -98,9 +98,18 @@ class _SketchView(AppKit.NSView):
             anchor_x = tx + 48 if right else tx - 48
             text_x = anchor_x if right else anchor_x - 230
             text_y = min(ty + 34, bounds.size.height - 60)
-            link = [(tx + (40 if right else -40), ty + 14), (anchor_x + (6 if right else -6), text_y - 2)]
-            for path in _wobble_path(link, rnd, 1.3, 1.2):
+            # Arrow from the note down to the circle, with a rough two-stroke head at the circle end.
+            start = (anchor_x + (6 if right else -6), text_y - 2)
+            end = (tx + (44 if right else -44), ty + 16)
+            mid = ((start[0] + end[0]) / 2 + (0 if right else 0), (start[1] + end[1]) / 2 + 10)
+            for path in _wobble_path([start, mid, end], rnd, 1.4, 1.2):
                 path.stroke()
+            ang = math.atan2(end[1] - mid[1], end[0] - mid[0])
+            for side in (-1, 1):
+                a = ang + math.pi + side * 0.45
+                head = [(end[0], end[1]), (end[0] + 20 * math.cos(a), end[1] + 20 * math.sin(a))]
+                for path in _wobble_path(head, rnd, 1.4, 0.8):
+                    path.stroke()
         else:
             # No target: a one-line draft at the top of the screen, like a note in the margin.
             text_x, text_y = bounds.size.width / 2 - 170, bounds.size.height - 92

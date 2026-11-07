@@ -188,6 +188,72 @@ def cmd_talk(args: argparse.Namespace) -> int:
         return 0
 
 
+class _ScreenWatcher:
+    """Detects that the user acted: the screen differs from when the step was shown, then holds still."""
+
+    def __init__(self, min_dwell_s: float = 2.5, settle_s: float = 1.2, threshold: float = 6.0) -> None:
+        self.min_dwell_s, self.settle_s, self.threshold = min_dwell_s, settle_s, threshold
+        self._base = None
+        self._armed_at = 0.0
+        self._changed_at: float | None = None
+        self._last = None
+        self._last_t = 0.0
+
+    def _grab(self):
+        try:
+            import base64
+            import io
+
+            import numpy as np
+            from PIL import Image
+            from hai_drivers.desktop.local import LocalDesktopDriver
+
+            d = LocalDesktopDriver()
+            try:
+                raw = base64.b64decode(d.screenshot_b64())
+            finally:
+                d.close()
+            img = Image.open(io.BytesIO(raw)).convert("L").resize((96, 60))
+            return np.asarray(img, dtype=np.float32)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def arm(self) -> None:
+        self._armed_at = time.time()
+        self._changed_at = None
+        self._base = None  # the baseline is taken on the next tick, once the overlay is drawn (it is not captured)
+        self._last_t = 0.0
+
+    def changed_and_settled(self) -> bool:
+        import numpy as np
+
+        now = time.time()
+        if now - self._last_t < 0.7:
+            return False
+        self._last_t = now
+        frame = self._grab()
+        if frame is None:
+            return False
+        if self._base is None:
+            self._base, self._last = frame, frame
+            return False
+        if now - self._armed_at < self.min_dwell_s:
+            self._last = frame
+            return False
+        diff_base = float(np.abs(frame - self._base).mean())
+        diff_last = float(np.abs(frame - self._last).mean())
+        self._last = frame
+        if diff_base > self.threshold:
+            if diff_last < self.threshold / 3:
+                if self._changed_at is None:
+                    self._changed_at = now
+                elif now - self._changed_at >= self.settle_s:
+                    return True
+            else:
+                self._changed_at = None
+        return False
+
+
 def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     """Main-thread loop for guide mode: draws the pencil overlay and reads Enter / notes / q from stdin."""
     import select
@@ -201,6 +267,12 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             print(f"(overlay unavailable: {exc})")
     shown_step = 0
     prompted = False
+    watcher = _ScreenWatcher()
+
+    def advance(done: bool = True, note: str | None = None) -> None:
+        if ov:
+            ov.hide()
+        it.next(NextCommand(done=done, note=note))
 
     def tick() -> None:
         nonlocal shown_step, prompted
@@ -209,24 +281,30 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if g.index != shown_step:
                 shown_step = g.index
                 prompted = False
+                watcher.arm()
                 if ov:
                     ov.show(g.instruction, g.pointer)
             if auto:
                 time.sleep(0.3)
-                it.next(NextCommand(done=True))
+                advance()
                 return
             if not prompted:
-                print("\nDid you do it? [Enter = yes / type what you see / q = stop] ", end="", flush=True)
+                print("\n(do the step; I continue when the screen changes — or Enter = done / type what you see / q = stop) ",
+                      end="", flush=True)
                 prompted = True
+            if watcher.changed_and_settled():
+                print("\n  screen changed, looking again…", flush=True)
+                advance()
+                return
             ready, _, _ = select.select([sys.stdin], [], [], 0)
             if ready:
                 ans = sys.stdin.readline().strip()
-                if ov:
-                    ov.hide()
                 if ans.lower() == "q":
+                    if ov:
+                        ov.hide()
                     it.stop(StopCommand(reason="user quit"))
                 else:
-                    it.next(NextCommand(done=ans == "", note=ans or None))
+                    advance(done=ans == "", note=ans or None)
         elif ov and it.state.terminal and it.guidance and it.guidance[-1].last and it.guidance[-1].pointer:
             pass  # keep the last annotation until exit
 
