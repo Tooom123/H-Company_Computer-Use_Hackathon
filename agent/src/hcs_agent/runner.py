@@ -396,6 +396,14 @@ class Intervention:
                     misses = 0
                     continue
                 misses += 1
+                if misses >= 2 or nxt is None:
+                    # Do not nag: after two unconvinced checks (or on the last step) move on; the final
+                    # verification decides, and the user sees an honest outcome instead of a loop.
+                    self._trace(f"step {i + 1}: moving on after {misses} unconvinced check(s); verification will tell")
+                    done_steps.append(step.instruction)
+                    i += 1
+                    misses = 0
+                    continue
                 self._trace(f"step {i + 1} not done yet ({step.done_when[:60]}); showing it again")
                 continue
             if nxt is None:
@@ -474,7 +482,7 @@ class Intervention:
 
     def _screen_shows(self, expected: str, tries: int = 2, pause_s: float = 0.6, software: str = "") -> str:
         """Has the step's effect appeared? Returns "yes", "no", or "away" (another application is in front)."""
-        check = getattr(self.backend, "screen_matches", None)
+        check = getattr(self.backend, "effect_visible", None) or getattr(self.backend, "screen_matches", None)
         if check is None:
             return "yes"
         for attempt in range(tries):
@@ -493,7 +501,7 @@ class Intervention:
     def _fast_verify(self, bound: BoundProcedure):
         """Guide mode: the user is already on the final screen, so each postcondition check is one Holo screen
         check (~2 s) instead of a full agent session (~15 s). Any doubt -> None, and the agent verifier runs."""
-        check = getattr(self.backend, "screen_matches", None)
+        check = getattr(self.backend, "effect_visible", None) or getattr(self.backend, "screen_matches", None)
         if check is None or self._stop.is_set():
             return None
         results: dict[str, bool] = {}

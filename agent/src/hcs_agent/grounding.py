@@ -141,6 +141,16 @@ class Grounder:
             return Located(bool(really), xy if really else None, args.get("seen", ""), latency, box if really else None)
         return Located(False, None, args.get("what_is_visible", ""), latency)
 
+    def effect_visible(self, expected: str) -> tuple[bool, str]:
+        """Lenient check for a step's effect: true if the described result is visible, even partially or with
+        extra things around it. (The strict `screen_matches` is for "which application is in front".)"""
+        img_b64, _, _ = capture(768)
+        fn, args = self._call(img_b64, "First say which application and page are in front. Then: is the following "
+                                       f"result visible on this screen? Result: {expected}. Answer matches=true if "
+                                       "the result is visible, even partially or alongside other elements; "
+                                       "matches=false only if it is clearly absent.", [_CHECK])
+        return bool(args.get("matches")), args.get("what_is_visible", "")
+
     def screen_matches(self, expected: str) -> tuple[bool, str]:
         """Is the expected screen displayed? Returns (matches, what is visible)."""
         img_b64, _, _ = capture(768)
