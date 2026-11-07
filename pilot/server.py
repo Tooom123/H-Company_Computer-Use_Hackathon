@@ -439,6 +439,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                        'procedure_id': card['procedure_id'], 'workflow_id': workflow, 'run_reference': body.run_reference,
                        'created_at': now(), 'state': 'created', 'simulated': bool(hub.backend.simulated),
                        'model': model, 'mode': 'act', 'image_policy': 'full_screen',
+                       'desktop_adapter': getattr(hub.backend, 'adapter_revision', None),
                        'request_audio_id': body.request_audio_id, 'export_status': 'pending',
                        'store_status': 'pending' if store is not None else 'not_configured'}
             atomic_json(directory / 'episode.json', initial)

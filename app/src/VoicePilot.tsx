@@ -31,16 +31,22 @@ export default function VoicePilot() {
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [questionViewRequest, setQuestionViewRequest] = useState(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const mounted = useRef(true);
   const polling = useRef(false);
+  const questionSection = useRef<HTMLElement | null>(null);
+  const responseSection = useRef<HTMLElement | null>(null);
+  const feedbackSection = useRef<HTMLElement | null>(null);
+  const displayedReports = useRef(new Set<string>());
   const scenario = scenarios.find(item => item.id === scenarioId);
   const terminal = isTerminal(snapshot?.state);
   const active = Boolean(sessionId && snapshot && !terminal);
   const blockedSelection = Boolean(sessionId && !feedbackSaved);
   const speaking = Boolean(recording || busy?.startsWith('audio'));
+  const canRetryWithoutFeedback = Boolean(sessionId && snapshot && ['stopped', 'failed', 'preflight_failed'].includes(snapshot.state) && !feedbackSaved && !snapshot.pilot?.feedback);
   const api = window.voicePilot;
 
   useEffect(() => {
@@ -81,6 +87,19 @@ export default function VoicePilot() {
     const timer = setInterval(() => void update(), 1200);
     return () => { cancelled = true; clearInterval(timer); };
   }, [sessionId, api]);
+
+  useEffect(() => {
+    if (!sessionId || !terminal || !snapshot?.report_ready || displayedReports.current.has(sessionId)) return;
+    // Treat the ready report as one event, not every polling snapshot. Never
+    // pull someone away from a feedback field or an in-progress recording.
+    displayedReports.current.add(sessionId);
+    if (speaking || feedbackSection.current?.contains(document.activeElement)) return;
+    responseSection.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, [sessionId, terminal, snapshot?.report_ready, speaking]);
+
+  useEffect(() => {
+    if (questionViewRequest) questionSection.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, [questionViewRequest]);
 
   async function run(label: string, action: () => Promise<void>) {
     if (busy) return;
@@ -135,11 +154,13 @@ export default function VoicePilot() {
       setError(errorText(cause)); setBusy(null);
     }
   }
-  function chooseScenario(id: string) {
-    if (blockedSelection) return;
+  function chooseScenario(id: string, retryWithoutFeedback = false) {
+    const retryCurrent = retryWithoutFeedback && id === scenarioId && canRetryWithoutFeedback;
+    if (busy || speaking || (retryWithoutFeedback ? !retryCurrent : blockedSelection)) return;
     setScenarioId(id); setSessionId(null); setSnapshot(null); setGoal(''); setComment('');
     setRequestAudio(null); setFeedbackAudio(null); setFeedbackSaved(false);
     setOutcome('unknown'); setUseful('unknown'); setAllowTraining(false); setError(null); setNotice(null);
+    setQuestionViewRequest(value => value + 1);
   }
   async function prepare() {
     if (!api || !scenario) return;
@@ -194,7 +215,7 @@ export default function VoicePilot() {
         {notice && <div className="vp-alert" role="status">{notice}</div>}
         {busy === 'audio-transcription' && <div className="vp-alert" role="status">Transcription en cours… Le microphone est arrêté.</div>}
 
-        {!sessionId && <section className="vp-card">
+        {!sessionId && <section className="vp-card vp-scroll-target" ref={questionSection}>
           <div className="vp-card-heading"><span className="vp-number">1</span><h2>Posez votre question</h2></div>
           {scenario?.requires_reference && <div className="vp-reference"><label htmlFor="vp-reference">Référence commune aux scénarios 05 à 10</label><input id="vp-reference" value={reference} onChange={event => setReference(event.target.value)} placeholder="Référence libre réservée pour ce passage" disabled={speaking || Boolean(busy)} /><p>Utilisez la même référence pour toute la commande. Vérifiez qu’aucun autre passage ne l’utilise.</p></div>}
           {scenario && <blockquote className="vp-prompt">{spokenPrompt(scenario.prompt, reference)}</blockquote>}
@@ -210,20 +231,31 @@ export default function VoicePilot() {
           <p className="vp-goal-summary">{snapshot.request?.goal || goal}</p>
           {snapshot.state === 'awaiting_approval' && <>
             <h3>{snapshot.plan?.objective || 'Plan proposé'}</h3>
-            <div className="vp-scope"><div><h4>Actions prévues</h4><ul>{snapshot.plan?.allowed_actions?.map(action => <li key={action}>{action}</li>)}</ul></div><div><h4>Limites de l’intervention</h4><ul>{snapshot.plan?.forbidden_actions?.map(action => <li key={action}>{action}</li>)}</ul></div></div>
+            <div className="vp-scope"><div><h4>Actions prévues</h4><ul>{snapshot.plan?.allowed_actions?.map(action => <li key={action}>{action}</li>)}</ul></div><div><h4>Actions interdites</h4><ul>{snapshot.plan?.forbidden_actions?.map(action => <li key={action}>{action}</li>)}</ul></div></div>
             <div className="vp-alert">Placez Odoo derrière ce panneau. Après approbation, il se masque et vous avez 3 secondes pour mettre Odoo au premier plan. Les captures sont envoyées à H pendant l’intervention.</div>
             <div className="vp-actions"><button className="vp-button vp-primary" disabled={Boolean(busy)} onClick={() => void run('approve', async () => { if (api && sessionId) setSnapshot(await api.approve(sessionId)); })}>Approuver et observer Odoo</button><button className="vp-button" disabled={Boolean(busy)} onClick={() => void run('stop', async () => { if (api && sessionId) setSnapshot(await api.stop(sessionId)); })}>Annuler cet essai</button></div>
           </>}
           {active && snapshot.state !== 'awaiting_approval' && <div className="vp-running"><p>Observez Odoo sans changer de fenêtre. Le panneau revient à la fin.</p><button className="vp-button vp-danger" onClick={() => void run('stop', async () => { if (api && sessionId) setSnapshot(await api.stop(sessionId)); })} disabled={Boolean(busy) || snapshot.state === 'stopping'}>Arrêter l’intervention</button></div>}
           {active && <p className="vp-small vp-stop-hint">Arrêt depuis Odoo : <kbd>⌘ / Ctrl</kbd> + <kbd>Maj</kbd> + <kbd>.</kbd> · Un arrêt n’annule pas les actions déjà effectuées.</p>}
           {snapshot.error && <p className="vp-error-text">{snapshot.error}</p>}
-          {terminal && <>
-            <div className="vp-results"><div><p className="vp-eyebrow">RÉPONSE DE L’AGENT</p><p>{snapshot.declared?.summary || snapshot.declared?.blocker || 'Aucun résultat annoncé.'}</p></div><div><p className="vp-eyebrow">VÉRIFICATION SÉPARÉE</p><p>{snapshot.verification?.observed || 'Aucune vérification disponible.'}</p></div></div>
+          {terminal && !snapshot.report_ready && <p className="vp-small" role="status">Préparation du compte rendu… La réponse apparaîtra ici.</p>}
+          {terminal && snapshot.report_ready && <>
+            <section className="vp-response vp-scroll-target" ref={responseSection} aria-labelledby="vp-response-title">
+              <p className="vp-eyebrow">VOTRE RÉSULTAT</p>
+              <h2 id="vp-response-title">Réponse de H-Companion</h2>
+              <p className="vp-small">Vous dictez votre demande ; la réponse s’affiche par écrit, sans lecture audio.</p>
+              <p className="vp-answer">{snapshot.declared?.summary || snapshot.declared?.blocker || 'Aucun résultat annoncé.'}</p>
+            </section>
+            <div className="vp-verification"><p className="vp-eyebrow">VÉRIFICATION SÉPARÉE</p><p>{snapshot.verification?.observed || 'Aucune vérification disponible.'}</p></div>
             <div className="vp-metrics"><span>{duration === null ? 'Durée non disponible' : `${duration.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s · action et vérification`}</span><span>{archiveLabel(snapshot.pilot?.export_status)}</span></div>
           </>}
+          {canRetryWithoutFeedback && <div className="vp-alert">
+            <p>Cet essai reste conservé sans feedback ni nouveau consentement d’entraînement. Votre brouillon de retour ne sera pas ajouté. Pour réessayer, posez une nouvelle question puis approuvez son plan.</p>
+            <div className="vp-actions"><button className="vp-button" disabled={Boolean(busy) || speaking} onClick={() => chooseScenario(scenarioId, true)}>Retenter sans ajouter de feedback</button></div>
+          </div>}
         </section>}
 
-        {terminal && snapshot?.report_ready && <section className="vp-card" aria-label="Retour utilisateur">
+        {terminal && snapshot?.report_ready && <section className="vp-card" ref={feedbackSection} aria-label="Retour utilisateur">
           <div className="vp-card-heading"><span className="vp-number">3</span><h2>Votre retour sur l’aide reçue</h2></div>
           <p>« La tâche est-elle réussie ? Cette aide était-elle utile ? Ai-je dû corriger quelque chose ? » Vous pouvez aussi dire que vous n’avez pas pu observer le passage.</p>
           {!feedbackSaved ? <>
