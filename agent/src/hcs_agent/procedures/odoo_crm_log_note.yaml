@@ -58,7 +58,7 @@ guide_steps:
     why: "Log note = interne, visible par l'équipe seulement. Send message = envoie un e-mail au client."
     annotations:
       - element: "the Send message button in the chatter area"
-        text: "Attention : celui-ci envoie un e-mail au client"
+        text: "Envoie un e-mail au client !"
         shape: box
         size: [150, 40]
   - instruction: "Écris « {note} »"

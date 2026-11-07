@@ -64,23 +64,23 @@ guide_steps:
     why: "On qualifie toujours depuis la fiche : c'est là que vivent les infos de l'affaire."
     annotations:
       - element: "the column header New at the top of the first pipeline column"
-        text: "Colonne New = affaires pas encore qualifiées"
+        text: "New = pas encore qualifié"
         shape: underline
       - element: "the column header Qualified at the top of the second pipeline column"
-        text: "Qualified = on a confirmé le besoin et le budget"
+        text: "Qualified = besoin + budget OK"
         shape: underline
   - instruction: "Regarde la fiche : trois zones comptent pour qualifier"
     why: "Le haut = qui et combien ; la barre d'étapes = où en est l'affaire ; le chatter en bas = l'historique."
     annotations:
       - element: "the Expected Revenue field of the opportunity form"
-        text: "Combien ça peut rapporter"
+        text: "Montant espéré"
         shape: circle
       - element: "the stage status bar at the top-right of the form showing New, Qualified, Proposition, Won"
-        text: "La barre d'étapes du pipeline"
+        text: "Étapes du pipeline"
         shape: box
         size: [420, 40]
       - element: "the chatter area at the bottom of the form with Send message and Log note"
-        text: "Historique et notes internes"
+        text: "Historique + notes"
         shape: box
         size: [600, 80]
   - instruction: "Tape « {customer} » dans Customer"
@@ -98,7 +98,7 @@ guide_steps:
     why: "Changer d'étape ici déplace la carte dans le pipeline ; c'est réversible."
     annotations:
       - element: "the Won button in the opportunity form header"
-        text: "Pas Won : ça clôture l'affaire"
+        text: "Pas Won : ça clôture"
         shape: label
   - instruction: "Clique sur l'icône de sauvegarde (nuage)"
     element: "the cloud save icon near the breadcrumb at the top-left of the form"

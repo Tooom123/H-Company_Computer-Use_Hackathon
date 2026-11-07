@@ -25,6 +25,16 @@ from .runner import Intervention
 _LAST_LOOKUP_AT = 0.0
 
 
+def _short(text: str, n: int) -> str:
+    """One short phrase: cut at the first sentence end, then at n chars."""
+    t = (text or "").strip()
+    for sep in (". ", " ; ", " : "):
+        if sep in t and t.index(sep) < n:
+            t = t[: t.index(sep) + (1 if sep == ". " else 0)]
+            break
+    return t if len(t) <= n else t[: n - 1].rstrip() + "…"
+
+
 def _print_event(e: AgentEvent) -> None:
     global _LAST_LOOKUP_AT
     if e.type == "knowledge":
@@ -362,9 +372,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 if ov:
                     from .overlay import Mark, Scene
 
+                    verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
+                    why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     ov.show_scene(Scene(
-                        text=g.instruction, target=g.pointer, why=g.why if g.kind != "info" else g.why, step=g.index,
-                        marks=[Mark(a.shape, a.pointer, a.text, tuple(a.size) if a.size else (0, 0))
+                        text=g.instruction, target=g.pointer, why=_short(why, 90), step=g.index,
+                        marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0))
                                for a in g.annotations if a.pointer]))
             if auto:
                 time.sleep(0.3)
