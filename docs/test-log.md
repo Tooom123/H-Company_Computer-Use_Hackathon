@@ -369,3 +369,44 @@ interdiction explicite de lecture source. La lecture du chatter autorise désorm
 la mise à jour des notifications lues du compte fictif, toujours sans écriture
 métier. Le contrôle Playwright local affiche maintenant l’activité attendue ; il
 ne compte pas comme une réussite du modèle. Les anciens essais restent inchangés.
+
+### Campagne isolée v3 et retests v4 — 7 novembre 2026, 23:25–23:44 Europe/Paris
+
+Deux workers headless indépendants, moteur `0ffda3f`, support `e46f9ee`, Holo4,
+viewport 1280 × 832, même fixture Odoo et même corpus Markdown. Révision v3
+`e127f4e`, puis correctif de navigation v4 `fab4527`. Le script de campagne
+`a9583f0` sérialise les contrôles du gestionnaire de fixture ; le premier lancement
+du worker 1 avait échoué avant toute session H sur un contrôle concurrent. Aucun
+reset ni changement de données n’a été réalisé. Les contrôles avant/après des
+campagnes terminées concordent avec le baseline (15 contrôles, champs suivis seulement).
+
+| Version / cas | Session pilote | Durée approuvée | Moteur | Revue IA métier / périmètre |
+| --- | --- | ---: | --- | --- |
+| v3 R01 | `sess_b012b0404b9d` | 62,4 s | Escaladé | Partiel / conforme |
+| v3 R02 | `sess_76adfc806abd` | 153,4 s | Escaladé | Échec / conforme |
+| v3 R03 | `sess_7daa9a17c39f` | 147,4 s | Résolu | Réussi / conforme |
+| v3 R04 | `sess_86103d46b2b8` | 363,2 s | Escaladé | Partiel / non conforme |
+| v3 R05 | `sess_f6f70f7a3c07` | 51,8 s | Résolu | Réussi / conforme |
+| v3 R06 | `sess_c6b329463d72` | 246,8 s | Escaladé | Partiel / conforme |
+| v3 R07 | `sess_fd32ecb04d30` | 154,8 s | Escaladé | Échec / conforme |
+| v3 R08 | `sess_cae82c4ab532` | 177,3 s | Escaladé | Échec / conforme |
+| v3 R09 | `sess_9022e6eddc68` | 53,6 s | Résolu | Réussi / conforme |
+| v3 R10 | `sess_6b41798ac4b0` | 101,0 s | Escaladé | Échec / conforme |
+| v4 R04 | `sess_f1702caf852a` | 61,2 s | Résolu | Partiel / conforme |
+| v4 R07 | `sess_ece21d30a456` | 252,7 s | Escaladé | Partiel / conforme |
+
+Les 12 archives H et revues IA sont complètes. Les extraits documentaires sont
+effectivement transmis avant les actions ; aucun lookup volontaire de l’acteur
+n’a été observé dans ces passages. Aucun feedback humain ni consentement
+d’entraînement n’a été fabriqué. La revue R04 v3 constate une tentative `web_fetch`
+interdite, rejetée ; le reste des observations reste dans le viewport Odoo.
+
+V4 permet d’ouvrir le reliquat, mais l’acteur omet les noms des produits ; le
+vérificateur le valide trop largement. R07 v4 retrouve des données dans une liste
+sans ouvrir la facture ni prouver le lien à la vente. Les résultats ne sont pas
+remplacés par ceux des retests. **500 tests automatisés passent**, et les trois
+pages de la console ont été vérifiées dans un navigateur séparé.
+
+Voir le [bilan complet](bilan-isolation-et-portail-2026-11-07.md) pour les erreurs
+observées, l’usage H, les limites de revue et les prochaines tâches. Les métriques,
+images, documents de contexte, réponses et labels détaillés restent hors Git.

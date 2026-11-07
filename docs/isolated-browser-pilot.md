@@ -62,7 +62,9 @@ prépare une condition explicitement sans connaissance documentaire.
 Créer puis approuver un épisode via les routes du pilote. Le script
 `scripts/run-rich-batch.py` peut enchaîner les cas autorisés ; il lit le port dans
 le `runtime.json` du worker et exige une commande privée de contrôle Odoo en
-lecture seule. Il ne fabrique aucun feedback humain.
+lecture seule. Deux workers partageant le même fichier de commande sérialisent
+ces contrôles avec un verrou local ; leurs parcours navigateur restent parallèles.
+Le script ne fabrique aucun feedback humain.
 
 Chaque épisode démarre sur la page CRM fixe. L’acteur puis le vérificateur utilisent
 le même onglet ; aucune remise à zéro de page n’intervient entre eux. Les archives
@@ -80,13 +82,26 @@ la variante v3 l’autorise sur les seules fiches métier prévues. Aucun docume
 métier n’est modifié par cette exception. Les WebSockets de présence restent bloqués.
 Les erreurs n’exposent pas les arguments ni les credentials.
 
+La garde v4 autorise aussi deux boutons de consultation, avec concordance stricte
+entre route et paramètres : `purchase.order.action_view_picking` et
+`sale.order.action_view_invoice`. Les méthodes ont été inspectées dans les sources
+[Achats Odoo 20](https://github.com/odoo/odoo/blob/20.0/addons/purchase_stock/models/purchase_order.py)
+et [Ventes Odoo 20](https://github.com/odoo/odoo/blob/20.0/addons/sale/models/sale_order.py).
+Il ne s’agit pas d’une permission générale sur les méthodes `action_*`.
+
+Les compteurs de requêtes refusées et de commandes du bridge sont cumulatifs sur
+la durée du worker. Une revue par épisode doit s’appuyer sur ses événements H,
+ses captures ou des différences de compteurs, pas attribuer tout le total au
+dernier cas. Le contexte documentaire automatique est, lui, réinitialisé par épisode.
+
 À l’arrêt, le pilote ferme la porte d’exécution, le listener et le navigateur
 locaux. Il ne supprime pas les canaux interactifs distants v1 : seule une lecture
 de leur statut est effectuée, et un canal encore actif ou invérifiable produit
 le diagnostic `remote_channel_preserved`. Sa terminaison distante n’est pas
 revendiquée et sa récupération reste bloquée. La sémantique de `DELETE` sur ces
 canaux, leur rétention et leur éventuel effet sur les quotas doivent être clarifiés
-avec H. L’annulation documentée des sessions acteur/vérificateur via l’API v2
+avec H. L’[annulation documentée](https://hub.hcompany.ai/agents-api/sessions/cancel)
+des sessions acteur/vérificateur via l’API v2
 reste distincte ; elle n’est pas utilisée comme remplacement supposé pour les
 identifiants de canaux v1.
 
@@ -97,12 +112,15 @@ ce lot ne mesurent ni l’utilité pédagogique ni les gains de recadrage Vision
 
 ## Prochaines validations
 
-1. Confirmer un cas réel complet : navigation, documents consultés, vérification et export.
-2. Faire deux workers indépendants, puis revoir les dix scénarios et leurs traces.
-3. Comparer avec/sans documentation et conserver des variantes jamais utilisées
+Le [bilan du 7 novembre](bilan-isolation-et-portail-2026-11-07.md) documente les
+dix cas sur deux workers, les deux retests, leurs archives et leurs revues IA.
+
+1. Faire la repasse humaine de R05, R09 et R03, puis corriger les blocages observés
+   sur les autres parcours et la fidélité des réponses partielles.
+2. Comparer avec/sans documentation et conserver des variantes jamais utilisées
    pour corriger les prompts. Les outils web diffèrent des outils desktop : ne pas
    attribuer au modèle seul une différence entre ces deux conditions.
-4. Faire la repasse humaine et réserver le jeu de test avant toute préparation LoRA.
+3. Réserver le jeu de test avant toute préparation LoRA.
 
 L’OCR et OpenAI Privacy Filter ne sont pas intégrés dans cette variante. Le portail
 reste une instance locale pour une seule entreprise ; comptes multi-entreprises,
