@@ -360,7 +360,7 @@ class Intervention:
                                   kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
             else:
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
-                                  why=step.why, pointer=loc.screen_xy, kind=step.action, last=False,
+                                  why=step.why, pointer=loc.screen_xy, box=loc.box, kind=step.action, last=False,
                                   annotations=self._ground_annotations(step, context))
             self._trace(f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}")
             reply = self._on_guidance(gs)
@@ -442,7 +442,7 @@ class Intervention:
                     continue
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
                               where=step.element or "", pointer=loc.screen_xy if loc and loc.found else None,
-                              kind=step.action)
+                              box=loc.box if loc and loc.found else None, kind=step.action)
             if self._on_guidance(gs) is None:
                 return False
             check = getattr(self.backend, "screen_matches", None)
@@ -464,7 +464,7 @@ class Intervention:
         out = []
         for a, loc in zip(step.annotations, locs):
             if loc and loc.found:
-                out.append(Annotation(shape=a.shape, text=a.text, pointer=loc.screen_xy, size=a.size))
+                out.append(Annotation(shape=a.shape, text=a.text, pointer=loc.screen_xy, size=a.size, box=loc.box))
         return out
 
     def _locate_with_retries(self, element: str, context: str, tries: int, pause_s: float = 0.4):

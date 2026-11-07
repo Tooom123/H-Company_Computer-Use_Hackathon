@@ -197,49 +197,35 @@ def intent_to_request(intent: Intent, software: str | None = None) -> Interventi
 
 # --------------------------------------------------------------------------- push-to-talk
 
-_MOD_ALIASES = {"command": "cmd", "option": "alt", "control": "ctrl"}
-_MOD_KEYCODES = {54, 55, 56, 58, 59, 60, 61, 62}  # cmd, shift, alt, ctrl (left/right) on macOS
-# macOS virtual keycodes for letters (ANSI layout; keycodes are position-based and stable across layouts).
-_CHAR_KEYCODES = {c: k for c, k in zip("asdfhgzxcv", range(0, 10))} | {
-    "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37,
-    "j": 38, "k": 40, "n": 45, "m": 46,
-}
-
 
 @dataclass
 class PushToTalk:
-    """Global hotkey listener: hold to record, release to transcribe. Delivers transcripts to a queue."""
+    """Hold the hotkey to record, release to transcribe. Uses the process-wide InputHub (single event tap)."""
 
     key_name: str = field(default_factory=lambda: os.environ.get("HCS_PTT_KEY", "cmd+h"))
     on_state: Callable[[str], None] = lambda s: None
     transcripts: "queue.Queue[str]" = field(default_factory=queue.Queue)
     vocabulary: list[str] = field(default_factory=list)
+    paused: bool = False
 
     def __post_init__(self) -> None:
-        from pynput import keyboard
+        from .inputs import InputHub
 
-        self._keyboard = keyboard
-        parts = [x.strip().lower() for x in self.key_name.split("+")]
-        self._mods = {_MOD_ALIASES.get(m, m) for m in parts[:-1]}
-        main = parts[-1]
-        self._key = getattr(keyboard.Key, main, None) or keyboard.KeyCode.from_char(main)
+        self._hub = InputHub.get()
+        self._hub.set_combo(self.key_name)
         self._recorder = Recorder()
         self._transcriber = Transcriber()
         self._recording = False
-        self._listener = None
 
-    paused: bool = False
-
-    def pause(self) -> None:
-        """Ignore the hotkey while a task runs (cheaper and safer than removing the event tap)."""
-        self.paused = True
-
-    def resume(self) -> None:
-        self.paused = False
-
-    def _begin(self) -> None:
+    def _on_event(self, event: str, payload) -> None:
         if self.paused:
             return
+        if event == "combo_down" or (event == "key_down" and self._hub.plain_key_matches(payload)):
+            self._begin()
+        elif event == "combo_up" or (event == "key_up" and self._hub.plain_key_matches(payload)):
+            self._end()
+
+    def _begin(self) -> None:
         if not self._recording:
             self._recording = True
             self.on_state("recording")
@@ -254,47 +240,6 @@ class PushToTalk:
                 return
             self.on_state("transcribing")
             threading.Thread(target=self._transcribe, args=(path,), daemon=True).start()
-
-    # Plain key (no modifiers): pynput callbacks.
-    def _press(self, key) -> None:
-        if not self._mods and key == self._key:
-            self._begin()
-
-    def _release(self, key) -> None:
-        if not self._mods and key == self._key:
-            self._end()
-
-    # Modifier combo (e.g. cmd+h): intercept at the Quartz tap so the system shortcut does not fire.
-    def _intercept(self, event_type, event):
-        from Quartz import (CGEventGetFlags, CGEventGetIntegerValueField, kCGEventFlagMaskAlternate,
-                            kCGEventFlagMaskCommand, kCGEventFlagMaskControl, kCGEventFlagMaskShift,
-                            kCGEventKeyDown, kCGEventKeyUp, kCGKeyboardEventKeycode)
-
-        if self.paused or event_type not in (kCGEventKeyDown, kCGEventKeyUp):
-            return event
-        keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-        if keycode != self._keycode():
-            if self._recording and event_type == kCGEventKeyUp and keycode in _MOD_KEYCODES:
-                self._end()  # modifier released first: stop too
-            return event
-        flags = CGEventGetFlags(event)
-        held = {
-            "cmd": bool(flags & kCGEventFlagMaskCommand), "alt": bool(flags & kCGEventFlagMaskAlternate),
-            "ctrl": bool(flags & kCGEventFlagMaskControl), "shift": bool(flags & kCGEventFlagMaskShift),
-        }
-        if not all(held.get(m) for m in self._mods):
-            return event if not self._recording else (self._end() or event)
-        if event_type == kCGEventKeyDown:
-            self._begin()
-        else:
-            self._end()
-        return None  # swallow: the app is not hidden, Music does not open
-
-    def _keycode(self) -> int:
-        vk = getattr(self._key, "vk", None)
-        if vk is not None:
-            return vk
-        return _CHAR_KEYCODES.get(getattr(self._key, "char", "") or "", -1)
 
     def _transcribe(self, path: str) -> None:
         try:
@@ -311,13 +256,16 @@ class PushToTalk:
         self.transcripts.put(text)
 
     def start(self) -> None:
-        kwargs = {"darwin_intercept": self._intercept} if self._mods else {}
-        self._listener = self._keyboard.Listener(on_press=self._press, on_release=self._release, **kwargs)
-        self._listener.start()
+        self._hub.subscribe(self._on_event)
 
     def stop(self) -> None:
-        if self._listener:
-            self._listener.stop()
+        self._hub.unsubscribe(self._on_event)
+
+    def pause(self) -> None:
+        self.paused = True
+
+    def resume(self) -> None:
+        self.paused = False
 
     def wait_transcript(self, timeout: float | None = None) -> str | None:
         try:

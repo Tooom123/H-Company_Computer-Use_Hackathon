@@ -159,6 +159,7 @@ class Annotation(BaseModel):
     text: str = ""
     pointer: tuple[int, int] | None = None
     size: tuple[int, int] | None = None
+    box: tuple[int, int, int, int] | None = Field(default=None, description="Element bounds (x, y, w, h) in screen points.")
 
 
 class GuidanceStep(BaseModel):
@@ -169,8 +170,10 @@ class GuidanceStep(BaseModel):
     where: str = Field(default="", description="Where the control is on screen.")
     why: str = Field(default="", description="What this step achieves.")
     pointer: tuple[int, int] | None = Field(default=None, description="Screen coordinates the agent pointed at.")
-    kind: Literal["click", "type", "info", "wait"] = Field(
-        default="click", description="click / type: act; info: read, moves on by itself; wait: the agent polls the screen.")
+    box: tuple[int, int, int, int] | None = Field(default=None, description="Element bounds (x, y, w, h) in screen points.")
+    kind: Literal["click", "type", "key", "info", "wait"] = Field(
+        default="click",
+        description="click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.")
     annotations: list[Annotation] = Field(default_factory=list)
     last: bool = False
 

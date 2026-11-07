@@ -19,14 +19,18 @@ H_MODELS_URL = os.environ.get("HAI_MODELS_BASE_URL", "https://api.hcompany.ai/v1
 GROUNDING_WIDTH = 1024
 
 _POINT = {"type": "function", "function": {
-    "name": "point",
-    "description": "Point at the best candidate for the requested control and say whether it really is that control.",
+    "name": "locate",
+    "description": "Locate the best candidate for the requested control: its tight bounding box, and whether it "
+                   "really is that control.",
     "parameters": {"type": "object", "properties": {
-        "x": {"type": "integer"}, "y": {"type": "integer"},
+        "x1": {"type": "integer", "description": "left, in [0,1000] of the image"},
+        "y1": {"type": "integer", "description": "top"},
+        "x2": {"type": "integer", "description": "right"},
+        "y2": {"type": "integer", "description": "bottom"},
         "is_the_control": {"type": "boolean",
-                           "description": "true only if the pointed element is exactly the requested control, visible now"},
-        "seen": {"type": "string", "description": "What the pointed element actually is, 5 words."}},
-        "required": ["x", "y", "is_the_control", "seen"]}}}
+                           "description": "true only if the boxed element is exactly the requested control, visible now"},
+        "seen": {"type": "string", "description": "What the boxed element actually is, 5 words."}},
+        "required": ["x1", "y1", "x2", "y2", "is_the_control", "seen"]}}}
 _NOT_FOUND = {"type": "function", "function": {
     "name": "not_found", "description": "The requested control is not visible on this screen.",
     "parameters": {"type": "object", "properties": {"what_is_visible": {"type": "string"}},
@@ -44,9 +48,10 @@ _CHECK = {"type": "function", "function": {
 @dataclass
 class Located:
     found: bool
-    screen_xy: tuple[int, int] | None
+    screen_xy: tuple[int, int] | None  # centre of the element, screen points
     visible: str = ""
     latency_s: float = 0.0
+    box: tuple[int, int, int, int] | None = None  # (x, y, w, h) of the element, screen points
 
 
 def capture(width: int = GROUNDING_WIDTH) -> tuple[str, tuple[int, int], tuple[float, float]]:
@@ -109,17 +114,21 @@ class Grounder:
         """
         t0 = time.time()
         img_b64, (iw, ih), (sw, sh) = capture()
-        prompt = f"{context + ' ' if context else ''}Point at: {description}."
+        prompt = (f"{context + ' ' if context else ''}Locate: {description}. Give the tight bounding box of that "
+                  "element, coordinates in [0,1000] of the image (x1,y1 top-left; x2,y2 bottom-right).")
         if strict:
             prompt += " If it is really not on this screen, call not_found and describe what is visible instead."
         fn, args = self._call(img_b64, prompt, _TOOLS if strict else [_POINT])
         latency = time.time() - t0
-        if fn and fn["name"] == "point" and "x" in args and "y" in args:
-            # Holo returns coordinates normalised to [0, 1000] on the image it was sent. It always points at
+        if fn and fn["name"] == "locate" and all(k in args for k in ("x1", "y1", "x2", "y2")):
+            # Holo returns coordinates normalised to [0, 1000] on the image it was sent. It always boxes
             # something; `is_the_control` tells whether that something is really the requested element.
-            xy = (int(int(args["x"]) / 1000 * sw), int(int(args["y"]) / 1000 * sh))
+            x1, x2 = sorted((int(args["x1"]) / 1000 * sw, int(args["x2"]) / 1000 * sw))
+            y1, y2 = sorted((int(args["y1"]) / 1000 * sh, int(args["y2"]) / 1000 * sh))
+            box = (int(x1), int(y1), max(8, int(x2 - x1)), max(8, int(y2 - y1)))
+            xy = (int((x1 + x2) / 2), int((y1 + y2) / 2))
             really = args.get("is_the_control", True)
-            return Located(bool(really), xy if really else None, args.get("seen", ""), latency)
+            return Located(bool(really), xy if really else None, args.get("seen", ""), latency, box if really else None)
         return Located(False, None, args.get("what_is_visible", ""), latency)
 
     def screen_matches(self, expected: str) -> tuple[bool, str]:
