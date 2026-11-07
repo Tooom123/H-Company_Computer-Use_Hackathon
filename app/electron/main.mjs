@@ -13,8 +13,15 @@ import { ObservationSession, validateObservationOptions } from './observation-se
 import { acceptGazeSample, acceptHeadSample, calibratedForSelection, headDiagnostics, selectAttention } from './attention-selection.mjs';
 import { TargetSequence } from './target-sequence.mjs';
 import { summarizeTargetScores } from './target-benchmark.mjs';
+import { installVoicePilot } from './voice-pilot.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const voiceMode = process.env.HCS_PILOT_MODE === '1';
+if (voiceMode) {
+  const profile = process.env.HCS_PILOT_PROFILE || 'live';
+  if (!['live', 'mock'].includes(profile)) throw new Error('Profil vocal invalide.');
+  app.setPath('userData', path.join(app.getPath('appData'), `HCompanionVoicePilot-${profile}`));
+}
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
 const devURL = process.env.HCS_DEV_URL;
 if (devURL && devURL !== 'http://localhost:5173') throw new Error('Origine de développement non autorisée.');
@@ -346,13 +353,22 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    const allowed = contents === tracker?.webContents && permission === 'media' && isOwnURL(details.requestingUrl) && details.mediaTypes?.length > 0 && details.mediaTypes.every(type => type === 'video');
+    const ownMedia = permission === 'media' && isOwnURL(details.requestingUrl) && details.mediaTypes?.length > 0;
+    const allowed = ownMedia && ((contents === tracker?.webContents && details.mediaTypes.every(type => type === 'video'))
+      || (voiceMode && contents === panel?.webContents && details.mediaTypes.every(type => type === 'audio')));
     callback(Boolean(allowed));
   });
   session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
-    contents === tracker?.webContents && permission === 'media' && isOwnURL(requestingOrigin) && details.mediaType === 'video');
+    permission === 'media' && isOwnURL(requestingOrigin) && ((contents === tracker?.webContents && details.mediaType === 'video')
+      || (voiceMode && contents === panel?.webContents && details.mediaType === 'audio')));
   session.defaultSession.on('will-download', event => event.preventDefault());
   display = screen.getPrimaryDisplay();
+  if (voiceMode) {
+    panel = makeWindow({ width: 1000, height: 820, minWidth: 740, minHeight: 600, title: 'H-Companion · Recette Odoo', backgroundColor: '#f4f6f1' }, '#voice');
+    installVoicePilot({ app, ipcMain, globalShortcut, systemPreferences, panel, authorize });
+    panel.on('closed', () => app.quit());
+    return;
+  }
   panel = makeWindow({ width: 1180, height: 850, minWidth: 760, minHeight: 650, title: 'H-Companion · Vision Lab', backgroundColor: '#f4f6f1' }, '');
   observationShortcutAvailable = globalShortcut.register(RECOVERY_SHORTCUT, recoverPanel);
   // Returning through the Dock also stops sampling: looking at the lab must not

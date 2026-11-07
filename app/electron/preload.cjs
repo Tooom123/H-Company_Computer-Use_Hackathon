@@ -1,4 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('voicePilot', {
+  request: (method, path, body) => ipcRenderer.invoke('voice:request', method, path, body),
+  uploadAudio: input => ipcRenderer.invoke('voice:audio', input),
+  approve: id => ipcRenderer.invoke('voice:approve', id),
+  stop: id => ipcRenderer.invoke('voice:stop', id),
+  requestMicrophone: () => ipcRenderer.invoke('voice:microphone'),
+});
 contextBridge.exposeInMainWorld('companion', {
   getStatus: () => ipcRenderer.invoke('companion:status'),
   getState: () => ipcRenderer.invoke('companion:state'),

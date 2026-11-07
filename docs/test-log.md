@@ -150,3 +150,32 @@ après activation autorisée de la permission et lancement d’un nouveau proces
 La permission Accessibilité de l’application parente ChatGPT a ensuite été activée
 avec l’accord d’Edouard et sa validation Touch ID. Le processus suivant a passé le
 précontrôle et atteint l’approbation du plan (voir passage réel interrompu ci-dessus).
+
+### Pilote vocal Odoo — préparation du 7 novembre 2026
+
+Interface Electron distincte du Vision Lab, moteur Matteo `343e393`, stockage Tom
+`bd3b2ca`, modèle configuré `holo4-35b-a3b`, mode act et écran complet. Les dix
+scénarios sont sélectionnés explicitement ; aucune tâche réelle H n’a été lancée
+par Codex lors de cette vérification du nouveau parcours vocal.
+
+- Build et typecheck réussis ; 107 tests unitaires de l’app, 36 tests backend
+  hors ligne et deux tests Playwright du parcours vocal réussis.
+- Un parcours natif **simulé** a été préparé, approuvé, terminé et évalué avec un
+  commentaire explicitement technique. Les labels `unknown/unknown` et
+  `simulated=true` ont été relus dans le fichier durable ; tables SQLite présentes.
+  Le moteur simulé ne contrôle pas Odoo et ne constitue pas une réussite métier.
+- Transcription d’une phrase **synthétique**, sans microphone : Whisper local puis
+  un appel réel Gladia réussis. Les noms propres sont imparfaits ; la relecture et
+  la correction du texte avant approbation restent nécessaires. Cette voix
+  synthétique n’est pas une trace utilisateur.
+- Le chemin WAV PCM16 mono 16 kHz se décode directement. Le ffmpeg Homebrew du Mac
+  échoue sur une dépendance x265 absente ; l’interface ne dépend pas de ce décodeur
+  pour ses enregistrements WAV. Aucun changement Homebrew n’a été effectué.
+- La nouvelle app est ouverte sur le scénario 01, avec Gladia et Holo4 réels prêts,
+  en attente de dictée et d’approbation utilisateur. Le retour vocal d’un humain
+  et les dix scénarios métier restent à réaliser dans ce nouveau parcours.
+
+Le feedback du pilote antérieur réussi est conservé comme **non évalué par
+l’utilisateur**, avec utilité inconnue : Edouard n’a pas pu observer l’action.
+Le verdict automatique positif reste séparé. Les exports restent privés et
+`ready_for_sft=false` jusqu’à leur revue et conversion.
