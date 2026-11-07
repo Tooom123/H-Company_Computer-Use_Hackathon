@@ -25,6 +25,25 @@ is a guess unless marked so.
    `Procedure`. It writes a `done_when` hint per guide step that the engine ignores today; if you add a
    `done_when` field to `GuideStepSpec`, the drafts already carry it. Drafts must be checked on the live screen.
 
+## Spoken notes (ElevenLabs TTS) — for Matteo
+
+`agent/src/hcs_agent/speech.py` + hooks in `cli.py` and two lines in `overlay.py` (Tom, 2026-11-08):
+- every overlay note is read aloud: guide steps (instruction, plus `why` when it is shown), takeover
+  narration, closing note, routing flashes. Call `_say(...)` right BEFORE `ov.show_scene(...)`;
+- sync: `Overlay.hold_reveal = Speaker.holding`; the scene is not drawn until its sentence is audible
+  (max 1.5 s), so pencil and voice start together;
+- a new step interrupts the previous sentence; narration never cuts, only the latest waits; the user acting
+  (`advance`), Stop, Ctrl+C, `q` and push-to-talk (`recording`) silence it at once;
+- guide sentences are prefetched at plan time and cached on disk (`$TMPDIR/hcs-tts/`): a step is heard ~5 ms
+  after it is requested (measured), an unknown sentence ~0.3-1 s;
+- `HCS_TTS=0` mutes; no key / no `afplay` = silent, never an error. Tests: `agent/tests/test_speech.py`.
+- Not done: the Electron app path (`serve`) has no voice; Édouard's overlay would need the same hook.
+
+Also: `pyobjc-framework-avfoundation` has no `sys_platform == 'darwin'` marker, so `uv sync` fails on Linux
+(build of pyobjc-framework-coreaudio). `test_geometry_and_inputs` has 2 tests that fail off macOS.
+Contracts are out of sync again on `main` (`cbad15f`): `GuidanceStep.shown_at` / `done_s` are in `contract.py`
+but not in `contracts/*.schema.json`; run `scripts/export_contracts.py` and commit the result.
+
 ## For Édouard (Vision Lab, pilot, Odoo)
 
 1. **Gaze halo is wired into the Vision Lab overlay** (`app/src/Overlay.tsx`, `GazeHalo`): main relays accepted

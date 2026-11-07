@@ -304,6 +304,7 @@ class _SketchView(AppKit.NSView):
         self.badge = None  # (text, pulsing) or None: the "listening" indicator
         self.progress = 1.0  # 0..1 reveal of the current scene
         self.stroke_total = 40
+        self.held = False  # True while the voice has not started: the scene waits, the badge still shows
         return self
 
     def isOpaque(self):
@@ -313,7 +314,7 @@ class _SketchView(AppKit.NSView):
         if self.badge is not None:
             self._draw_badge()
         sc = self.scene
-        if sc is None or (not sc.text and sc.target is None and not sc.marks):
+        if sc is None or self.held or (not sc.text and sc.target is None and not sc.marks):
             return
         rnd = random.Random(self.seed)
         bounds = self.bounds()
@@ -428,6 +429,7 @@ class Overlay:
         self.view = _SketchView.alloc().initWithFrame_(self.window.contentView().bounds())
         self.window.setContentView_(self.view)
         self._seed = 1
+        self.hold_reveal: Callable[[], bool] | None = None  # e.g. Speaker.holding: draw when the voice starts
 
     def _flip(self, xy):
         return None if xy is None else (xy[0], self._screen_h - xy[1])
@@ -453,6 +455,7 @@ class Overlay:
             self.view.scene = flipped
             self.view.seed = self._seed
             self.view.progress = 0.0  # drawn progressively by run_until
+            self.view.held = self.hold_reveal is not None and self.hold_reveal()
             self.view.stroke_total = 40
             self.view.setNeedsDisplay_(True)
             self.window.orderFrontRegardless()
@@ -493,7 +496,11 @@ class Overlay:
         while not done():
             if tick:
                 tick()
-            if self.view.progress < 1.0:
+            held = self.view.held and self.hold_reveal is not None and self.hold_reveal()
+            if held != self.view.held:
+                self.view.held = held  # the voice started (or the wait timed out): draw now
+                self.view.setNeedsDisplay_(True)
+            if self.view.progress < 1.0 and not held:
                 self.view.progress = min(1.0, self.view.progress + 0.08)  # ~0.6 s to draw a scene
                 self.view.setNeedsDisplay_(True)
             if self.view.badge is not None and self.view.badge[1]:
