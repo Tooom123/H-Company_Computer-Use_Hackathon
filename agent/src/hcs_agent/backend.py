@@ -78,9 +78,9 @@ def _lenient(model: type[BaseModel], raw: Any) -> BaseModel | None:
 
 
 class GuideSubStep(BaseModel):
-    instruction: str = Field(description="One short imperative line, max 12 words.")
-    where: str = ""
-    why: str = ""
+    instruction: str = Field(default="", description="One short imperative line, max 12 words.")
+    where: str | None = ""
+    why: str | None = ""
     target_x: int | None = None
     target_y: int | None = None
 
@@ -88,18 +88,23 @@ class GuideSubStep(BaseModel):
 class GuideAnswer(BaseModel):
     """Guidance answered by the H agent in guide mode: the next step, plus following steps visible on the same screen."""
 
-    steps: list[GuideSubStep] = Field(
-        default_factory=list,
+    steps: list[GuideSubStep] | None = Field(
+        default=None,
         description="Up to 3 consecutive steps whose controls are ALL visible on the current screen, in order. "
                     "The first one must also be repeated in the top-level fields.")
-    instruction: str = Field(description="What the user should do now. One short line, max 12 words.")
-    where: str = Field(default="", description="Where the control is on screen, in words.")
-    why: str = Field(default="", description="One or two sentences: what this step achieves for the user.")
+    instruction: str = Field(default="", description="What the user should do now. One short line, max 12 words.")
+    where: str | None = Field(default="", description="Where the control is on screen, in words.")
+    why: str | None = Field(default="", description="One or two sentences: what this step achieves for the user.")
     target_x: int | None = Field(default=None, description="X pixel of the control in the screenshot you see, or null if there is nothing to point at.")
     target_y: int | None = Field(default=None, description="Y pixel of the control in the screenshot you see, or null.")
-    last: bool = Field(default=False, description="True when the goal is visibly achieved or the user is blocked.")
-    blocked: bool = Field(default=False, description="True if the user cannot proceed (error, permission).")
+    last: bool | None = Field(default=False, description="True when the goal is visibly achieved or the user is blocked.")
+    blocked: bool | None = Field(default=False, description="True if the user cannot proceed (error, permission).")
     blocker: str | None = Field(default=None, description="Exact message seen on screen when blocked.")
+
+    def model_post_init(self, __context) -> None:
+        self.where, self.why = self.where or "", self.why or ""
+        self.last, self.blocked = bool(self.last), bool(self.blocked)
+        self.steps = [x for x in (self.steps or []) if x.instruction]
 
 
 class VerificationAnswer(BaseModel):
@@ -197,6 +202,43 @@ class HBackend:
         self.screenshot_max_width = screenshot_max_width
         self.timezone_name = timezone_name
         self.knowledge = knowledge or NoKnowledge()
+        self._desktop_session_id: str | None = None
+        if os.environ.get("HCS_AUTO_CLEANUP", "1") not in {"0", "false", "no"}:
+            self._close_orphans()
+
+    def _close_orphans(self) -> None:
+        """Close command channels left pending by earlier dead processes: each one holds a concurrency slot."""
+        import httpx
+
+        wrapper = self._client._client_wrapper
+        base = wrapper.get_base_url().rstrip("/")
+        try:
+            with httpx.Client(headers={"Authorization": f"Bearer {wrapper._api_key}"}, timeout=10) as http:
+                items = http.get(f"{base}/api/v1/trajectories/", params={"size": 100}).json().get("items", [])
+                for t in items:
+                    if t.get("type") == "agent_platform" and t.get("status") in {"pending", "running", "idle"}:
+                        http.delete(f"{base}/api/v1/trajectories/{t['id']}")
+        except Exception:  # noqa: BLE001 - best effort
+            pass
+
+    def _desktop_channel(self) -> str:
+        """One command channel for this Mac, opened once and shared by every session of this process.
+
+        Opening a channel per session costs ~5 s, gets rate-limited, and leaves orphans when the process dies.
+        """
+        if self._desktop_session_id is None:
+            from hai_agents_local.desktop import PyautoguiDesktopBridge
+            from hai_agents_local.manager import ensure_bridges
+
+            wrapper = self._client._client_wrapper
+            bridge = PyautoguiDesktopBridge(
+                "user-mac", api_key=wrapper._api_key, base_url=wrapper.get_base_url(),
+                max_width=self.screenshot_max_width,
+            )
+            bridge.preflight()
+            ensure_bridges([bridge])
+            self._desktop_session_id = bridge.session_id
+        return self._desktop_session_id
 
     # ----------------------------------------------------------------- preflight
 
@@ -221,6 +263,7 @@ class HBackend:
                 # host=user_device is what makes the SDK serve this Mac from this process; without it H
                 # provisions a cloud desktop and the screen seen by the agent is not the user's.
                 {"id": "user-mac", "kind": "desktop", "host": "user_device", "lazy": lazy,
+                 "session_id": self._desktop_channel(),
                  "screenshot_max_width": min(self.screenshot_max_width, 1024) if fast else self.screenshot_max_width}
             ],
         }
@@ -317,24 +360,33 @@ class HBackend:
             threading.Thread(target=self._watch_stop, args=(handle, stop_event, done), daemon=True).start()
             from_index, step_offset = 0, 0
             for n in range(1, 60):
-                result, from_index, step_offset = self._turn(handle, from_index, n, on_step, step_offset)
-                cost = _total_cost(result.events) or cost
-                if stop_event.is_set() or result.status in {"interrupted", "failed", "timed_out"}:
+                try:
+                    result, from_index, step_offset = self._turn(handle, from_index, n, on_step, step_offset)
+                    raw_answer, status = result.answer, result.status
+                    cost = _total_cost(result.events) or cost
+                except AnswerValidationError as exc:
+                    # The turn is over (session idle); only the answer shape was off. Keep what the agent said
+                    # and move the cursor past this turn's events.
+                    raw_answer, status = _lenient(GuideAnswer, exc.raw), "idle"
+                    ch = handle.changes(from_index=from_index, wait_for_seconds=0)
+                    from_index += len((ch.new_events if ch else None) or [])
+                if stop_event.is_set() or status in {"interrupted", "failed", "timed_out"}:
                     break
-                ans = result.answer if isinstance(result.answer, GuideAnswer) else None
+                ans = raw_answer if isinstance(raw_answer, GuideAnswer) else None
                 if ans is None:
                     declared = DeclaredResult(outcome="unclear", summary=str(result.answer or ""))
                     break
                 width = min(self.screenshot_max_width, 1024)
                 subs = ans.steps or [GuideSubStep(instruction=ans.instruction, where=ans.where, why=ans.why,
                                                   target_x=ans.target_x, target_y=ans.target_y)]
+                subs = [x for x in subs if x.instruction] or [GuideSubStep(instruction=ans.instruction or "…")]
                 if ans.blocked or ans.last:
                     subs = subs[:1]
                 replies: list[str] = []
                 aborted = False
                 for k, sub in enumerate(subs[:3]):
-                    gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where,
-                                      why=sub.why, pointer=_to_screen_points(sub.target_x, sub.target_y, width),
+                    gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where or "",
+                                      why=sub.why or "", pointer=_to_screen_points(sub.target_x, sub.target_y, width),
                                       last=(ans.last or ans.blocked))
                     guidance.append(gs)
                     reply = on_guidance(gs)  # blocks until the user did it (or stop); None on last steps
