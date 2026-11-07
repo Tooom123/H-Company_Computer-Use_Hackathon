@@ -1,0 +1,83 @@
+# Candidate for Matteo's Procedure registry, checked against revision 185ab70.
+# H09-H10 require an already-open, authorized demo session in Agent View.
+# No login, rerun, cancel, sharing, download or feedback submission is performed.
+id: h_company_session_review
+software: hcompany
+session_type: support
+title: Relire une session de démonstration H terminée
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 20
+max_time_s_per_attempt: 240
+
+parameters:
+  - name: session_url
+    description: agent_view_url exact d’une session de démonstration autorisée et terminée.
+    required: true
+  - name: question
+    description: Consigne H09 ou H10, sans les réponses de référence.
+    required: true
+  - name: expected_status
+    description: État final observé avant le passage, réservé à la vérification.
+    required: true
+
+preconditions:
+  - L’opérateur a ouvert {session_url} dans un compte H déjà connecté.
+  - L’URL correspond à platform.hcompany.ai et à la session de démonstration autorisée.
+  - La session est terminée et ne contient aucune donnée client réelle ni clé API visible.
+  - Aucun autre agent ne contrôle ce Mac.
+
+objective: >-
+  Relire la session de démonstration déjà affichée afin de répondre à : {question}
+
+planned_changes:
+  - Consultation des événements et captures déjà présents ; aucune action sur la session ou le compte.
+
+allowed_actions:
+  - Lire et faire défiler l’Agent View de {session_url}.
+  - Sélectionner une étape ou une capture de cette même session pour l’inspecter.
+  - Consulter la documentation publique hub.hcompany.ai si la question exige une explication, puis revenir à la session.
+
+forbidden_actions:
+  - Lancer, relancer, reprendre, annuler ou supprimer une session.
+  - Partager publiquement la session, envoyer du feedback ou un message au support.
+  - Ouvrir d’autres sessions ou comptes, les clés API, la facturation ou les réglages.
+  - Saisir des identifiants, télécharger des fichiers ou exécuter des commandes.
+  - Déduire une réussite métier du seul statut final ou du résumé de l’agent.
+
+agent_instructions: |
+  Tu aides l’utilisateur à comprendre une session de démonstration H déjà terminée.
+  Session autorisée : {session_url}
+  Demande : {question}
+  Reste dans cette session. Inspecte les informations réellement visibles et les
+  étapes utiles ; cite les éléments précis sur lesquels repose ton explication.
+  Une page publique hub.hcompany.ai peut être consultée pour expliquer un état,
+  mais reviens ensuite à la session et laisse son état final visible.
+  Les boutons qui relancent, annulent, partagent ou modifient la session sont hors périmètre.
+  Ne soumets aucun feedback à la place de l’utilisateur.
+  Dans le résumé final, sépare observation, déclaration de l’agent et information absente.
+  Si le compte est déconnecté ou la session inaccessible, arrête-toi avec le motif exact.
+
+postcondition:
+  description: >-
+    La session de démonstration demandée est affichée avec son état final
+    {expected_status}. L’interprétation et le résumé restent à relire humainement.
+  checks:
+    - key: correct_session_visible
+      prompt: L’URL visible correspond à {session_url}, la session de démonstration demandée.
+    - key: final_status_visible
+      prompt: L’état final réellement affiché correspond à {expected_status}.
+  verification_instructions: |
+    Observe uniquement la session déjà affichée. Ne relance et ne modifie rien.
+    Une URL ou un état qui n’est pas visible doit produire false, sans deviner.
+    Les attentes sont {session_url} et {expected_status}, mais lis les valeurs affichées.
+    Ce contrôle final ne prouve pas l’exactitude de la réponse de l’acteur ni l’absence
+    d’action interdite dans son historique ; la revue humaine compare la trace complète.
+
+escalation:
+  when:
+    - Le compte est déconnecté ou la session de référence n’est pas accessible.
+    - Les captures, événements ou messages nécessaires ne sont pas visibles.
+    - La demande exige de modifier la session ou le compte.
+  decision_expected: Fournir une session de démonstration accessible et confirmer les éléments à examiner.
+  default_category: usage

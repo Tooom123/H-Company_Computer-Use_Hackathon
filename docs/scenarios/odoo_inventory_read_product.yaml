@@ -1,0 +1,99 @@
+# Candidate procedure for Matteo's engine (origin/matteo, 185ab70).
+# Copy into agent/src/hcs_agent/procedures/ in the integration branch.
+# This is a real Odoo 20 read-only scenario, not evidence of a completed H run.
+# Expected values are confined to verification and are not supplied to the acting agent.
+id: odoo_inventory_read_product
+software: odoo
+software_version: "20.0"
+session_type: onboarding
+title: Lire le prix et le stock d’un produit de démonstration
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 20
+max_time_s_per_attempt: 180
+
+parameters:
+  - name: product_code
+    description: Référence interne du produit à retrouver.
+    default: "HACK-GING-033"
+  - name: product_name
+    description: Nom exact du produit à lire.
+    default: "Holo Gingembre 33 cl"
+  - name: expected_price
+    description: Prix de vente attendu, réservé à la vérification.
+    default: "10"
+  - name: expected_stock
+    description: Stock physique attendu, réservé à la vérification.
+    default: "10"
+
+preconditions:
+  - Odoo est ouvert et connecté dans le navigateur sur l’écran principal.
+  - La société visible est HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+  - Aucun autre agent ne contrôle ce Mac.
+  - Les valeurs attendues ont été contrôlées par l’opérateur avant le passage.
+
+objective: >-
+  Ouvrir la fiche de {product_name}, référence {product_code},
+  et indiquer son prix de vente et son stock physique observés.
+
+planned_changes:
+  - Aucune modification métier ; navigation et lecture uniquement.
+
+allowed_actions:
+  - Naviguer dans Inventaire, Produits et les fiches produit.
+  - Utiliser la recherche pour retrouver la référence demandée.
+  - Lire le prix de vente et la quantité en stock.
+
+forbidden_actions:
+  - Créer, modifier, supprimer ou archiver un enregistrement.
+  - Modifier un prix ou effectuer un ajustement de stock.
+  - Confondre quantité prévue et quantité physique en stock.
+  - Quitter l’onglet Odoo, saisir des identifiants ou envoyer un message.
+
+agent_instructions: |
+  Assiste un commerçant sur Odoo {software_version}, en français.
+  Reste dans l’onglet Odoo déjà visible et vérifie la société de démonstration.
+  Ouvre Inventaire, puis la liste des produits.
+  Recherche {product_code} et ouvre la fiche {product_name}.
+  Lis le prix de vente et la quantité physique en stock.
+  Pour terminer, affiche l’onglet « Informations générales » de cette fiche.
+  Laisse visibles le prix de vente et la quantité disponible en même temps ;
+  l’onglet « Inventaire » contient la logistique et masque le prix.
+  Si tu as consulté un autre onglet, reviens à « Informations générales »
+  avant ta réponse finale, puis vérifie à nouveau les deux valeurs affichées.
+  Indique les valeurs réellement visibles, sans rien modifier.
+  Si la société, le produit ou l’accès ne correspond pas, arrête-toi
+  et rapporte précisément le blocage.
+
+postcondition:
+  description: >-
+    La bonne fiche est affichée et ses valeurs visibles sont
+    {expected_price} EUR et {expected_stock} unités en stock.
+  checks:
+    - key: correct_demo_company
+      prompt: La société HACKATHON — Boutique Démo — DONNÉES FICTIVES est visible.
+    - key: correct_product
+      prompt: La fiche correspond à {product_name}, référence {product_code}.
+    - key: sale_price
+      prompt: Le prix de vente visible est {expected_price} EUR.
+    - key: on_hand_stock
+      prompt: >-
+        Le champ « Quantité disponible » de la fiche, ou le compteur « Disponible »
+        en haut de la fiche, affiche {expected_stock} unités. Ne pas utiliser
+        le compteur distinct « Prévu(e) » pour valider ce contrôle.
+  verification_instructions: |
+    Vérifie les valeurs visibles sur la fiche, sans modifier de données.
+    Reste dans l’onglet Odoo et navigue seulement si nécessaire pour relire la fiche.
+    Dans cette interface Odoo, « Quantité disponible » et le compteur « Disponible »
+    correspondent à qty_available (Quantity On Hand), la quantité en stock.
+    N’exige pas le libellé littéral « stock physique » s’il n’est pas utilisé par Odoo.
+    Ne confonds pas stock physique et stock prévu.
+    Un champ absent ou illisible doit produire false, sans déduction.
+    Ne traite pas une valeur attendue comme une preuve : lis la valeur à l’écran.
+
+escalation:
+  when:
+    - Le produit, la société ou une valeur ne peut pas être vérifié.
+    - Une authentification ou une permission supplémentaire est demandée.
+  decision_expected: Relire le critère non vérifié (fiche, prix ou quantité disponible) et distinguer un problème d’accès, de donnée ou de contrôle.
+  default_category: unknown

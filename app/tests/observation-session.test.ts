@@ -1,0 +1,170 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ObservationSession, validateObservationOptions } from '../electron/observation-session.mjs';
+import { evaluateTargetFrame, summarizeTargetScores } from '../electron/target-benchmark.mjs';
+
+function wait(ms: number, signal: AbortSignal) {
+  return new Promise<undefined>((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(undefined); }, ms);
+    if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+  });
+}
+let serial = 0;
+const frame = () => ({
+  frameId: `test-${++serial}`, capturedAt: new Date().toISOString(),
+  cropRect: { x: 0, y: 0, width: 800, height: 600 }, sourceWidth: 1470, sourceHeight: 956,
+  preparationMs: 300, gazeAgeMs: 10, fallbackReason: null, regionDisposition: 'crop',
+  detail: { dataUrl: 'local-detail' }, global: null, reference: { dataUrl: 'local-reference' },
+});
+const options = { durationSeconds: 15, showOverlay: false };
+const make = (overrides: Record<string, unknown> = {}) => new ObservationSession({
+  capture: async () => frame(), now: () => Date.now(), wait, ...overrides,
+});
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); serial = 0; });
+afterEach(() => vi.useRealTimers());
+
+it('waits for the user to return to the software, then stops at the selected duration', async () => {
+  const capture = vi.fn(async () => frame());
+  const finish = vi.fn();
+  const session = make({ capture, onFinish: finish });
+  session.start(options);
+  await vi.advanceTimersByTimeAsync(2999);
+  expect(capture).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(15002);
+  await session.finished;
+  expect(session.state).toMatchObject({ status: 'stopped', stopReason: 'duration', sampleCount: 15 });
+  expect(finish).toHaveBeenCalledOnce();
+  expect(JSON.stringify(session.list())).not.toContain('local-reference');
+  expect(JSON.stringify(session.list())).not.toContain('local-detail');
+});
+
+it('never overlaps slow captures or queues missed deadlines', async () => {
+  let active = 0, maximum = 0;
+  const capture = vi.fn(async (signal: AbortSignal) => {
+    active++; maximum = Math.max(maximum, active);
+    try { await wait(1600, signal); return frame(); } finally { active--; }
+  });
+  const session = make({ capture });
+  session.start(options);
+  await vi.advanceTimersByTimeAsync(18001);
+  await session.finished;
+  expect(maximum).toBe(1);
+  expect(capture.mock.calls.length).toBeLessThanOrEqual(8);
+  expect(session.state.status).toBe('stopped');
+});
+
+it('rejects a late completed capture after Stop and restores the panel only once', async () => {
+  let complete: (value: ReturnType<typeof frame>) => void = () => {};
+  const finish = vi.fn();
+  const session = make({ capture: () => new Promise(resolve => { complete = resolve; }), onFinish: finish });
+  session.start(options);
+  await vi.advanceTimersByTimeAsync(3001);
+  const stopped = session.stop('user');
+  expect(session.state.status).toBe('stopping');
+  complete(frame());
+  await stopped;
+  expect(session.list()).toHaveLength(0);
+  expect(finish).toHaveBeenCalledOnce();
+});
+
+it('bounds retained image memory and reports the reason', async () => {
+  const session = make({ maxBytes: 1100 });
+  session.start(options);
+  await vi.advanceTimersByTimeAsync(5000);
+  await session.finished;
+  expect(session.state).toMatchObject({ status: 'stopped', stopReason: 'memory-limit', sampleCount: 1 });
+});
+
+it.each([30, 60])('finishes a %s-second benchmark with bounded images and every score, including evicted full-screen fallbacks', async durationSeconds => {
+  const capture = vi.fn(async () => {
+    const captured = frame();
+    const fullFallback = serial % 2 === 1;
+    if (fullFallback) captured.cropRect = { x: 0, y: 0, width: 1470, height: 956 };
+    return { ...captured, fallbackReason: fullFallback ? 'Projection tête hors écran' : null,
+      headDiagnostic: { reason: fullFallback ? 'outside-screen' : 'valid', message: 'Diagnostic test' },
+      headAgeMs: 6, calibrationProfile: 'wide', benchmark: evaluateTargetFrame({
+      target: { id: `target-${serial}`, index: serial, seed: '42', x: 300, y: 300, radius: 12, zone: 'interior' },
+      bounds: { width: 1470, height: 956 }, source: { width: 1470, height: 956 }, cropRect: captured.cropRect,
+      presentedAt: 0, selectionAt: 1000, captureCompletedAt: 1100, stable: true,
+      mode: 'head', signalUsed: fullFallback ? 'full' : 'head', regionDisposition: fullFallback ? 'full-fallback' : 'crop',
+    }) };
+  });
+  const session = make({ capture, maxBytes: 2200 });
+  session.start({ ...options, durationSeconds, benchmark: true, seed: 42 });
+  await vi.advanceTimersByTimeAsync(3001 + durationSeconds * 1000);
+  await session.finished;
+  expect(session.state).toMatchObject({ status: 'stopped', stopReason: 'duration', sampleCount: 2,
+    capturedCount: durationSeconds, discardedImageCount: durationSeconds - 2 });
+  expect(session.bytes).toBeLessThanOrEqual(2200);
+  expect(session.list().map(item => item.frameId)).toEqual([`test-${durationSeconds - 1}`, `test-${durationSeconds}`]);
+  expect(() => session.select('test-1')).toThrow('introuvable');
+  expect(session.select(`test-${durationSeconds}`).detail.dataUrl).toBe('local-detail');
+  expect(summarizeTargetScores(session.benchmarkScores())).toMatchObject({ total: durationSeconds, scored: durationSeconds,
+    fullHits: durationSeconds, fullFallbacks: durationSeconds / 2, croppedScored: durationSeconds / 2,
+    fallbackReasons: { 'Projection tête hors écran': durationSeconds / 2 } });
+  expect(session.benchmarkScores()[0]).toMatchObject({ frameId: 'test-1', headAgeMs: 6, calibrationProfile: 'wide',
+    headDiagnostic: { reason: 'outside-screen' }, preparationMs: expect.any(Number) });
+  expect(JSON.stringify(session.benchmarkScores())).not.toContain('local-detail');
+  session.clear();
+  expect(session.benchmarkScores()).toEqual([]);
+  expect(session.bytes).toBe(0);
+});
+
+it('keeps benchmark measurements when even one frame exceeds the review budget and clears them on restart', async () => {
+  const session = make({ maxBytes: 100, capture: async () => ({ ...frame(), benchmark: { scorable: false, reason: 'transition' } }) });
+  session.start({ ...options, benchmark: true, seed: 42 });
+  await vi.advanceTimersByTimeAsync(18001);
+  await session.finished;
+  expect(session.state).toMatchObject({ stopReason: 'duration', capturedCount: 15, sampleCount: 0, discardedImageCount: 15 });
+  expect(session.benchmarkScores()).toHaveLength(15);
+  expect(session.list()).toEqual([]);
+  expect(session.bytes).toBe(0);
+  session.start({ ...options, benchmark: true, seed: 42 });
+  expect(session.benchmarkScores()).toEqual([]);
+  expect(session.state).toMatchObject({ capturedCount: 0, discardedImageCount: 0 });
+  await session.stop();
+});
+
+it('stops on capture failure instead of silently sampling errors forever', async () => {
+  const session = make({ capture: async () => { throw new Error('Permission manquante'); } });
+  session.start(options);
+  await vi.advanceTimersByTimeAsync(3001);
+  await session.finished;
+  expect(session.state).toMatchObject({ status: 'stopped', stopReason: 'error', error: 'Permission manquante' });
+});
+
+it('reviews exact frames, annotates only known images and replaces old sessions', async () => {
+  const session = make();
+  session.start(options);
+  expect(() => session.clear()).toThrow('Arrêtez');
+  expect(() => session.start(options)).toThrow('déjà');
+  await vi.advanceTimersByTimeAsync(3001);
+  await session.stop();
+  const first = session.list()[0];
+  expect(session.select(first.frameId).reference.dataUrl).toBe('local-reference');
+  session.annotate({ frameId: first.frameId, label: 'present' });
+  expect(session.list()[0].annotation).toBe('present');
+  expect(() => session.annotate({ frameId: 'missing', label: 'present' })).toThrow('introuvable');
+  expect(() => session.annotate({ frameId: first.frameId, label: 'made-up' })).toThrow('non reconnue');
+  session.start(options);
+  expect(session.list()).toHaveLength(0);
+  await session.stop();
+  session.clear();
+  expect(session.state.status).toBe('idle');
+});
+
+it('rejects unsupported cadence/duration inputs before capturing', () => {
+  for (const input of [null, {}, { durationSeconds: 600, showOverlay: false }, { durationSeconds: 30, showOverlay: 'yes' }]) {
+    expect(() => validateObservationOptions(input)).toThrow();
+  }
+  expect(validateObservationOptions({ durationSeconds: 30, showOverlay: false })).toEqual({ durationSeconds: 30, showOverlay: false });
+});
+
+it('bounds benchmark seeds and forces off the crop outline so it cannot cue the target test', () => {
+  expect(validateObservationOptions({ durationSeconds: 30, showOverlay: true, benchmark: true, seed: 42 }))
+    .toEqual({ durationSeconds: 30, showOverlay: false, benchmark: true, seed: 42 });
+  for (const seed of [undefined, -1, 1.5, '42', 0x1_0000_0000, NaN]) {
+    expect(() => validateObservationOptions({ durationSeconds: 30, showOverlay: false, benchmark: true, seed })).toThrow();
+  }
+  expect(() => validateObservationOptions({ durationSeconds: 30, showOverlay: false, benchmark: 'yes' })).toThrow();
+});

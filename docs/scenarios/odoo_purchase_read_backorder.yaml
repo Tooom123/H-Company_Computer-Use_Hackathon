@@ -1,0 +1,71 @@
+# Candidate Odoo 20 procedure; static validation is not a real H run.
+id: odoo_purchase_read_backorder
+software: odoo
+software_version: '20.0'
+session_type: onboarding
+title: Lire et expliquer le reliquat sans le valider
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 240
+parameters:
+- name: run_reference
+  description: Référence exacte du passage réservé par l’opérateur.
+  required: true
+- name: expected_ordered
+  description: Valeur attendue réservée à la vérification.
+  default: '6'
+- name: expected_received
+  description: Valeur attendue réservée à la vérification.
+  default: '4'
+- name: expected_remaining
+  description: Valeur attendue réservée à la vérification.
+  default: '2'
+preconditions:
+- Odoo 20 est ouvert et connecté avec holo-demo sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a vérifié l’état initial de cette étape.
+- L’opérateur a vérifié le stade partial de {run_reference} avant cette lecture.
+objective: Inspecter les réceptions de {run_reference}, expliquer les quantités commandées, reçues et restantes,
+  puis laisser le reliquat correspondant ouvert à l’écran sans le valider.
+planned_changes:
+- Aucune modification métier ; navigation et lecture uniquement.
+allowed_actions:
+- Rechercher et ouvrir la commande, ses réceptions et son reliquat existants.
+- Lire les quantités et états sans sauvegarde ni validation.
+forbidden_actions:
+- Quitter l’onglet Odoo, saisir des identifiants, agir dans une autre société ou lancer un reset.
+- Envoyer un message, créer une facture ou un paiement, modifier un prix catalogue ou les droits.
+- Créer, modifier, supprimer, archiver ou valider un enregistrement métier.
+agent_instructions: 'Dans la société fictive, retrouve la commande {run_reference} et ouvre ses réceptions liées.
+
+  Lis les quantités commandées, celles des réceptions terminées et celles du reliquat encore ouvert.
+
+  Explique ces trois valeurs à partir des documents effectivement vus, pas seulement d’un calcul à partir de la
+  demande.
+
+  Laisse à l’écran le reliquat correspondant. Ne clique pas Valider et ne change aucune quantité.
+
+  Si les documents ou leur lien sont ambigus, rapporte le manque sans créer ni corriger de document.'
+postcondition:
+  description: Les observations suivantes sont vérifiées dans la seule base de démonstration.
+  checks:
+  - key: correct_order
+    prompt: La commande unique {run_reference} contient {expected_ordered} unités de HACK-GING-033.
+  - key: received_quantity
+    prompt: Les réceptions terminées de cette commande portent sur {expected_received} unités.
+  - key: open_remainder
+    prompt: Le reliquat lié affiche {expected_remaining} unités et reste non terminé.
+  - key: backorder_visible
+    prompt: Ce reliquat est la fiche actuellement ouverte à l’écran.
+  verification_instructions: 'Relis la commande et ses réceptions liées. Le passage doit toujours être au stade
+    partial après cette lecture ; aucune nouvelle validation n’est autorisée.
+
+    Ne modifie ni ne valide aucun document. Une attente n’est pas une preuve : lis chaque valeur. Une preuve absente
+    ou illisible produit false.'
+escalation:
+  when:
+  - Un document, une valeur, la société ou la permission nécessaire ne peut pas être identifié sans ambiguïté.
+  - La postcondition reste non vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état de la démonstration avant toute reprise ; aucune correction
+    hors du périmètre approuvé.
+  default_category: unknown

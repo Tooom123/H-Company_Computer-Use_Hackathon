@@ -2,6 +2,11 @@
 
 Read this before pushing. It applies to humans and coding agents alike.
 
+## Notes from teammates (read first)
+
+- [docs/notes-for-agents-from-tom.md](docs/notes-for-agents-from-tom.md): contract regeneration, missing report
+  fields (autonomy, takeover), support uplink, gaze halo, Odoo reset, Devin auto-fix.
+
 ## Branches
 
 - `main` is always runnable. Nobody pushes directly after the initial skeleton: open a PR, one teammate reviews.

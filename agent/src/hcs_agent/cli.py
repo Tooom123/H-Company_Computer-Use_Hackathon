@@ -27,6 +27,62 @@ _LAST_LOOKUP_AT = 0.0
 _LAST_ACTION: dict = {}  # latest agent action (summary, pointer) for on-screen narration
 _MAGNET = {"level": int(os.environ.get("HCS_AUTONOMY", "1")), "widget": None, "current": None}
 _VOICE: dict = {"ptt": None, "state": None}  # push-to-talk handle and its last state, visible to the guide loop
+_SPEECH: dict = {"speaker": None, "ready": False}  # ElevenLabs voice reading the on-screen notes aloud
+# Notes shown in every session (closing notes, routing feedback): synthesised ahead so they play at once.
+_COMMON_LINES = ("Done, checking the result", "Done: result verified in the software",
+                 "Stopped. Nothing else will be changed.", "I could not verify the result",
+                 "Case handed over to support.", "I did not get that, please rephrase", "I cannot do that yet")
+
+
+def _speaker():
+    """The process voice (created once, on first use); None when muted or unavailable."""
+    if not _SPEECH["ready"]:
+        _SPEECH["ready"] = True
+        try:
+            from .speech import make_speaker
+
+            _SPEECH["speaker"] = make_speaker()
+        except Exception as exc:  # noqa: BLE001 - speech is a bonus, never a reason to fail
+            print(f"(voice unavailable: {exc})")
+    return _SPEECH["speaker"]
+
+
+def _voice_for(ov) -> None:
+    """Tie the overlay to the voice: a note is drawn when its sentence starts being heard."""
+    sp = _speaker()
+    if ov is not None and sp is not None:
+        ov.hold_reveal = sp.holding
+
+
+def _say(*segments: str, interrupt: bool = True) -> None:
+    """Read aloud what is about to be written on screen. Call it right BEFORE `show_scene`."""
+    sp = _SPEECH["speaker"]
+    if sp is not None:
+        sp.say(*segments, interrupt=interrupt)
+
+
+def _hush() -> None:
+    sp = _SPEECH["speaker"]
+    if sp is not None:
+        sp.stop()
+
+
+def _prefetch_voice(request: InterventionRequest) -> None:
+    """Synthesise the guide's sentences now, so each step is heard the moment it is drawn."""
+    sp = _SPEECH["speaker"]
+    if sp is None or request.mode is not Mode.guide or not request.procedure_id:
+        return
+    try:
+        script = ProcedureRegistry().get(request.procedure_id).bound(request).guide_script()
+    except Exception:  # noqa: BLE001 - unknown procedure or params: the runner reports it, not us
+        return
+    verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
+    texts = []
+    for st in script:
+        texts.append(st.instruction)
+        if st.why and (verbose or st.action in ("info", "wait")):
+            texts.append(_short(st.why, 90))
+    sp.prefetch(texts + list(_COMMON_LINES))
 
 
 def _new_request_pending() -> bool:
@@ -123,6 +179,8 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         _ensure_magnet()
     print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, "
           f"mode: {request.mode.value}, autonomy: {request.autonomy})")
+    if ov is not None:
+        _prefetch_voice(request)
     it.start()
     if it.state.terminal:
         return 1
@@ -155,8 +213,12 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
             it.wait()
     except KeyboardInterrupt:
         print(">> Ctrl+C: stopping (new commands blocked locally, asking H to cancel)")
+        _hush()
         it.stop(StopCommand(reason="Ctrl+C"))
         _wait_stopped(it, ov, timeout=20)
+    if getattr(it, "uplink", None):  # let the support backend receive the report before we move on
+        it.uplink.flush(10)
+        print(f"support backend: {it.uplink.sent} sent, {it.uplink.failed} failed ({it.uplink.url})")
     if it.report:
         print(f"\nreport: {it.runs_dir / 'report.json'}")
         print(json.dumps(it.report.to_support_summary(), indent=2))
@@ -193,6 +255,7 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
     from .overlay import Scene
 
     ov.badge(None)
+    _say(text, why)
     ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
     ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
@@ -214,6 +277,7 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         why = (r.escalation.blocked_on if r.escalation else "") or "Case handed over to support."
         doodle = "question"
     ov.badge(None)
+    _say(text, why[:120])
     ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
     t0 = time.time()
     hold = 2.5 if r.status.value == "abandoned" else seconds
@@ -241,6 +305,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
         voice_state["s"] = s
         _VOICE["state"] = s
         print(f"  [voice] {s}", flush=True)
+        if s == "recording":
+            _hush()  # the user speaks: we stop talking (and the mic does not hear us)
         if ov is None:
             return
         if s == "recording":
@@ -252,6 +318,9 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
     if ov is not None:
         _ensure_magnet()
+        _voice_for(ov)
+        if _SPEECH["speaker"] is not None:
+            _SPEECH["speaker"].prefetch(list(_COMMON_LINES))
     backend = make_backend(args.mock)
     if hasattr(backend, "_desktop_channel"):
         # Open the H desktop channel (and its driver) BEFORE any key listener exists: the driver's keyboard
@@ -344,6 +413,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("\nbye")
         ptt.stop()
+        if _SPEECH["speaker"] is not None:
+            _SPEECH["speaker"].close()
         if ov is not None:
             ov.hide()
             ov.badge(None)
@@ -487,12 +558,16 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             ov = Overlay()
         except Exception as exc:  # noqa: BLE001
             print(f"(overlay unavailable: {exc})")
+    if ov is not None and ov.hold_reveal is None:  # `run`: the overlay (and its voice) start here
+        _voice_for(ov)
+        _prefetch_voice(it.request)
     shown_step = 0
     prompted = False
     watcher = _ScreenWatcher()
     inputs = _InputWatcher()
 
     def advance(done: bool = True, note: str | None = None) -> None:
+        _hush()  # the user did the step: the sentence about it is over
         if ov:
             ov.hide()
         if it.state is not State.awaiting_user:
@@ -532,6 +607,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             ov.badge("Taking over…", pulsing=True)
             text = _short(_LAST_ACTION.get("summary") or "", 110)
             why = _LAST_ACTION.get("element") or ""
+            _say(text, interrupt=False)  # never cut the agent's sentence; the latest one waits its turn
             ov.show_scene(Scene(text=text, why=why[:60], target=_LAST_ACTION.get("pointer")))
             return
         shown_at = shown_action.get("at")
@@ -547,6 +623,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
             print("\n>> new voice request: stopping the current task", flush=True)
+            _hush()
             if ov:
                 ov.hide()
                 ov.badge("New request…", pulsing=True)
@@ -567,6 +644,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
 
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
+                    _say(g.instruction, _short(why, 90))
                     ov.show_scene(Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
                         doodle="question" if "can't see" in g.instruction else None,
@@ -590,6 +668,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if ready:
                 ans = sys.stdin.readline().strip()
                 if ans.lower() == "q":
+                    _hush()
                     if ov:
                         ov.hide()
                     it.stop(StopCommand(reason="user quit"))
