@@ -147,18 +147,29 @@ def _draw_paper(x, y, w, h, rnd, color=PAPER):
     AppKit.NSGraphicsContext.restoreGraphicsState()
 
 
-def _note(x, y, text, rnd, size=19, max_w=340, color=PAPER, underline=True) -> tuple[float, float]:
-    """Handwritten text on a paper scrap, anchored at its bottom-left. Returns (width, height) drawn."""
+def _measure(text, size, max_w):
     attrs = {AppKit.NSFontAttributeName: _hand_font(size), AppKit.NSForegroundColorAttributeName: _ink()}
     s = Foundation.NSString.stringWithString_(text)
     bound = s.boundingRectWithSize_options_attributes_((max_w, 400), 1 << 0, attrs).size
-    tw, th = min(bound.width, max_w) + 2, bound.height + 2
+    return attrs, s, min(bound.width, max_w) + 2, bound.height + 2
+
+
+def _clamp(x, y, w, h, W, H, margin=14):
+    """Keep a paper of size (w, h) anchored at (x, y) inside the screen."""
+    return min(max(x, margin), W - w - margin), min(max(y, margin), H - h - margin)
+
+
+def _note(x, y, text, rnd, size=19, max_w=340, color=PAPER, underline=True, bounds=None) -> tuple[float, float, float, float]:
+    """Handwritten text on a paper scrap, anchored at its bottom-left. Returns (x, y, width, height) drawn."""
+    attrs, s, tw, th = _measure(text, size, max_w)
+    if bounds is not None:
+        x, y = _clamp(x, y, tw + 20, th + 12, bounds[0], bounds[1])
     _draw_paper(x - 10, y - 6, tw + 20, th + 12, rnd, color)
     _ink().setStroke()
     s.drawInRect_withAttributes_(((x, y), (max_w, th + 4)), attrs)
     if underline:
         _stroke([(x + i * (tw / 6), y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)], rnd, 1.0, 1.0)
-    return tw + 20, th + 12
+    return x, y, tw + 20, th + 12
 
 
 class _SketchView(AppKit.NSView):
@@ -200,27 +211,30 @@ class _SketchView(AppKit.NSView):
             if m.text and m.shape != "arrow":
                 # Small label next to the mark, with a short link stroke.
                 lx = mx + 50 if mx + 300 < W else mx - 50 - 220
-                ly = min(my + 26, H - 50)
-                _note(lx, ly, m.text, rnd, size=15, max_w=220, color=PAPER_SOFT, underline=False)
-                _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else 216), ly - 2)], rnd, 1.1, 1.0)
+                ly = my + 26
+                lx, ly, lw, lh = _note(lx, ly, m.text, rnd, size=15, max_w=220, color=PAPER_SOFT, underline=False, bounds=(W, H))
+                _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else lw - 24), ly - 2)], rnd, 1.1, 1.0)
 
         # Main note + circle + arrow.
         if sc.target is not None:
             tx, ty = sc.target
             _circle(tx, ty, rnd)
-            right = tx + 260 < W
-            text_x = tx + 48 if right else tx - 48 - 340
-            text_y = min(ty + 40, H - 70)
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
-            w, h = _note(text_x, text_y, label, rnd)
+            _, _, lw, lh = _measure(label, 19, 340)
+            right = tx + 48 + lw + 40 < W
+            text_x = tx + 48 if right else tx - 48 - lw
+            text_y = ty + 40
+            text_x, text_y, w, h = _note(text_x, text_y, label, rnd, bounds=(W, H))
             if sc.why:
-                _note(text_x + 6, text_y - 18 - 44, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
+                _, _, ww, wh = _measure(sc.why, 14, 300)
+                _note(text_x + 6, text_y - 20 - wh, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False, bounds=(W, H))
             _arrow((text_x + (6 if right else w - 26), text_y - 12), (tx + (46 if right else -46), ty + 16), rnd)
         elif sc.text:
-            text_x, text_y = W / 2 - 170, H - 92
-            _note(text_x, text_y, sc.text, rnd)
+            _, _, lw, lh = _measure(sc.text, 19, 340)
+            text_x, text_y, w, h = _note(W / 2 - lw / 2, H - 92, sc.text, rnd, bounds=(W, H))
             if sc.why:
-                _note(text_x + 6, text_y - 18 - 44, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
+                _, _, ww, wh = _measure(sc.why, 14, 300)
+                _note(text_x + 6, text_y - 20 - wh, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False, bounds=(W, H))
 
     def _draw_badge(self):
         import time

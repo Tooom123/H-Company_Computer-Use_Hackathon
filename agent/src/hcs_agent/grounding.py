@@ -19,9 +19,14 @@ H_MODELS_URL = os.environ.get("HAI_MODELS_BASE_URL", "https://api.hcompany.ai/v1
 GROUNDING_WIDTH = 1024
 
 _POINT = {"type": "function", "function": {
-    "name": "point", "description": "Point at the requested control.",
-    "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
-                   "required": ["x", "y"]}}}
+    "name": "point",
+    "description": "Point at the best candidate for the requested control and say whether it really is that control.",
+    "parameters": {"type": "object", "properties": {
+        "x": {"type": "integer"}, "y": {"type": "integer"},
+        "is_the_control": {"type": "boolean",
+                           "description": "true only if the pointed element is exactly the requested control, visible now"},
+        "seen": {"type": "string", "description": "What the pointed element actually is, 5 words."}},
+        "required": ["x", "y", "is_the_control", "seen"]}}}
 _NOT_FOUND = {"type": "function", "function": {
     "name": "not_found", "description": "The requested control is not visible on this screen.",
     "parameters": {"type": "object", "properties": {"what_is_visible": {"type": "string"}},
@@ -110,8 +115,11 @@ class Grounder:
         fn, args = self._call(img_b64, prompt, _TOOLS if strict else [_POINT])
         latency = time.time() - t0
         if fn and fn["name"] == "point" and "x" in args and "y" in args:
-            # Holo returns coordinates normalised to [0, 1000] on the image it was sent.
-            return Located(True, (int(int(args["x"]) / 1000 * sw), int(int(args["y"]) / 1000 * sh)), "", latency)
+            # Holo returns coordinates normalised to [0, 1000] on the image it was sent. It always points at
+            # something; `is_the_control` tells whether that something is really the requested element.
+            xy = (int(int(args["x"]) / 1000 * sw), int(int(args["y"]) / 1000 * sh))
+            really = args.get("is_the_control", True)
+            return Located(bool(really), xy if really else None, args.get("seen", ""), latency)
         return Located(False, None, args.get("what_is_visible", ""), latency)
 
     def screen_matches(self, expected: str) -> tuple[bool, str]:
