@@ -80,9 +80,11 @@ def _lenient(model: type[BaseModel], raw: Any) -> BaseModel | None:
 class GuideAnswer(BaseModel):
     """One guidance step, answered by the H agent in guide mode."""
 
-    instruction: str = Field(description="What the user should do now, in plain words.")
-    where: str = Field(default="", description="Where the control is on screen.")
-    why: str = Field(default="", description="What this step achieves for the user.")
+    instruction: str = Field(description="What the user should do now. One short line, max 12 words.")
+    where: str = Field(default="", description="Where the control is on screen, in words.")
+    why: str = Field(default="", description="One or two sentences: what this step achieves for the user.")
+    target_x: int | None = Field(default=None, description="X pixel of the control in the screenshot you see, or null if there is nothing to point at.")
+    target_y: int | None = Field(default=None, description="Y pixel of the control in the screenshot you see, or null.")
     last: bool = Field(default=False, description="True when the goal is visibly achieved or the user is blocked.")
     blocked: bool = Field(default=False, description="True if the user cannot proceed (error, permission).")
     blocker: str | None = Field(default=None, description="Exact message seen on screen when blocked.")
@@ -308,7 +310,7 @@ class HBackend:
                 if ans is None:
                     declared = DeclaredResult(outcome="unclear", summary=str(result.answer or ""))
                     break
-                pointer = _last_pointer(result.events)
+                pointer = _to_screen_points(ans.target_x, ans.target_y, self.screenshot_max_width)
                 gs = GuidanceStep(index=n, instruction=ans.instruction, where=ans.where, why=ans.why,
                                   pointer=pointer, last=ans.last or ans.blocked)
                 guidance.append(gs)
@@ -425,6 +427,31 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
     if etype == "AgentErrorEvent":
         return Step(index=index, attempt=attempt, timestamp=ts, kind="error", summary=str(d.get("error"))[:300])
     return None
+
+
+def _to_screen_points(x: int | None, y: int | None, screenshot_max_width: int) -> tuple[int, int] | None:
+    """Screenshot pixel coordinates -> screen points. The screenshot is the screen scaled to max_width."""
+    if x is None or y is None:
+        return None
+    try:
+        from .overlay import screen_size_points
+
+        sw, _ = screen_size_points()
+    except Exception:  # noqa: BLE001
+        return int(x), int(y)
+    scale = sw / float(screenshot_max_width) if sw > screenshot_max_width else 1.0
+    return int(x * scale), int(y * scale)
+
+
+def _mouse_position() -> tuple[int, int] | None:
+    """Where the agent left the pointer, in screen points (the overlay draws there)."""
+    try:
+        from .overlay import mouse_position
+
+        x, y = mouse_position()
+        return int(x), int(y)
+    except Exception:  # noqa: BLE001 - non-macOS or no display
+        return None
 
 
 def _last_pointer(events: list[Any]) -> tuple[int, int] | None:

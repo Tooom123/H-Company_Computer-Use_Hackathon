@@ -77,18 +77,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     try:
         if args.mode == "guide":
-            while not it.state.terminal:
-                it.wait(0.2)
-                if it.state is State.awaiting_user:
-                    if args.yes:
-                        time.sleep(0.3)
-                        it.next(NextCommand(done=True))
-                    else:
-                        ans = input("\nDid you do it? [Enter = yes / type what you see / q = stop] ").strip()
-                        if ans.lower() == "q":
-                            it.stop(StopCommand(reason="user quit"))
-                        else:
-                            it.next(NextCommand(done=ans == "", note=ans or None))
+            _guide_loop(it, auto=args.auto_next, overlay=not args.no_overlay)
         else:
             it.wait()
     except KeyboardInterrupt:
@@ -102,6 +91,57 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"stop latency: {it.report.timings.stop_latency_s:.2f}s")
         return 0 if it.report.status.value == "resolved" else 3
     return 1
+
+
+def _guide_loop(it: Intervention, auto: bool, overlay: bool) -> None:
+    """Main-thread loop for guide mode: draws the pencil overlay and reads Enter / notes / q from stdin."""
+    import select
+
+    ov = None
+    if overlay and sys.platform == "darwin":
+        try:
+            from .overlay import Overlay
+
+            ov = Overlay()
+        except Exception as exc:  # noqa: BLE001
+            print(f"(overlay unavailable: {exc})")
+    shown_step = 0
+    prompted = False
+
+    def tick() -> None:
+        nonlocal shown_step, prompted
+        if it.state is State.awaiting_user and it.guidance:
+            g = it.guidance[-1]
+            if g.index != shown_step:
+                shown_step = g.index
+                prompted = False
+                if ov:
+                    ov.show(g.instruction, g.pointer)
+            if auto:
+                time.sleep(0.3)
+                it.next(NextCommand(done=True))
+                return
+            if not prompted:
+                print("\nDid you do it? [Enter = yes / type what you see / q = stop] ", end="", flush=True)
+                prompted = True
+            ready, _, _ = select.select([sys.stdin], [], [], 0)
+            if ready:
+                ans = sys.stdin.readline().strip()
+                if ov:
+                    ov.hide()
+                if ans.lower() == "q":
+                    it.stop(StopCommand(reason="user quit"))
+                else:
+                    it.next(NextCommand(done=ans == "", note=ans or None))
+        elif ov and it.state.terminal and it.guidance and it.guidance[-1].last and it.guidance[-1].pointer:
+            pass  # keep the last annotation until exit
+
+    if ov:
+        ov.run_until(lambda: it.state.terminal and it.report is not None, tick, 0.15)
+    else:
+        while not (it.state.terminal and it.report is not None):
+            tick()
+            it.wait(0.15)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -135,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--symptom")
     run.add_argument("--mode", choices=["act", "guide"], default="act",
                      help="act: the agent does it; guide: the agent explains and points, you do it")
+    run.add_argument("--no-overlay", action="store_true", help="guide mode without the on-screen pencil overlay")
+    run.add_argument("--auto-next", action="store_true", help="guide mode: auto-confirm each step (tests only)")
     run.add_argument("-p", "--param", action="append", metavar="KEY=VALUE")
     run.add_argument("--scope-note")
     run.add_argument("-y", "--yes", action="store_true", help="Approve the plan without prompting")
