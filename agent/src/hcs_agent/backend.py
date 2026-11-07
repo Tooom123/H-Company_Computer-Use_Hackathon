@@ -175,7 +175,7 @@ class HBackend:
 
     def _agent_spec(self, name: str, instructions: str, lazy: bool = False) -> dict[str, Any]:
         return {
-            "name": name,
+            "name": _agent_name(name),
             "description": "Customer-success assistant driving the user's own desktop.",
             "model": self.model,
             "instructions": instructions,
@@ -234,7 +234,7 @@ class HBackend:
             threading.Thread(target=self._watch_stop, args=(handle, stop_event, done), daemon=True).start()
             result, _, _ = self._turn(handle, 0, attempt, on_step, 0)
         except Exception as exc:  # noqa: BLE001 - surfaced in the report as agent_failure
-            return AttemptResult(sid, "failed", DeclaredResult(outcome="not_run"), error=repr(exc))
+            return AttemptResult(sid, "failed", DeclaredResult(outcome="not_run"), error=_error_text(exc))
         finally:
             done.set()
         if stop_event.is_set() or result.status == "interrupted":
@@ -301,7 +301,7 @@ class HBackend:
             except Exception:  # noqa: BLE001
                 pass
         except Exception as exc:  # noqa: BLE001
-            return AttemptResult(sid, "failed", DeclaredResult(outcome="not_run"), error=repr(exc), guidance=guidance)
+            return AttemptResult(sid, "failed", DeclaredResult(outcome="not_run"), error=_error_text(exc), guidance=guidance)
         finally:
             done.set()
         if "declared" not in locals():
@@ -326,7 +326,7 @@ class HBackend:
             threading.Thread(target=self._watch_stop, args=(handle, stop_event, done), daemon=True).start()
             result, _, _ = self._turn(handle, 0, 0, on_step, 0)
         except Exception as exc:  # noqa: BLE001
-            return VerifyResult(sid, "failed", error=repr(exc))
+            return VerifyResult(sid, "failed", error=_error_text(exc))
         finally:
             done.set()
         if stop_event.is_set() or result.status == "interrupted":
@@ -403,6 +403,19 @@ def _last_pointer(events: list[Any]) -> tuple[int, int] | None:
                 except (TypeError, ValueError):
                     pass
     return pointer
+
+
+def _agent_name(raw: str) -> str:
+    """H agent names: lowercase ASCII letters, digits and hyphens, alphanumeric at both ends, <= 63 chars."""
+    import re
+
+    name = re.sub(r"[^a-z0-9-]+", "-", raw.lower()).strip("-")
+    return (name or "hcs-agent")[:63].rstrip("-")
+
+
+def _error_text(exc: BaseException) -> str:
+    body = getattr(exc, "body", None)
+    return f"{type(exc).__name__}: {body if body else exc}"[:600]
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:

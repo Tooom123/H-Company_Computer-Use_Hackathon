@@ -21,3 +21,10 @@ def test_all_procedures_load_and_render():
 def test_ambiguous_software_requires_procedure_id():
     with pytest.raises(ValueError):
         ProcedureRegistry().for_request(InterventionRequest(software="odoo", goal="g"))
+
+
+def test_agent_names_follow_h_rules():
+    from hcs_agent.backend import _agent_name
+
+    assert _agent_name("hcs-odoo_crm_followup_activity") == "hcs-odoo-crm-followup-activity"
+    assert _agent_name("Hcs Verify__X-") == "hcs-verify-x"
