@@ -133,10 +133,13 @@ class Intent(BaseModel):
     mode: str | None = Field(default="act", description="'guide' if the user wants to be shown/explained how, else 'act'.")
     parameters: dict[str, str | int | float | None] | None = Field(default_factory=dict)
     role: str | None = None
-    goal: str = Field(default="", description="The user's request, cleaned up, in their language.")
+    goal: str | None = Field(default="", description="The user's request, cleaned up, in English.")
     missing: list[str] | None = Field(default_factory=list, description="Required parameters not said by the user.")
 
     def model_post_init(self, __context) -> None:
+        self.goal = self.goal or ""
+        self.question = self.question or None
+        self.role = self.role or None
         self.mode = self.mode if self.mode in ("act", "guide") else "act"
         self.parameters = {k: str(v) for k, v in (self.parameters or {}).items() if v not in (None, "")}
         self.missing = list(self.missing or [])
