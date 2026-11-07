@@ -147,3 +147,10 @@ def test_devin_waiting_for_user_is_shown_and_support_can_reply():
     sid = store.get_fix("demo-005")["session_id"]
     assert provider.messages(sid)[-1] == {"source": "user", "message": "Access granted, please retry"}
     assert store.get_fix("demo-005")["replies"] == ["Access granted, please retry"]
+
+
+def test_pr_opened_and_waiting_counts_as_done():
+    from hcs_backend.autofix import is_done
+    assert not is_done({"status": "running", "status_detail": "waiting_for_user"})  # a real question
+    assert is_done({"status": "running", "status_detail": "waiting_for_user", "pr_url": "https://x/pull/1"})
+    assert is_done({"status": "exit"}) and not is_done({"status": "running", "pr_url": "https://x/pull/1"})

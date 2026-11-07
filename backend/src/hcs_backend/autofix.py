@@ -28,6 +28,12 @@ from .store import StoredCase
 
 TERMINAL = {"exit", "error"}
 
+
+def is_done(fix: dict[str, Any]) -> bool:
+    """Finished: the session ended, or Devin opened its PR and is now just waiting for feedback
+    (observed on real runs: status stays running / waiting_for_user after the PR)."""
+    return fix.get("status") in TERMINAL or (bool(fix.get("pr_url")) and fix.get("status_detail") == "waiting_for_user")
+
 RESULT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -293,7 +299,7 @@ class AutoFixer:
     def poll_open(self) -> int:
         n = 0
         for fix in self.store.list_fixes():
-            if fix.get("session_id") and fix["status"] not in TERMINAL:
+            if fix.get("session_id") and not is_done(fix):
                 self.refresh(fix["case_id"])
                 n += 1
         return n

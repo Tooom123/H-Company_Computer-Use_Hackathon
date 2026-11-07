@@ -182,7 +182,7 @@ def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
             f'<form method="post" action="/dashboard/cases/{escape(case.case_id)}/fix">'
             '<button class="fixbtn" type="submit">Send to Devin</button></form></div>'
         )
-    status = str(fix.get("status") or "")
+    status = "PR opened" if fix.get("pr_url") and fix.get("status_detail") == "waiting_for_user" else str(fix.get("status") or "")
     sim = _flags(bool(fix.get("simulated")), False)
     pr = fix.get("pr_url")
     pr_html = (f'<a href="{escape(pr.split(" ")[0])}">{escape(pr)}</a> <span class="muted">({escape(str(fix.get("pr_state") or ""))})</span>'
@@ -204,8 +204,9 @@ def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
     dl = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)
     ask = ""
     if fix.get("devin_says"):
+        head = "Devin's summary (reply to ask for changes)" if fix.get("pr_url") else "Devin is waiting for you"
         ask = (
-            f'<div class="devin-ask"><b>Devin is waiting for you</b><p>{escape(fix["devin_says"])}</p>'
+            f'<div class="devin-ask"><b>{head}</b><p>{escape(fix["devin_says"])}</p>'
             f'<form method="post" action="/dashboard/cases/{escape(case.case_id)}/fix/message">'
             '<textarea name="message" rows="2" required placeholder="Answer Devin (e.g. access granted, go ahead)"></textarea>'
             '<button class="fixbtn" type="submit">Reply</button></form></div>'

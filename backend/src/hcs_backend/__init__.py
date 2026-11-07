@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "fix":
         import time
 
-        from .autofix import TERMINAL, AutoFixer
+        from .autofix import AutoFixer, is_done
 
         store = Store(settings.db_path)
         case = store.get_case(args.case_id)
@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"provider={fix['provider']} simulated={fix['simulated']} repo={fix['repo']} branch={fix['branch']}")
         print(f"session {fix.get('session_id')}  {fix.get('session_url')}")
         t0, last = time.time(), None
-        while fix and fix["status"] not in TERMINAL and fix["status"] != "error" and time.time() - t0 < args.timeout:
+        while fix and not is_done(fix) and time.time() - t0 < args.timeout:
             time.sleep(2 if fix["simulated"] else 20)
             fix = fixer.refresh(args.case_id)
             line = f"{fix['status']} {fix.get('status_detail') or ''} pr={fix.get('pr_url')}"
