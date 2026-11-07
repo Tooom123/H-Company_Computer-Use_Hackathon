@@ -50,6 +50,9 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
   const active = observation?.status === "running" || observation?.status === "stopping";
   const settledCount = active ? 0 : observation?.sampleCount ?? 0;
   const autoSummary = observation?.benchmarkSummary;
+  const retentionLabel = observation?.benchmark
+    ? `${observation.capturedCount ?? autoSummary?.total ?? observation.sampleCount} captures analysées / ${observation.sampleCount} images conservées`
+    : `${observation?.sampleCount ?? 0} captures conservées`;
   const start = () => {
     setError(null);
     if (!benchmark) { onStart({ durationSeconds, showOverlay }); return; }
@@ -173,17 +176,23 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
     <p className="continuous-shortcut">Retour anticipé : <kbd>⌘ / Ctrl</kbd> + <kbd>Maj</kbd> + <kbd>Espace</kbd>. Le panneau revient aussi à la fin de la durée choisie.</p>
     <p className="field-note">Un nouvel essai remplace les captures du précédent en mémoire. Le contour est désactivé par défaut pour ne pas attirer le regard.</p>
     {!shortcutAvailable && <p className="warning-text">Le raccourci de retour est indisponible. Libérez-le puis relancez l’app pour démarrer un essai masqué.</p>}
-    {active && <p role="status">Observation en cours · {observation?.sampleCount ?? 0} captures conservées. Aucun appel Holo.</p>}
-    {!active && observation?.status === "stopped" && <p className="field-note" role="status">{stopReason || "Essai terminé"} · {observation.sampleCount} captures conservées.</p>}
+    {active && <p role="status">Observation en cours · {retentionLabel}. Aucun appel Holo.</p>}
+    {!active && observation?.status === "stopped" && <p className="field-note" role="status">{stopReason || "Essai terminé"} · {retentionLabel}.</p>}
+    {observation?.benchmark && (observation.discardedImageCount ?? 0) > 0 && <p className="field-note" aria-label="Rétention des images">{observation.discardedImageCount} image(s) retirée(s) de la revue pour respecter la limite mémoire de 64 Mio. Les mesures de toutes les captures restent dans le score, y compris celles sans image conservée.</p>}
     {(error || observation?.error) && <p className="warning-text" role="alert">{error || observation?.error}</p>}
     {!active && observation?.benchmark && autoSummary && <section className="benchmark-results" aria-label="Score automatique de la cible">
       <h3>Score automatique · parcours {observation.benchmark.seed}</h3>
       <div className="benchmark-metrics">
-        <div><span>Cible entière · toutes images évaluables</span><strong>{fraction(autoSummary.fullHits, autoSummary.scored)}</strong></div>
-        <div><span>Cible entière · images recadrées seules</span><strong>{fraction(autoSummary.croppedFullHits, autoSummary.croppedScored)}</strong></div>
-        <div><span>Images plein écran</span><strong>{autoSummary.fullFrames}<small>dont {autoSummary.fullFallbacks} repli(s)</small></strong></div>
-        <div><span>Surface détaillée conservée · moyenne</span><strong>{autoSummary.meanAreaFraction == null ? "—" : `${Math.round(100 * autoSummary.meanAreaFraction)} %`}</strong></div>
+        <div><span>Cible entière · toutes captures évaluables</span><strong>{fraction(autoSummary.fullHits, autoSummary.scored)}</strong></div>
+        <div><span>Cible entière · captures recadrées seules</span><strong>{fraction(autoSummary.croppedFullHits, autoSummary.croppedScored)}</strong></div>
+        <div><span>Captures plein écran</span><strong>{autoSummary.fullFrames}<small>dont {autoSummary.fullFallbacks} repli(s)</small></strong></div>
+        <div><span>Surface détaillée / écran · moyenne</span><strong>{autoSummary.meanAreaFraction == null ? "—" : `${Math.round(100 * autoSummary.meanAreaFraction)} %`}</strong></div>
       </div>
+      <p className="field-note" aria-label="Taux de repli plein écran">Repli plein écran : {fraction(autoSummary.fullFallbacks, autoSummary.total)} de toutes les captures analysées.</p>
+      {autoSummary.fallbackReasons && Object.keys(autoSummary.fallbackReasons).length > 0 && <ul className="field-note" aria-label="Causes des replis plein écran">
+        {Object.entries(autoSummary.fallbackReasons).map(([reason, count]) => <li key={reason}>{count} capture(s) : {reason}</li>)}
+      </ul>}
+      <p className="field-note">Score calculé sur les {autoSummary.total} captures du parcours, indépendamment des images encore disponibles pour la revue.</p>
       <p className="field-note">Centre de la cible inclus : {fraction(autoSummary.centerHits, autoSummary.scored)} · {autoSummary.unscored} capture(s) exclue(s), notamment pendant la stabilisation.</p>
       <p className="field-note">Cible entière aux bords : {fraction(autoSummary.edge.fullHits, autoSummary.edge.scored)} · à l’intérieur : {fraction(autoSummary.interior.fullHits, autoSummary.interior.scored)}.</p>
       {autoSummary.scored === 0 && <p className="warning-text">Aucune capture évaluable : aucun taux de couverture ne peut être conclu pour cet essai.</p>}
@@ -191,9 +200,10 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
       <p className="field-note">Comparez le même numéro de parcours, la même durée, les mêmes dimensions et le même cadre de région. Notez le profil de calibration. Un plein écran peut contenir la cible sans produire de recadrage utile. La surface conservée ne mesure pas les tokens économisés.</p>
       <p className="field-note">Ce score mesure la couverture géométrique d’une cible demandée, pas le regard réel ni la réussite d’une tâche dans le logiciel.</p>
     </section>}
+    {!active && observation?.benchmark && observation.status === "stopped" && samples.length === 0 && (observation.capturedCount ?? 0) > 0 && <button className="text-button" disabled={locked} onClick={() => void clear()}>Effacer cet essai local</button>}
     {!active && samples.length > 0 && <div className="observation-review">
       <div className="review-toolbar">
-        <h3>Revoir les captures</h3>
+        <h3>{observation?.benchmark ? "Revoir les images conservées" : "Revoir les captures"}</h3>
         <div className="review-navigation">
           <button className="button secondary" aria-label="Capture précédente" disabled={locked || index <= 0} onClick={() => void selectSample(samples[index - 1])}>←</button>
           <span className="review-count" aria-live="polite">Capture {Math.max(0, index + 1)} / {samples.length}</span>
@@ -220,6 +230,10 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
         </div>}
         <p className="review-context">{selected.selectedWindow ? `Fenêtre : ${selected.selectedWindow.appName}` : "Région de l’écran"} · {new Date(selected.capturedAt).toLocaleTimeString("fr-FR")}{selected.fallbackReason ? ` · Repli : ${selected.fallbackReason}` : ""}</p>
         {selected.signalUsed && <p className="review-context signal-used">Signal utilisé : <strong>{signalLabels[selected.signalUsed]}</strong>{selected.signalReason ? ` · ${selected.signalReason}` : ""}</p>}
+        {selected.headDiagnostic && (selected.selection === "head" || selected.selection === "hybrid") && <p className="review-context" aria-label="Diagnostic tête de l’image revue">
+          Diagnostic tête : {selected.headDiagnostic.message}
+          {selected.headDiagnostic.rawPoint ? ` · projection avant bornage : (${Math.round(selected.headDiagnostic.rawPoint.x)}, ${Math.round(selected.headDiagnostic.rawPoint.y)}) px logiques` : ""}
+        </p>}
         {selected.windowFallbackReason && <p className="warning-text">{selected.windowFallbackReason}</p>}
         {!selected.benchmark && <div className="review-annotation" aria-label="Présence de la cible dans cette capture">
           <span>La cible regardée est-elle dans la région ?</span>

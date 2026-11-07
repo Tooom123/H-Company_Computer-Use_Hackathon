@@ -22,6 +22,7 @@ export class ObservationSession {
     this.now = now;
     this.wait = wait;
     this.samples = [];
+    this.scores = [];
     this.bytes = 0;
     this.controller = null;
     this.finished = Promise.resolve();
@@ -32,11 +33,11 @@ export class ObservationSession {
   start(input) {
     const options = validateObservationOptions(input);
     if (this.active) throw new Error('Une observation est déjà en cours.');
-    this.samples = []; this.bytes = 0;
+    this.samples = []; this.scores = []; this.bytes = 0;
     const controller = new AbortController();
     this.controller = controller;
     this.state = { status: 'running', sampleCount: 0, startedAt: new Date().toISOString(), durationSeconds: options.durationSeconds, intervalMs: 1000,
-      ...(options.benchmark ? { benchmark: { seed: options.seed } } : {}) };
+      ...(options.benchmark ? { benchmark: { seed: options.seed }, capturedCount: 0, discardedImageCount: 0 } : {}) };
     this.publish();
     this.finished = this.run(controller, options);
   }
@@ -58,9 +59,28 @@ export class ObservationSession {
         // Conservative UTF-16 estimate; base64 strings dominate the retained memory.
         const bytes = [frame.detail, frame.global, frame.reference]
           .reduce((total, image) => total + (image?.dataUrl?.length ?? 0) * 2, 1024);
-        if (this.bytes + bytes > this.maxBytes) { this.state.stopReason = 'memory-limit'; break; }
-        this.samples.push({ frame, annotation: null });
-        this.bytes += bytes;
+        if (options.benchmark) {
+          // Keep every completed measurement, independently of the PNG review cache.
+          // Large full-screen fallbacks must not shorten the experimental condition.
+          if (frame.benchmark) this.scores.push({ ...frame.benchmark,
+            frameId: frame.frameId, capturedAt: frame.capturedAt,
+            fallbackReason: frame.fallbackReason, headDiagnostic: frame.headDiagnostic,
+            headAgeMs: frame.headAgeMs, preparationMs: frame.preparationMs,
+            calibrationProfile: frame.calibrationProfile });
+          this.state.capturedCount += 1;
+          if (bytes <= this.maxBytes) {
+            while (this.samples.length && this.bytes + bytes > this.maxBytes) {
+              this.bytes -= this.samples.shift().bytes;
+            }
+            this.samples.push({ frame, annotation: null, bytes });
+            this.bytes += bytes;
+          }
+          this.state.discardedImageCount = this.state.capturedCount - this.samples.length;
+        } else {
+          if (this.bytes + bytes > this.maxBytes) { this.state.stopReason = 'memory-limit'; break; }
+          this.samples.push({ frame, annotation: null, bytes });
+          this.bytes += bytes;
+        }
         this.state.sampleCount = this.samples.length;
         this.publish();
         nextAt += this.state.intervalMs;
@@ -88,13 +108,14 @@ export class ObservationSession {
     }
     await this.finished;
   }
+  benchmarkScores() { return [...this.scores]; }
   list() {
     return this.samples.map(({ frame: f, annotation }) => ({
       frameId: f.frameId, capturedAt: f.capturedAt, cropRect: { ...f.cropRect },
       sourceWidth: f.sourceWidth, sourceHeight: f.sourceHeight, preparationMs: f.preparationMs,
       gazeAgeMs: f.gazeAgeMs, fallbackReason: f.fallbackReason, regionDisposition: f.regionDisposition,
       selectedWindow: f.selectedWindow, annotation,
-      signalUsed: f.signalUsed, signalReason: f.signalReason, headAgeMs: f.headAgeMs,
+      signalUsed: f.signalUsed, signalReason: f.signalReason, headAgeMs: f.headAgeMs, headDiagnostic: f.headDiagnostic,
       benchmark: f.benchmark, calibrationProfile: f.calibrationProfile,
     }));
   }
@@ -111,7 +132,7 @@ export class ObservationSession {
   }
   clear() {
     if (this.active) throw new Error('Arrêtez l’observation avant de l’effacer.');
-    this.samples = []; this.bytes = 0;
+    this.samples = []; this.scores = []; this.bytes = 0;
     this.state = { status: 'idle', sampleCount: 0, startedAt: null, durationSeconds: 30, intervalMs: 1000 };
     this.publish();
   }

@@ -123,7 +123,7 @@ export function evaluateTargetFrame({ target, bounds, source, cropRect, presente
     presentedAt: presentedAt ?? null, selectionAt, captureCompletedAt, settleMs };
 }
 
-/** @typedef {ReturnType<typeof evaluateTargetFrame>} TargetScore */
+/** @typedef {ReturnType<typeof evaluateTargetFrame> & {fallbackReason?:string|null}} TargetScore */
 /** @param {TargetScore[]} scores */
 function counts(scores) {
   const scored = scores.filter(score => score.scorable);
@@ -151,7 +151,11 @@ function counts(scores) {
 export function summarizeTargetScores(scores) {
   const group = key => Object.fromEntries([...new Set(scores.map(score => score[key]))]
     .map(value => [value, counts(scores.filter(score => score[key] === value))]));
-  return { ...counts(scores), byMode: group('mode'), bySignal: group('signalUsed'),
+  const fallbacks = scores.filter(score => score.fullFallback);
+  const reasons = [...new Set(fallbacks.map(score => score.fallbackReason || 'Motif non enregistré'))];
+  const fallbackReasons = Object.fromEntries(reasons.map(reason => [reason,
+    fallbacks.filter(score => (score.fallbackReason || 'Motif non enregistré') === reason).length]));
+  return { ...counts(scores), byMode: group('mode'), bySignal: group('signalUsed'), fallbackReasons,
     edge: counts(scores.filter(score => score.target.zone === 'edge')),
     interior: counts(scores.filter(score => score.target.zone === 'interior')) };
 }

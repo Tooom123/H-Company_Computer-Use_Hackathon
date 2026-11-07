@@ -314,7 +314,8 @@ export default function App() {
   const calibrationLabel = settings.selection === "head" ? "Calibrer la tête"
     : settings.selection === "hybrid" ? "Calibrer les yeux et la tête" : "Activer le regard et calibrer";
   const headStatus = requiresHead || tracker.headCalibrated
-    ? tracker.headMessage || (tracker.headCalibrated ? "Tête calibrée" : "Tête non calibrée")
+    ? [tracker.headMessage || (tracker.headCalibrated ? "Tête calibrée" : "Tête non calibrée"),
+      live?.head?.available && live.head.mappingReason !== "valid" ? live.head.mappingMessage : null].filter(Boolean).join(" · ")
     : undefined;
   const headAngles = live?.head?.available
     ? `Orientation approximative : rotation ${degrees(live.head.yaw)} · haut/bas ${degrees(live.head.pitch)} · inclinaison ${degrees(live.head.roll)}`
@@ -753,6 +754,10 @@ export default function App() {
               {frame?.headAgeMs != null ? ` · âge de la tête : ${milliseconds(frame.headAgeMs)}` : ""}
             </p>
             {frame?.signalUsed && <p className="coordinates-note signal-used">Signal utilisé : <strong>{selectionLabels[frame.signalUsed]}</strong>{frame.signalReason ? ` · ${frame.signalReason}` : ""}</p>}
+            {frame?.headDiagnostic && (frame.selection === "head" || frame.selection === "hybrid") && <p className="coordinates-note" aria-label="Diagnostic tête de la capture">
+              Diagnostic tête : {frame.headDiagnostic.message}
+              {frame.headDiagnostic.rawPoint ? ` · projection avant bornage : (${Math.round(frame.headDiagnostic.rawPoint.x)}, ${Math.round(frame.headDiagnostic.rawPoint.y)}) px logiques` : ""}
+            </p>}
             {frame?.requestedRegion && (
               <p className="coordinates-note requested-region">
                 Région demandée pour cette capture : {number(frame.requestedRegion.width)} × {number(frame.requestedRegion.height)} px

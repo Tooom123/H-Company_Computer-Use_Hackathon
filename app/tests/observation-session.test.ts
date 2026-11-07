@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ObservationSession, validateObservationOptions } from '../electron/observation-session.mjs';
+import { evaluateTargetFrame, summarizeTargetScores } from '../electron/target-benchmark.mjs';
 
 function wait(ms: number, signal: AbortSignal) {
   return new Promise<undefined>((resolve, reject) => {
@@ -72,6 +73,56 @@ it('bounds retained image memory and reports the reason', async () => {
   await vi.advanceTimersByTimeAsync(5000);
   await session.finished;
   expect(session.state).toMatchObject({ status: 'stopped', stopReason: 'memory-limit', sampleCount: 1 });
+});
+
+it.each([30, 60])('finishes a %s-second benchmark with bounded images and every score, including evicted full-screen fallbacks', async durationSeconds => {
+  const capture = vi.fn(async () => {
+    const captured = frame();
+    const fullFallback = serial % 2 === 1;
+    if (fullFallback) captured.cropRect = { x: 0, y: 0, width: 1470, height: 956 };
+    return { ...captured, fallbackReason: fullFallback ? 'Projection tête hors écran' : null,
+      headDiagnostic: { reason: fullFallback ? 'outside-screen' : 'valid', message: 'Diagnostic test' },
+      headAgeMs: 6, calibrationProfile: 'wide', benchmark: evaluateTargetFrame({
+      target: { id: `target-${serial}`, index: serial, seed: '42', x: 300, y: 300, radius: 12, zone: 'interior' },
+      bounds: { width: 1470, height: 956 }, source: { width: 1470, height: 956 }, cropRect: captured.cropRect,
+      presentedAt: 0, selectionAt: 1000, captureCompletedAt: 1100, stable: true,
+      mode: 'head', signalUsed: fullFallback ? 'full' : 'head', regionDisposition: fullFallback ? 'full-fallback' : 'crop',
+    }) };
+  });
+  const session = make({ capture, maxBytes: 2200 });
+  session.start({ ...options, durationSeconds, benchmark: true, seed: 42 });
+  await vi.advanceTimersByTimeAsync(3001 + durationSeconds * 1000);
+  await session.finished;
+  expect(session.state).toMatchObject({ status: 'stopped', stopReason: 'duration', sampleCount: 2,
+    capturedCount: durationSeconds, discardedImageCount: durationSeconds - 2 });
+  expect(session.bytes).toBeLessThanOrEqual(2200);
+  expect(session.list().map(item => item.frameId)).toEqual([`test-${durationSeconds - 1}`, `test-${durationSeconds}`]);
+  expect(() => session.select('test-1')).toThrow('introuvable');
+  expect(session.select(`test-${durationSeconds}`).detail.dataUrl).toBe('local-detail');
+  expect(summarizeTargetScores(session.benchmarkScores())).toMatchObject({ total: durationSeconds, scored: durationSeconds,
+    fullHits: durationSeconds, fullFallbacks: durationSeconds / 2, croppedScored: durationSeconds / 2,
+    fallbackReasons: { 'Projection tête hors écran': durationSeconds / 2 } });
+  expect(session.benchmarkScores()[0]).toMatchObject({ frameId: 'test-1', headAgeMs: 6, calibrationProfile: 'wide',
+    headDiagnostic: { reason: 'outside-screen' }, preparationMs: expect.any(Number) });
+  expect(JSON.stringify(session.benchmarkScores())).not.toContain('local-detail');
+  session.clear();
+  expect(session.benchmarkScores()).toEqual([]);
+  expect(session.bytes).toBe(0);
+});
+
+it('keeps benchmark measurements when even one frame exceeds the review budget and clears them on restart', async () => {
+  const session = make({ maxBytes: 100, capture: async () => ({ ...frame(), benchmark: { scorable: false, reason: 'transition' } }) });
+  session.start({ ...options, benchmark: true, seed: 42 });
+  await vi.advanceTimersByTimeAsync(18001);
+  await session.finished;
+  expect(session.state).toMatchObject({ stopReason: 'duration', capturedCount: 15, sampleCount: 0, discardedImageCount: 15 });
+  expect(session.benchmarkScores()).toHaveLength(15);
+  expect(session.list()).toEqual([]);
+  expect(session.bytes).toBe(0);
+  session.start({ ...options, benchmark: true, seed: 42 });
+  expect(session.benchmarkScores()).toEqual([]);
+  expect(session.state).toMatchObject({ capturedCount: 0, discardedImageCount: 0 });
+  await session.stop();
 });
 
 it('stops on capture failure instead of silently sampling errors forever', async () => {

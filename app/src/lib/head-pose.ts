@@ -8,6 +8,8 @@
  */
 export type HeadPose = { yaw: number; pitch: number; roll: number };
 export type ScreenPoint = { x: number; y: number };
+export type HeadPredictionReason = 'uncalibrated' | 'invalid-pose' | 'outside-calibration-domain' | 'outside-screen' | 'valid';
+export type HeadPredictionResult = { point: ScreenPoint | null; reason: HeadPredictionReason; rawPoint?: ScreenPoint };
 export type HeadCalibrationResult = { ready: boolean; reason?: string; sampleCount: number };
 type Vector = [number, number, number];
 type Label = { pose: HeadPose; target: ScreenPoint };
@@ -135,22 +137,30 @@ export class HeadScreenMapper {
     return { ready: true, sampleCount: this.labels.length };
   }
 
-  predict(pose: HeadPose): ScreenPoint | null {
+  predictWithDiagnostics(pose: HeadPose): HeadPredictionResult {
     const model = this.model;
-    if (!model || !validPose(pose)) return null;
+    if (!model) return { point: null, reason: 'uncalibrated' };
+    if (!validPose(pose)) return { point: null, reason: 'invalid-pose' };
     const values = [pose.yaw, pose.pitch];
+    const features: Vector = [1, (pose.yaw - model.center[0]) / model.scale[0], (pose.pitch - model.center[1]) / model.scale[1]];
+    const x = dot(model.x as Vector, features) * model.width;
+    const y = dot(model.y as Vector, features) * model.height;
+    // Keep finite, unclamped coordinates for diagnosis, including predictions
+    // rejected below. These must never be used as a valid selection point.
+    const raw = Number.isFinite(x) && Number.isFinite(y) ? { rawPoint: { x, y } } : {};
     // Do not extrapolate arbitrary pointing from a head turn never calibrated.
     if (values.some((value, axis) => {
       const margin = Math.max(1, (model.max[axis] - model.min[axis]) * 0.2);
       return value < model.min[axis] - margin || value > model.max[axis] + margin;
-    })) return null;
-    const features: Vector = [1, (pose.yaw - model.center[0]) / model.scale[0], (pose.pitch - model.center[1]) / model.scale[1]];
-    const x = dot(model.x as Vector, features) * model.width;
-    const y = dot(model.y as Vector, features) * model.height;
+    })) return { point: null, reason: 'outside-calibration-domain', ...raw };
     // A modest edge margin is allowed, then clamped. Larger departures are lost.
-    if (!Number.isFinite(x) || !Number.isFinite(y) || x < -0.1 * model.width || x > 1.1 * model.width || y < -0.1 * model.height || y > 1.1 * model.height) return null;
-    return { x: Math.max(0, Math.min(model.width - 1, x)), y: Math.max(0, Math.min(model.height - 1, y)) };
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < -0.1 * model.width || x > 1.1 * model.width || y < -0.1 * model.height || y > 1.1 * model.height) {
+      return { point: null, reason: 'outside-screen', ...raw };
+    }
+    return { point: { x: Math.max(0, Math.min(model.width - 1, x)), y: Math.max(0, Math.min(model.height - 1, y)) }, reason: 'valid', ...raw };
   }
+
+  predict(pose: HeadPose): ScreenPoint | null { return this.predictWithDiagnostics(pose).point; }
 
   reset(): void { this.labels = []; this.model = null; }
 }

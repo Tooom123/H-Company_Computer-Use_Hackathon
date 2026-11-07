@@ -20,6 +20,7 @@ async function installFixture(page: Page, keyConfigured = true) {
           captureSettings: Array<Record<string, unknown>>;
           observationOptions: Record<string, unknown> | null;
           finishObservation: () => void;
+          keepObservationImages: (count: number) => void;
           selectedObservations: string[];
           annotationCalls: Array<{ frameId: string; label: string }>;
           trackerStartCalls: number;
@@ -55,6 +56,7 @@ async function installFixture(page: Page, keyConfigured = true) {
       const configurationResolvers: Array<() => void> = [];
       let resolveInference: ((value: any) => void) | null = null;
       let observationFrames: any[] = [];
+      let observationRetentionLimit: number | null = null;
       const listeners = new Set<(value: any) => void>();
       const emit = () =>
         listeners.forEach((listener) => listener(structuredClone(state)));
@@ -145,6 +147,7 @@ async function installFixture(page: Page, keyConfigured = true) {
         setTrackerState: next => { state.tracker = { state: next }; emit(); },
         setTrackerDetails: details => { state.tracker = { ...state.tracker, ...details }; emit(); },
         useHeadFallback: () => { headFallback = true; },
+        keepObservationImages: count => { observationRetentionLimit = count; },
         finishObservation: () => {
           observationFrames = [1, 2].map(index => ({
             frameId: `observed-fixture-${index}`,
@@ -157,6 +160,7 @@ async function installFixture(page: Page, keyConfigured = true) {
             signalUsed: headFallback ? "head" : state.settings.selection,
             signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
             headAgeMs: headFallback ? 45 : null,
+            headDiagnostic: headFallback ? { reason: "valid", message: "Projection de tête valide", rawPoint: { x: 480.4, y: 320.3 } } : undefined,
             selectedWindow: { id: 7, appName: "Odoo · fixture", bounds: { x: 0, y: 0, width: 1200, height: 800 } },
             reference: makeImage(960, 600), detail: makeImage(state.settings.roiWidth, state.settings.roiHeight),
             global: state.settings.includeGlobal ? makeImage(480, 300) : null,
@@ -183,7 +187,11 @@ async function installFixture(page: Page, keyConfigured = true) {
                 benchmark: { ...score, scorable: false, reason: "transition", centerContained: null, fullContained: null, selectionAt: 300 } },
             ];
             state.observation.benchmark = { seed };
-            state.observation.benchmarkSummary = { ...total, byMode: {[state.settings.selection]: total}, bySignal: {}, edge: total, interior: zero };
+            state.observation.benchmarkSummary = { ...total, byMode: {[state.settings.selection]: total}, bySignal: {}, edge: total, interior: zero,
+              fallbackReasons: { 'Signal absent : plein écran': 1 } };
+            state.observation.capturedCount = observationFrames.length;
+            if (observationRetentionLimit !== null) observationFrames = observationRetentionLimit > 0 ? observationFrames.slice(-observationRetentionLimit) : [];
+            state.observation.discardedImageCount = state.observation.capturedCount - observationFrames.length;
           }
           state.observation = { ...state.observation, status: "stopped", sampleCount: observationFrames.length, stopReason: "duration" };
           emit();
@@ -294,7 +302,7 @@ async function installFixture(page: Page, keyConfigured = true) {
           fixtureWindow.__labFixture.observationOptions = { ...options, settings: structuredClone(state.settings) };
           observationFrames = [];
           latestFrame = null;
-          state.observation = { ...state.observation, status: "running", sampleCount: 0, startedAt: "2026-11-07T10:00:00.000Z", durationSeconds: options.durationSeconds, benchmark: options.benchmark ? {seed: options.seed} : undefined, benchmarkSummary: undefined };
+          state.observation = { ...state.observation, status: "running", sampleCount: 0, startedAt: "2026-11-07T10:00:00.000Z", durationSeconds: options.durationSeconds, benchmark: options.benchmark ? {seed: options.seed} : undefined, benchmarkSummary: undefined, capturedCount: 0, discardedImageCount: 0 };
           emit();
         },
         stopObservation: async () => { fixtureWindow.__labFixture.finishObservation(); },
@@ -313,7 +321,7 @@ async function installFixture(page: Page, keyConfigured = true) {
         clearObservations: async () => {
           observationFrames = [];
           latestFrame = null;
-          state.observation = { ...state.observation, status: "idle", sampleCount: 0, benchmark: undefined, benchmarkSummary: undefined };
+          state.observation = { ...state.observation, status: "idle", sampleCount: 0, benchmark: undefined, benchmarkSummary: undefined, capturedCount: 0, discardedImageCount: 0 };
           emit();
         },
       };
@@ -347,6 +355,7 @@ test("scores a seeded target session separately from full-screen fallback and ke
   await expect(score).toContainText("2 / 2 (100 %)");
   await expect(score).toContainText("1 / 1 (100 %)");
   await expect(score).toContainText("dont 1 repli(s)");
+  await expect(page.getByLabel("Causes des replis plein écran")).toContainText("1 capture(s) : Signal absent : plein écran");
   await expect(score).toContainText("55 %");
   await expect(score).toContainText("1 capture(s) exclue(s)");
   await expect(score).toContainText("Bords étendus");
@@ -374,6 +383,31 @@ test("rejects invalid target sequence numbers before starting a session", async 
   await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
   await expect(page.getByRole("alert")).toContainText("numéro de parcours entier");
   expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
+
+for (const retained of [0, 1]) test(`keeps all benchmark metrics visible when only ${retained} review image remains`, async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.evaluate(count => (window as any).__labFixture.keepObservationImages(count), retained);
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("checkbox", {name: "Cible rouge — score automatique"}).check();
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await page.getByRole("button", {name: "Arrêter l’observation"}).click();
+  await expect(page.getByRole("status").filter({hasText: "Durée écoulée"})).toContainText(`3 captures analysées / ${retained} images conservées`);
+  await expect(page.getByLabel("Rétention des images")).toContainText(`${3 - retained} image(s) retirée(s)`);
+  const score = page.getByRole("region", {name: "Score automatique de la cible"});
+  await expect(score).toContainText("Score calculé sur les 3 captures du parcours");
+  await expect(score).toContainText("2 / 2 (100 %)");
+  await expect(page.getByLabel("Taux de repli plein écran")).toHaveText("Repli plein écran : 1 / 3 (33 %) de toutes les captures analysées.");
+  await expect(page.getByRole("img", {name: "Région retenue pendant l’essai"})).toHaveCount(retained);
+  if (retained) {
+    await expect(page.getByRole("heading", {name: "Revoir les images conservées"})).toBeVisible();
+    await expect(page.getByRole("button", {name: "Capture suivante"})).toBeDisabled();
+    expect(await page.evaluate(() => (window as any).__labFixture.selectedObservations)).toEqual(["observed-fixture-3"]);
+  }
+  await page.getByRole("button", {name: "Effacer cet essai local"}).click();
+  await expect(score).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
 });
 
 test("starts a local hidden-panel observation with applied dimensions and locks competing actions", async ({ page }) => {
@@ -466,6 +500,7 @@ test("reports the actual head fallback separately from requested hybrid selectio
   await card.getByRole("button", {name: "Observer et masquer le panneau"}).click();
   await card.getByRole("button", {name: "Arrêter l’observation"}).click();
   await expect(card.locator(".signal-used")).toHaveText("Signal utilisé : Tête · Regard indisponible : tête seule utilisée.");
+  await expect(card.getByLabel("Diagnostic tête de l’image revue")).toHaveText("Diagnostic tête : Projection de tête valide · projection avant bornage : (480, 320) px logiques");
   await expect(page.getByRole("radio", {name: "Regard + tête", exact: true})).toBeChecked();
   await expect(page.getByText("âge de la tête : 45 ms", {exact: false})).toBeVisible();
   expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);

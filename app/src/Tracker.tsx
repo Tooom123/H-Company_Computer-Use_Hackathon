@@ -73,9 +73,11 @@ export default function Tracker() {
     const instance = new WebGazerTracker((sample: GazeSample | null, pose: HeadPose | null) => {
       if (phaseRef.current === 'tracking') {
         const gazePoint = gazeCalibrated.current ? sample : null;
-        const headPoint = pose && headCalibrated.current ? headMapper.current.predict(pose) : null;
+        const headPrediction = pose && headCalibrated.current ? headMapper.current.predictWithDiagnostics(pose)
+          : { point: null, reason: 'uncalibrated' as const };
+        const headPoint = headPrediction.point;
         window.companion.reportGaze(gazePoint);
-        window.companion.reportHead(pose ? { point: headPoint, pose, emittedAt: Date.now() } : null);
+        window.companion.reportHead(pose ? { ...headPrediction, pose, emittedAt: Date.now() } : null);
         const state = gazePoint || headPoint ? 'tracking' : 'lost';
         if (state !== lastReportedTracking.current) {
           lastReportedTracking.current = state;

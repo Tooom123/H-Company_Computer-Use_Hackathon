@@ -8,6 +8,11 @@ const head = { point: { x: 800, y: 500 }, pose: { yaw: 10, pitch: -5, roll: 2 },
 const select = (mode: string, patch: Record<string, unknown> = {}) => selectAttention({
   mode, bounds, tracker, gaze, head, cursor: null, now: 10000, ...patch,
 });
+const diagnose = (patch: Record<string, unknown>) => {
+  const result = select('head', patch);
+  if (!('headDiagnostic' in result)) throw new Error('Missing head diagnostic');
+  return result.headDiagnostic;
+};
 
 describe('tracked-signal IPC boundary', () => {
   it('copies only finite in-screen measurements and timestamps receipt in main', () => {
@@ -38,6 +43,28 @@ describe('tracked-signal IPC boundary', () => {
 });
 
 describe('independent head and gaze selection', () => {
+  it('distinguishes a fresh rejected projection from an expired or missing pose', () => {
+    const rejected = acceptHeadSample({ point: null, pose: head.pose,
+      reason: 'outside-calibration-domain', rawPoint: { x: 1300, y: -25 } }, bounds, 9994);
+    const result = select('head', { head: rejected });
+    expect(result).toMatchObject({ signalUsed: 'full', headAgeMs: 6,
+      headDiagnostic: { reason: 'outside-calibration-domain', rawPoint: { x: 1300, y: -25 } } });
+    expect(result.fallbackReason).not.toContain('ancienne');
+    expect(diagnose({ head: { ...rejected, receivedAt: 8000 } }).reason).toBe('stale');
+    expect(diagnose({ head: null }).reason).toBe('no-pose');
+    expect(diagnose({ tracker: { ...tracker, headCalibrated: false } }).reason).toBe('uncalibrated');
+    rejected!.rawPoint!.x = 1;
+    if (!('headDiagnostic' in result)) throw new Error('Missing head diagnostic');
+    expect(result.headDiagnostic.rawPoint.x).toBe(1300);
+  });
+
+  it('accepts only enumerated diagnostics and finite raw coordinates at the IPC boundary', () => {
+    const packet = acceptHeadSample({ ...head, reason: 'arbitrary', rawPoint: { x: Infinity, y: 1 } }, bounds, 9994)!;
+    expect(packet).not.toHaveProperty('reason');
+    expect(packet).not.toHaveProperty('rawPoint');
+    expect(diagnose({ head: { ...packet, point: null } }).reason).toBe('point-rejected');
+    expect(diagnose({ head: { ...packet, point: null, reason: 'outside-screen' } }).reason).toBe('outside-screen');
+  });
   it('uses the requested signal and maps local points to the display origin', () => {
     expect(select('gaze')).toMatchObject({ point: { x: -1000, y: 400 }, signalUsed: 'gaze', gazeAgeMs: 500, headAgeMs: 100, fallbackReason: null });
     expect(select('head')).toMatchObject({ point: { x: -400, y: 600 }, signalUsed: 'head', fallbackReason: null });

@@ -54,7 +54,7 @@ const observation = new ObservationSession({
     } finally { operation = null; }
   },
   onChange: status => { state.observation = { ...status,
-    ...(status.benchmark ? { benchmarkSummary: summarizeTargetScores(observation.list().map(sample => sample.benchmark).filter(Boolean)) } : {}) }; broadcast(); },
+    ...(status.benchmark ? { benchmarkSummary: summarizeTargetScores(observation.benchmarkScores()) } : {}) }; broadcast(); },
   onFinish: () => { targets.stop(); setOverlayVisibility(); showPanel(); },
 });
 state.observation = { ...observation.state };

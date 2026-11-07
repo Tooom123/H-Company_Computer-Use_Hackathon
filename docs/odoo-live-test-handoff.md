@@ -1,8 +1,19 @@
 # Odoo — préparation du terrain et essais Vision Lab
 
-État de ce document : 7 novembre 2026, Europe/Paris. Il prépare la demande à l’agent qui connaît Netcup ; il ne constitue pas une preuve de déploiement. Aucune connexion au serveur ni modification d’infrastructure n’a été effectuée pour le rédiger.
+État de ce document : 7 novembre 2026, Europe/Paris. **Le handoff de l’agent Netcup rapporte maintenant une instance déployée, une connexion Chrome sur le Mac vérifiée et deux recettes métier réussies.** Ce résumé reprend ses contrôles ; aucune connexion au serveur, commande SSH ou lecture de fichier secret n’a été effectuée pour cette mise à jour.
 
 Source lue intégralement : `/Users/edouardfoussier/code/deja-bu/out/bruxelles-convergence/docs/passation-hackathon-holo-odoo-2026-11-07.md`.
+
+## État livré rapporté par l’agent Netcup
+
+- **Accès Mac testé :** [http://holo.localhost:18090/web/login](http://holo.localhost:18090/web/login), via le tunnel privé décrit dans le handoff source. La session déjà connectée a été relue par l’agent H-Companion le 7 novembre : catalogue 10/8/6, fiche Gingembre 10 €, disponible/prévu 10/10, acheté/à recevoir 0/0. Aucune modification métier ni accès public supplémentaire.
+- **Premier test Vision Lab, lecture seule :** Inventaire → Produits → Produits, rechercher `HACK-GING-033`, ouvrir **Holo Gingembre 33 cl** et regarder le prix **10 €**, puis le stock **10 unités** après reset. La fiche produit est en lecture seule pour `holo-demo`. Ouvrir ensuite **Fournisseur Holo Démo** depuis Achats. Ces écrans ont été vérifiés par l’autre agent.
+- **Recette métier exécutée deux fois :** une commande de **6 × 4 € = 24 €**, réception de **4**, création du reliquat de **2**, puis réception des deux restantes. Les stocks **10 → 14 → 16**, une commande unique et deux réceptions liées ont été vérifiés indépendamment ; Pomme **8** et Hibiscus **6** sont restés inchangés.
+- **État après reset final à 18:38:19 :** Gingembre **10**, Pomme **8**, Hibiscus **6**, sans commande ; le prix Gingembre reste **10 €**. Les passages `HACK-RUN-001` et `HACK-RUN-002` sont déjà utilisés : convenir du prochain identifiant avec l’opérateur avant un essai métier.
+
+Les actions de recette ont été réalisées par **Codex dans l’interface Chrome**, avec préparation et vérification par scripts/ORM. **Aucun passage autonome Holo ni résultat de suivi du regard sur Odoo n’est démontré par cette recette.** Commencer par les lectures Vision Lab, puis tester séparément la boucle d’actions Holo. Les identifiants restent dans les fichiers privés référencés par le handoff source ; aucun secret n’est recopié ici.
+
+La demande et la checklist de déploiement ci-dessous sont conservées comme **historique de préparation** ; ne pas redéployer ni réinitialiser l’instance pour les seuls tests en lecture seule. Pour un reset, suivre le handoff livré : arrêter les actions, déconnecter toutes les sessions Odoo et libérer le passage réservé avant la restauration.
 
 ## Répartition proposée
 

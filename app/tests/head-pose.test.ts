@@ -121,4 +121,39 @@ describe('separate head-to-screen calibration', () => {
     for (const target of targets) for (let i = 0; i < 5; i += 1) narrow.addSample(poseFor(target), { x: 400 + target.x / 10, y: 300 + target.y / 10 });
     expect(narrow.fit(screen)).toMatchObject({ ready: false, reason: expect.stringContaining('couvrir') });
   });
+
+  it('distinguishes an uncalibrated model, invalid pose and departure from the learned domain', () => {
+    const mapper = new HeadScreenMapper();
+    expect(mapper.predictWithDiagnostics(neutral)).toEqual({ point: null, reason: 'uncalibrated' });
+    train(mapper);
+    expect(mapper.fit(screen).ready).toBe(true);
+    expect(mapper.predictWithDiagnostics({ ...neutral, yaw: NaN })).toEqual({ point: null, reason: 'invalid-pose' });
+    expect(mapper.predictWithDiagnostics({ ...neutral, yaw: 80 })).toEqual({ point: null, reason: 'invalid-pose' });
+    const outside = mapper.predictWithDiagnostics({ ...neutral, yaw: 40 });
+    expect(outside).toMatchObject({ point: null, reason: 'outside-calibration-domain' });
+    expect(outside.rawPoint?.x).toBeGreaterThan(screen.width);
+    expect(outside.rawPoint?.y).toBeCloseTo(screen.height / 2);
+    expect(mapper.predict({ ...neutral, yaw: 40 })).toBeNull();
+  });
+
+  it('reports a fresh valid pose projecting offscreen separately from domain rejection, without relaxing thresholds', () => {
+    const mapper = new HeadScreenMapper();
+    const extent = { width: 1470, height: 956 };
+    const wideTargets = [{ x: 735, y: 478 }, { x: 48, y: 48 }, { x: 1422, y: 48 }, { x: 1422, y: 908 }, { x: 48, y: 908 }];
+    // A valid but high-gain fit: four degrees span almost the entire screen.
+    for (const target of wideTargets) for (let i = 0; i < 5; i += 1) {
+      mapper.addSample({ yaw: (target.x - 735) / 343.5, pitch: (target.y - 478) / 215, roll: 0 }, target);
+    }
+    expect(mapper.fit(extent).ready).toBe(true);
+    const offscreen = mapper.predictWithDiagnostics({ ...neutral, yaw: 2.6 });
+    expect(offscreen).toMatchObject({ point: null, reason: 'outside-screen' });
+    expect(offscreen.rawPoint?.x).toBeGreaterThan(extent.width * 1.1);
+    expect(mapper.predict({ ...neutral, yaw: 2.6 })).toBeNull();
+
+    const clamped = mapper.predictWithDiagnostics({ ...neutral, yaw: 2.2 });
+    expect(clamped).toMatchObject({ point: { x: extent.width - 1 }, reason: 'valid' });
+    expect(clamped.rawPoint?.x).toBeGreaterThan(extent.width);
+    expect(mapper.predict({ ...neutral, yaw: 2.2 })).toEqual(clamped.point);
+    expect(mapper.predictWithDiagnostics(neutral)).toMatchObject({ point: { x: 735, y: 478 }, reason: 'valid', rawPoint: { x: 735, y: 478 } });
+  });
 });

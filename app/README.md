@@ -82,8 +82,9 @@ sur les cibles de validation, mais n’ajuste pas encore automatiquement la tail
    chevauchement ni rattrapage des captures lentes. Le contour est désactivé par défaut pour
    ne pas attirer le regard. Le panneau revient automatiquement à la fin.
 4. **⌘⇧Espace** (Ctrl+Maj+Espace hors Mac) arrête l’essai et rappelle le panneau. Le rappel
-   de l’application depuis le Dock arrête aussi l’observation. Une erreur de capture ou la
-   limite de mémoire interrompt la session et restaure le panneau.
+   de l’application depuis le Dock arrête aussi l’observation. Une erreur de capture
+   interrompt la session et restaure le panneau. Hors test cible automatique, la limite
+   de mémoire interrompt aussi la session pour conserver toutes les images à annoter.
 5. Revoir les captures avec **Précédente / Suivante** : écran de référence avec rectangle,
    crop exact, fenêtre choisie et coordonnées. Annoter **Cible présente**, **Cible absente**
    ou **Impossible à juger**, selon la cible définie avant la séquence. Le taux affiché porte
@@ -94,6 +95,12 @@ son aperçu global éventuel. L’image de référence destinée à la revue (la
 1 024 px) reste locale et n’entre jamais dans le payload. Les observations restent en mémoire,
 avec un budget de conservation de 64 Mio (pas un plafond de RAM du processus). **Effacer**
 ou démarrer un nouvel essai remplace cette série : terminer les annotations avant la suite.
+En **test cible automatique**, les scores de toutes les captures restent conservés jusqu’à
+la fin de la durée choisie ; seules les images les plus anciennes sont retirées lorsque le
+cache atteint son plafond. Le panneau distingue captures analysées et images encore
+consultables. Ainsi, des replis plein écran plus volumineux ne raccourcissent pas le test.
+Les causes des replis restent comptabilisées sur tout le parcours ; diagnostics, âges des
+signaux et temps de préparation restent dans le journal léger même après retrait du PNG.
 
 Le repérage des fenêtres respecte leur ordre devant/derrière au point sélectionné. Il ne
 reconstitue pas les parties masquées : le crop contient les pixels réellement visibles,
@@ -135,6 +142,13 @@ par les yeux. Chaque source expire après 1 500 ms depuis la réception ; les an
 landmarks conservés par WebGazer après perte du visage sont rejetés, pas redatés.
 
 La revue expose `signalUsed`, `signalReason` et `headAgeMs` en plus du mode demandé.
+Le diagnostic tête distingue absence de pose, expiration, absence de calibration,
+orientation hors du domaine appris et projection trop éloignée de l’écran. La projection
+avant bornage est affichée en pixels logiques lorsqu’elle existe. Les seuils restent
+inchangés : un signal récent peut être rejeté si son mapping vers l’écran est inexploitable.
+La médiane de validation est conditionnelle aux prédictions disponibles : la collecte
+attend des prédictions valides, sans compter les absences dans l’erreur en pixels. Lire
+le taux de repli du benchmark séparément ; une petite médiane ne garantit pas la disponibilité.
 Les angles et les données de calibration restent locaux et temporaires. Aucune image
 webcam ni mesh n’est transmis à Holo. Aucun gain de précision n’est encore établi :
 comparer des parcours annotés à taille de région, cadre de fenêtre et tâche identiques.
@@ -167,7 +181,7 @@ décrit dans la [documentation de calibration Tobii](https://www.developer.tobii
    coins, quatre bords et quatre points intérieurs, avec une petite variation reproductible.
    La cible ne bouge jamais pendant une capture. Une capture lente peut allonger un palier :
    le numéro reproduit les positions, pas une chronologie matérielle exacte.
-5. Après retour du panneau, relever **cible entière · images recadrées seules**, **images
+5. Après retour du panneau, relever **cible entière · captures recadrées seules**, **captures
    plein écran**, **surface conservée**, **captures exclues** et le détail bords/intérieur.
    Refaire avec le même parcours, taille, cadre et durée dans les trois modes. Noter les
    résultats avant le prochain essai, qui remplace la série conservée en mémoire.
@@ -189,6 +203,34 @@ faire 100 % sans économiser quoi que ce soit ; son score est donc séparé de c
 La surface conservée ne mesure ni tokens, ni latence Holo, ni réussite métier. Aucun appel
 Holo n’est déclenché par ce test. Le contrôle positif Écran complet doit couvrir toutes les
 cibles évaluables ; il valide le câblage du score, pas la précision de la webcam.
+
+## Prochaine itération de calibration
+
+**Proposition de recherche, non implémentée.** Remplacer les deux séries de clics par
+une seule séquence qui recueille simultanément les caractéristiques des yeux et de la
+tête, puis apprend leur projection commune vers l’écran. Commencer par des positions
+avec pause ; comparer ensuite une trajectoire fluide couvrant bords et intérieur.
+[Pursuit Calibration (UIST 2013)](https://www.collaborative-ai.org/publications/pfeuffer13_uist/)
+utilise la corrélation entre mouvements oculaires et cible pour retenir les échantillons
+pertinents : cela automatise la calibration, sans la supprimer. Les données et parcours
+du score automatique restent indépendants de cet apprentissage.
+
+Deux candidats à comparer au suivi actuel :
+
+- [MobileGaze](https://github.com/yakhyo/gaze-estimation), avec les
+  [poids ONNX MobileOne-S0 publiés sur Hugging Face par l’auteur](https://huggingface.co/yakhyo/uniface-weights/blob/main/gaze_mobileone_s0.onnx),
+  prédit des angles de regard à partir du visage ;
+- [OpenVINO gaze-estimation-adas-0002](https://docs.openvino.ai/2023.3/omz_models_model_gaze_estimation_adas_0002.html)
+  combine les images des deux yeux et les angles de tête pour produire un vecteur de
+  regard 3D ; son [manifest de poids](https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/intel/gaze-estimation-adas-0002/model.yml)
+  indique Apache-2.0.
+
+Des angles ou un vecteur 3D ne constituent pas directement des coordonnées écran : la
+projection et l’adaptation à l’utilisateur restent à établir et à évaluer. Aucun gain de
+précision, de latence ou de débit n’est annoncé. Le code MobileGaze est MIT, mais ses poids
+sont entraînés sur Gaze360, dont la [licence](https://github.com/erkil1452/gaze360/blob/master/LICENSE.md)
+restreint l’usage à la recherche et exclut les applications commerciales, y compris les
+modèles entraînés sur ces données ; le badge du code ne suffit pas pour distribuer les poids.
 
 ## Ce qui est mesuré
 
