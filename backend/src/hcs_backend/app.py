@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBasic, HTTPBasicCredentials, HTTPBearer
 
 from . import dashboard
+from . import metrics as metrics_mod
 from .autofix import AutoFixer, DevinError
 from .billing import PLANS, BillingNotConfigured, create_checkout
 from .config import Settings
@@ -201,6 +202,15 @@ def create_app(settings: Settings | None = None, store: Store | None = None, fix
     @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Support])
     def dash_index() -> str:
         return dashboard.index_page(groups(), store.list_cases())
+
+    @app.get("/metrics", dependencies=[Support])
+    def get_metrics() -> dict[str, Any]:
+        """Reliability per scenario, real sessions only (simulated ones are counted apart)."""
+        return metrics_mod.compute(store.list_cases())
+
+    @app.get("/dashboard/metrics", response_class=HTMLResponse, dependencies=[Support])
+    def dash_metrics() -> str:
+        return dashboard.metrics_page(metrics_mod.compute(store.list_cases()))
 
     @app.get("/dashboard/groups/{group_id}", response_class=HTMLResponse, dependencies=[Support])
     def dash_group(group_id: str) -> str:

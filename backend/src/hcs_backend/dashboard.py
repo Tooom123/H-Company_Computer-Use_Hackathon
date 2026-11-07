@@ -230,6 +230,53 @@ def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
     return f'<div class="card fixcard"><b>Fix with Devin{sim}</b><dl>{dl}</dl>{ask}{replies}</div>'
 
 
+def _pct(x: float | None) -> str:
+    return "—" if x is None else f"{x * 100:.0f} %"
+
+
+def _num(x: float | None, unit: str = "", digits: int = 1) -> str:
+    return "—" if x is None else f"{x:.{digits}f}{unit}"
+
+
+def metrics_page(m: dict) -> str:
+    """Reliability per scenario: real sessions only, N always shown, no data = '—'."""
+    cols = [("Scenario", None), ("N", "n"), ("Verified success", None), ("Median s / guided step", None),
+            ("Takeover rate", None), ("Median stop latency", None), ("Mean cost", None),
+            ("Median duration", None), ("Mean attempts", None)]
+    head = "".join(f"<th>{escape(c)}</th>" for c, _ in cols)
+
+    def row(name: str, x: dict, bold: bool = False) -> str:
+        cells = [
+            escape(name),
+            str(x["n"]),
+            f'{_pct(x["success_rate"])} <span class="muted">({x["verified"]}/{x["n"]})</span>',
+            f'{_num(x["median_s_per_guided_step"], " s")} <span class="muted">({x["n_guided_steps"]} steps)</span>',
+            f'{_pct(x["takeover_rate"])} <span class="muted">({x["n_guided"]} guided)</span>',
+            f'{_num(x["median_stop_latency_s"], " s", 2)} <span class="muted">({x["n_stops"]} stops)</span>',
+            "—" if x["mean_cost_usd"] is None else f'${x["mean_cost_usd"]:.2f}',
+            _num(x["median_duration_s"], " s", 0),
+            _num(x["mean_attempts"], "", 1),
+        ]
+        style = ' style="font-weight:700;border-top:2px solid var(--line)"' if bold else ""
+        return "<tr>" + "".join(f"<td{style}>{c}</td>" for c in cells) + "</tr>"
+
+    rows = "".join(row(k, v) for k, v in m["scenarios"].items())
+    if m["scenarios"]:
+        rows += row("All scenarios", m["overall"], bold=True)
+    else:
+        rows = f'<tr><td colspan="{len(cols)}" class="muted">No real session yet: run the scenarios on the demo Mac.</td></tr>'
+    excl = (f"<p class='muted'><b>{m['excluded_simulated']} simulated session(s) excluded.</b></p>"
+            if m["excluded_simulated"] else "")
+    body = (
+        '<p><a href="/dashboard">← Dashboard</a></p><h1>Reliability</h1>'
+        "<p class='sub'>Real sessions only. Success = postcondition observed by the separate verifier, not the "
+        "agent's claim. Guided-step time = seconds to locate and show each step. Takeover = a guided session the "
+        "assistant finished itself. Small N: read as observations, not a benchmark.</p>"
+        + excl + f"<div class='wrap'><table><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table></div>"
+    )
+    return _page("Reliability metrics", body)
+
+
 PHASE_LABEL = {
     "explain": "Explained", "stuck": "Stuck", "takeover": "Takeover", "action": "Agent action",
     "observe": "Agent saw", "verify": "Verifier", "error": "Error", "system": "Detail",
