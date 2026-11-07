@@ -344,32 +344,38 @@ class _ScreenWatcher:
 
 
 class _InputWatcher:
-    """Knows what the user actually did since the step was shown: clicks, typed keys, Enter/Tab."""
+    """Knows what the user actually did since the step was shown: clicks, typed keys, Enter/Tab, Escape.
+    Reads the process-wide InputHub (one event tap for the whole program)."""
 
     def __init__(self) -> None:
         self.armed_at = 0.0
         self.last_click = 0.0
         self.typed = 0
         self.last_submit = 0.0  # Enter or Tab
-        self._listeners = []
+        self.last_key = 0.0  # Escape
+        self._hub = None
         try:
-            from pynput import keyboard, mouse
+            from pynput import keyboard
 
-            def on_click(x, y, button, pressed):
-                if pressed:
-                    self.last_click = time.time()
+            from .inputs import InputHub
 
-            def on_press(key):
-                if key in (keyboard.Key.enter, keyboard.Key.tab):
-                    self.last_submit = time.time()
-                elif getattr(key, "char", None) or key in (keyboard.Key.space, keyboard.Key.backspace):
-                    self.typed += 1
-
-            self._listeners = [mouse.Listener(on_click=on_click), keyboard.Listener(on_press=on_press)]
-            for l in self._listeners:
-                l.start()
+            self._kb = keyboard
+            self._hub = InputHub.get()
+            self._hub.subscribe(self._on_event)
         except Exception as exc:  # noqa: BLE001 - no input monitoring: screen watcher only
             print(f"(input watcher unavailable: {exc})")
+
+    def _on_event(self, event: str, payload) -> None:
+        now = time.time()
+        if event == "click":
+            self.last_click = now
+        elif event == "key_down":
+            if payload in (self._kb.Key.enter, self._kb.Key.tab):
+                self.last_submit = now
+            elif payload == self._kb.Key.esc:
+                self.last_key = now
+            elif getattr(payload, "char", None) or payload in (self._kb.Key.space, self._kb.Key.backspace):
+                self.typed += 1
 
     def arm(self) -> None:
         self.armed_at = time.time()
@@ -379,6 +385,9 @@ class _InputWatcher:
         now = time.time()
         if kind == "wait":  # the agent itself decides when to move on (screen polling)
             return False
+        if kind == "key":  # Escape (or a click outside, which also closes menus)
+            return (self.last_key > self.armed_at or self.last_click > self.armed_at + 0.3) and \
+                now - max(self.last_key, self.last_click) >= settle_s
         if kind == "info":  # read it; any click or Enter moves on, or 9 s pass
             return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or now - self.armed_at > 9
         if kind == "type":
@@ -388,8 +397,8 @@ class _InputWatcher:
         return self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
 
     def stop(self) -> None:
-        for l in self._listeners:
-            l.stop()
+        if self._hub is not None:
+            self._hub.unsubscribe(self._on_event)
 
 
 def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
@@ -586,6 +595,18 @@ def _setup_logging() -> None:
 
     threading.excepthook = thread_hook
     atexit.register(lambda: log.write(f"===== exit {time.strftime('%H:%M:%S')}\n"))
+    import signal
+
+    def on_signal(signum, frame):  # noqa: ARG001
+        log.write(f"===== signal {signal.Signals(signum).name} at {time.strftime('%H:%M:%S')}\n")
+        log.flush()
+        raise KeyboardInterrupt
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        try:
+            signal.signal(sig, on_signal)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def main(argv: list[str] | None = None) -> int:
