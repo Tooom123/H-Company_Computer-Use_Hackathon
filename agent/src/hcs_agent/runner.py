@@ -23,6 +23,7 @@ from typing import Callable
 from .backend import AttemptResult, Backend, PreflightError, VerifyResult
 from .contract import (
     AgentEvent,
+    Annotation,
     ApproveCommand,
     CaseStatus,
     Category,
@@ -277,6 +278,18 @@ class Intervention:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             step = script[i]
             t_step = time.time()
+            if step.action == "info":
+                # Explanation only: ground the annotations, nothing to click.
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
+                                  pointer=None, kind="info", annotations=self._ground_annotations(step, context))
+                self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action",
+                                   summary=f"step {gs.index} (info) shown after {time.time() - t_step:.1f}s"))
+                reply = self._on_guidance(gs)
+                if reply is None:
+                    return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                done_steps.append(step.instruction)
+                i += 1
+                continue
             loc = self._locate_with_retries(step.element, context, tries=1 if step.optional else 3)
             if loc is None or not loc.found:
                 if step.optional:
@@ -291,7 +304,8 @@ class Intervention:
                                   kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
             else:
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
-                                  why=step.why, pointer=loc.screen_xy, kind=step.action, last=False)
+                                  why=step.why, pointer=loc.screen_xy, kind=step.action, last=False,
+                                  annotations=self._ground_annotations(step, context))
             self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action",
                                summary=f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}"))
             reply = self._on_guidance(gs)
@@ -307,6 +321,20 @@ class Intervention:
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
+
+    def _ground_annotations(self, step, context: str) -> list[Annotation]:
+        """Locate every extra mark of a step at once (threads), dropping the ones not on screen."""
+        if not step.annotations:
+            return []
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            locs = list(pool.map(lambda a: self.backend.locate(a.element, context), step.annotations))
+        out = []
+        for a, loc in zip(step.annotations, locs):
+            if loc and loc.found:
+                out.append(Annotation(shape=a.shape, text=a.text, pointer=loc.screen_xy, size=a.size))
+        return out
 
     def _locate_with_retries(self, element: str, context: str, tries: int, pause_s: float = 0.4):
         """The page may still be updating after the user's action: look again a few times before giving up."""

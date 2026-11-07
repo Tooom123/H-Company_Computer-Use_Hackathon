@@ -150,6 +150,15 @@ class ProposedPlan(BaseModel):
     observes: str = "Screenshots of the main display are sent to H during the intervention."
 
 
+class Annotation(BaseModel):
+    """An extra mark drawn on screen with a step: a box around a zone, a circled element, a label."""
+
+    shape: Literal["circle", "box", "underline", "label"] = "label"
+    text: str = ""
+    pointer: tuple[int, int] | None = None
+    size: tuple[int, int] | None = None
+
+
 class GuidanceStep(BaseModel):
     """One step explained to the user in guide mode."""
 
@@ -159,6 +168,7 @@ class GuidanceStep(BaseModel):
     why: str = Field(default="", description="What this step achieves.")
     pointer: tuple[int, int] | None = Field(default=None, description="Screen coordinates the agent pointed at.")
     kind: Literal["click", "type", "info"] = Field(default="click", description="What the user must do: click, type, or just read.")
+    annotations: list[Annotation] = Field(default_factory=list)
     last: bool = False
 
 

@@ -299,6 +299,8 @@ class _InputWatcher:
 
     def acted(self, kind: str, settle_s: float = 0.5) -> bool:
         now = time.time()
+        if kind == "info":  # read it; any click or Enter moves on, or 9 s pass
+            return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or now - self.armed_at > 9
         if kind == "type":
             if self.last_submit > self.armed_at and now - self.last_submit >= settle_s:
                 return True
@@ -356,7 +358,12 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 watcher.arm()
                 inputs.arm()
                 if ov:
-                    ov.show(g.instruction, g.pointer)
+                    from .overlay import Mark, Scene
+
+                    ov.show_scene(Scene(
+                        text=g.instruction, target=g.pointer, why=g.why if g.kind != "info" else g.why, step=g.index,
+                        marks=[Mark(a.shape, a.pointer, a.text, tuple(a.size) if a.size else (0, 0))
+                               for a in g.annotations if a.pointer]))
             if auto:
                 time.sleep(0.3)
                 advance()

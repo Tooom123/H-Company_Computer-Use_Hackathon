@@ -1,0 +1,92 @@
+# Usage case with a real trap: "Log note" (internal) vs "Send message" (emails the customer).
+id: odoo_crm_log_note
+software: odoo
+software_version: "19.0"
+session_type: onboarding
+title: Log an internal note on an opportunity (without emailing the customer)
+reversible: true
+max_attempts: 2
+max_steps_per_attempt: 30
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: opportunity
+    description: Name of the opportunity
+    required: false
+    default: "Acme Demo"
+  - name: note
+    description: Text of the internal note
+    required: false
+    default: "Appel de découverte fait, budget confirmé."
+
+preconditions:
+  - Odoo is open in the browser on the main display and the user is logged in.
+  - The opportunity "{opportunity}" exists in the CRM pipeline.
+
+objective: >-
+  Log the internal note "{note}" on the opportunity "{opportunity}" without sending any message to the customer.
+
+planned_changes:
+  - Add one internal note in the chatter of "{opportunity}". No email, no stage change.
+
+allowed_actions:
+  - Navigate inside the Odoo CRM app and open the opportunity form.
+  - Click "Log note", type the note, click "Log".
+
+forbidden_actions:
+  - Clicking "Send message" or sending any email.
+  - Deleting or archiving any record.
+  - Changing any field of the opportunity.
+  - Leaving the Odoo browser tab or opening other applications.
+
+agent_instructions: |
+  You are assisting a user inside Odoo CRM (version {software_version}) in a browser on macOS. Work only inside
+  the visible Odoo tab.
+  Procedure:
+  1. Open the CRM pipeline and click the card "{opportunity}".
+  2. In the chatter (bottom of the form), click "Log note" — NOT "Send message", which emails followers.
+  3. Type "{note}" and click "Log".
+  4. Confirm the note appears in the chatter with the internal-note styling.
+  If something prevents a step, stop and report it as blocked with the exact message.
+
+guide_steps:
+  - instruction: "Clique sur la carte « {opportunity} »"
+    element: "the pipeline card titled {opportunity}"
+    why: "Les notes se mettent sur la fiche, pour que toute l'équipe les voie au bon endroit."
+  - instruction: "Clique sur Log note (pas Send message)"
+    element: "the Log note button in the chatter area at the bottom of the opportunity form"
+    why: "Log note = interne, visible par l'équipe seulement. Send message = envoie un e-mail au client."
+    annotations:
+      - element: "the Send message button in the chatter area"
+        text: "Attention : celui-ci envoie un e-mail au client"
+        shape: box
+        size: [150, 40]
+  - instruction: "Écris « {note} »"
+    element: "the note text editor that opened in the chatter"
+    why: "Sois factuel : qui, quoi, prochaine étape. Tu peux mentionner un collègue avec @."
+  - instruction: "Clique sur Log"
+    element: "the Log button under the note editor in the chatter"
+    why: "La note est horodatée et attachée à l'affaire ; elle n'est pas modifiable après, mais tu peux en ajouter."
+
+postcondition:
+  description: >-
+    The chatter of "{opportunity}" shows an internal note containing "{note}", and no message was sent.
+  checks:
+    - key: opportunity_opened
+      prompt: The form view of the opportunity "{opportunity}" is displayed.
+    - key: note_present
+      prompt: The chatter shows a note containing "{note}".
+    - key: internal_styling
+      prompt: That entry is displayed as an internal note (yellow/beige background), not as a sent message.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the browser
+    window and do not reload the page. Open the opportunity "{opportunity}" from the CRM pipeline. Scroll the
+    chatter if needed. Do not create, edit or delete anything. Report exactly what you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must check whether the user has access to the chatter of this record.
+  default_category: unknown

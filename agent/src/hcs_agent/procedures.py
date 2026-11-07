@@ -35,19 +35,31 @@ class Postcondition(BaseModel):
     verification_instructions: str
 
 
+class AnnotationSpec(BaseModel):
+    """Extra mark drawn with a step: explains a zone or an element around the main control."""
+
+    element: str = Field(description="Visual description for grounding.")
+    text: str = ""
+    shape: Literal["circle", "box", "underline", "label"] = "label"
+    size: tuple[int, int] | None = Field(default=None, description="Box size in screen points.")
+
+
 class GuideStepSpec(BaseModel):
     """One scripted step of the guide: what to say, which control to point at, why it matters."""
 
     instruction: str
-    element: str = Field(description="Visual description of the control, for grounding on the screenshot.")
+    element: str | None = Field(default=None, description="Visual description of the control, for grounding. None for an info step.")
     why: str = ""
     optional: bool = Field(default=False, description="Skip silently when the control is not on screen.")
-    kind: Literal["click", "type"] | None = Field(default=None, description="Inferred from the verb when omitted.")
+    kind: Literal["click", "type", "info"] | None = Field(default=None, description="Inferred from the verb when omitted.")
+    annotations: list[AnnotationSpec] = Field(default_factory=list)
 
     @property
     def action(self) -> str:
         if self.kind:
             return self.kind
+        if not self.element:
+            return "info"
         first = self.instruction.strip().lower().split(" ")[0]
         return "type" if first in {"tape", "écris", "ecris", "saisis", "mets", "entre", "type", "enter", "write", "fill"} else "click"
 
@@ -160,8 +172,11 @@ class BoundProcedure(BaseModel):
         return self.request.mode is Mode.guide
 
     def guide_script(self) -> list[GuideStepSpec]:
-        return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element), why=self._r(x.why),
-                              optional=x.optional, kind=x.kind) for x in self.procedure.guide_steps]
+        return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element) if x.element else None,
+                              why=self._r(x.why), optional=x.optional, kind=x.kind,
+                              annotations=[AnnotationSpec(element=self._r(a.element), text=self._r(a.text), shape=a.shape,
+                                                          size=a.size) for a in x.annotations])
+                for x in self.procedure.guide_steps]
 
     @property
     def guide_instructions(self) -> str:

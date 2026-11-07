@@ -1,10 +1,12 @@
-"""macOS pencil overlay for guide mode: a rough graphite sketch on top of the screen.
+"""macOS pencil overlay for guide mode: a rough red-pencil draft on paper scraps over the screen.
 
-Design rules: it must look like a quick draft, never like a UI. Thin pencil strokes, a loose circle
-around the control (only when the agent gave a target), a short handwritten line of text with a faint
-halo so it stays readable, nothing opaque that hides the screen. Transparent, click-through,
-always-on-top, and excluded from screen capture so H never sees its own annotations.
+Design rules: it must look like a quick draft, never like a UI. Thin pencil strokes, loose circles and
+boxes around controls, arrows from notes to targets, handwritten text on small white paper cutouts.
+Transparent, click-through, always-on-top, excluded from screen capture so H never sees its own marks.
 Must run on the main thread (AppKit); worker threads call `show()` / `hide()`.
+
+A `Scene` is what gets drawn: a list of `Mark`s (circle / box / underline / label / arrow) plus an
+optional main note and a secondary "why" note.
 """
 
 from __future__ import annotations
@@ -12,7 +14,8 @@ from __future__ import annotations
 import math
 import random
 import threading
-from typing import Callable
+from dataclasses import dataclass, field
+from typing import Callable, Literal
 
 import AppKit
 import Foundation
@@ -20,11 +23,32 @@ import objc
 from Quartz import CGEventCreate, CGEventGetLocation
 
 GRAPHITE = (0.86, 0.17, 0.12, 0.92)  # red pencil: readable on light and dark backgrounds
+PAPER = (1.0, 1.0, 0.985, 0.93)
+PAPER_SOFT = (1.0, 1.0, 0.985, 0.80)
 HAND_FONTS = ("Bradley Hand", "Noteworthy", "Marker Felt", "Chalkboard")
+
+Shape = Literal["circle", "box", "underline", "label", "arrow"]
+
+
+@dataclass
+class Mark:
+    shape: Shape
+    xy: tuple[float, float]  # screen points, top-left origin
+    text: str = ""
+    size: tuple[float, float] = (0, 0)  # box: width/height in points; 0 = default
+    to: tuple[float, float] | None = None  # arrow end
+
+
+@dataclass
+class Scene:
+    text: str = ""  # main instruction (goes on the big paper note)
+    target: tuple[float, float] | None = None  # main control: circle + arrow from the note
+    why: str = ""  # secondary explanation (lighter note under the main one)
+    marks: list[Mark] = field(default_factory=list)
+    step: int | None = None
 
 
 def mouse_position() -> tuple[float, float]:
-    """Current pointer in screen points (top-left origin, like screenshots)."""
     p = CGEventGetLocation(CGEventCreate(None))
     return float(p.x), float(p.y)
 
@@ -42,7 +66,11 @@ def _hand_font(size: float):
     return AppKit.NSFont.systemFontOfSize_(size)
 
 
-def _wobble_path(points: list[tuple[float, float]], rnd: random.Random, width: float, jitter: float):
+def _ink():
+    return AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE)
+
+
+def _wobble_path(points, rnd: random.Random, width: float, jitter: float):
     """A stroke drawn as 2 overlapping passes, each slightly displaced: reads as pencil, not vector."""
     paths = []
     for _ in range(2):
@@ -61,26 +89,48 @@ def _wobble_path(points: list[tuple[float, float]], rnd: random.Random, width: f
     return paths
 
 
-PAPER = (1.0, 1.0, 0.985, 0.93)
+def _stroke(points, rnd, width=1.5, jitter=1.4):
+    for path in _wobble_path(points, rnd, width, jitter):
+        path.stroke()
 
 
-def _draw_paper(x: float, y: float, w: float, h: float, rnd: random.Random) -> None:
-    """A scrap of white paper behind the note: roughly cut edges, slight tilt, soft shadow (cutout collage)."""
+def _circle(cx, cy, rnd, rx=42, ry=34):
+    pts = []
+    for i in range(0, 40):
+        a = -0.35 + i / 39 * (2 * math.pi + 0.55)
+        pts.append((cx + rx * math.cos(a), cy + ry * math.sin(a)))
+    _stroke(pts, rnd, 1.6, 1.8)
+
+
+def _box(x, y, w, h, rnd):
+    pts = [(x, y), (x + w, y + 2), (x + w - 2, y + h), (x + 1, y + h - 2), (x, y + 4)]
+    _stroke(pts, rnd, 1.5, 2.0)
+
+
+def _arrow(start, end, rnd, width=1.4):
+    mid = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2 + 10)
+    _stroke([start, mid, end], rnd, width, 1.2)
+    ang = math.atan2(end[1] - mid[1], end[0] - mid[0])
+    for side in (-1, 1):
+        a = ang + math.pi + side * 0.45
+        _stroke([end, (end[0] + 20 * math.cos(a), end[1] + 20 * math.sin(a))], rnd, width, 0.8)
+
+
+def _draw_paper(x, y, w, h, rnd, color=PAPER):
+    """A scrap of white paper: roughly cut edges, slight tilt, soft shadow (cutout collage)."""
     tilt = rnd.uniform(-0.03, 0.03)
     cx, cy = x + w / 2, y + h / 2
 
-    def rot(px: float, py: float) -> tuple[float, float]:
+    def rot(px, py):
         dx, dy = px - cx, py - cy
         return (cx + dx * math.cos(tilt) - dy * math.sin(tilt), cy + dx * math.sin(tilt) + dy * math.cos(tilt))
 
-    # Walk the rectangle edge with a few uneven cuts per side.
     pts = []
-    for side, n in (((x, y), (x + w, y)), 5), (((x + w, y), (x + w, y + h)), 3), (((x + w, y + h), (x, y + h)), 5), (((x, y + h), (x, y)), 3):
-        (ax, ay), (bx, by) = side
+    for (ax, ay), (bx, by), n in (((x, y), (x + w, y), 5), ((x + w, y), (x + w, y + h), 3),
+                                  ((x + w, y + h), (x, y + h), 5), ((x, y + h), (x, y), 3)):
         for i in range(n):
             t = i / n
-            jx, jy = rnd.uniform(-3, 3), rnd.uniform(-3, 3)
-            pts.append(rot(ax + (bx - ax) * t + jx, ay + (by - ay) * t + jy))
+            pts.append(rot(ax + (bx - ax) * t + rnd.uniform(-3, 3), ay + (by - ay) * t + rnd.uniform(-3, 3)))
     path = AppKit.NSBezierPath.bezierPath()
     path.moveToPoint_(pts[0])
     for pt in pts[1:]:
@@ -92,9 +142,23 @@ def _draw_paper(x: float, y: float, w: float, h: float, rnd: random.Random) -> N
     shadow.setShadowBlurRadius_(6)
     shadow.setShadowColor_(AppKit.NSColor.colorWithCalibratedWhite_alpha_(0, 0.35))
     shadow.set()
-    AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*PAPER).setFill()
+    AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*color).setFill()
     path.fill()
     AppKit.NSGraphicsContext.restoreGraphicsState()
+
+
+def _note(x, y, text, rnd, size=19, max_w=340, color=PAPER, underline=True) -> tuple[float, float]:
+    """Handwritten text on a paper scrap, anchored at its bottom-left. Returns (width, height) drawn."""
+    attrs = {AppKit.NSFontAttributeName: _hand_font(size), AppKit.NSForegroundColorAttributeName: _ink()}
+    s = Foundation.NSString.stringWithString_(text)
+    bound = s.boundingRectWithSize_options_attributes_((max_w, 400), 1 << 0, attrs).size
+    tw, th = min(bound.width, max_w) + 2, bound.height + 2
+    _draw_paper(x - 10, y - 6, tw + 20, th + 12, rnd, color)
+    _ink().setStroke()
+    s.drawInRect_withAttributes_(((x, y), (max_w, th + 4)), attrs)
+    if underline:
+        _stroke([(x + i * (tw / 6), y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)], rnd, 1.0, 1.0)
+    return tw + 20, th + 12
 
 
 class _SketchView(AppKit.NSView):
@@ -102,8 +166,7 @@ class _SketchView(AppKit.NSView):
         self = objc.super(_SketchView, self).initWithFrame_(frame)
         if self is None:
             return None
-        self.target = None  # AppKit coords (bottom-left origin) or None
-        self.text = ""
+        self.scene = None  # Scene with AppKit coords (bottom-left origin)
         self.seed = 1
         self.badge = None  # (text, pulsing) or None: the "listening" indicator
         return self
@@ -114,61 +177,52 @@ class _SketchView(AppKit.NSView):
     def drawRect_(self, rect):
         if self.badge is not None:
             self._draw_badge()
-        if not self.text and self.target is None:
+        sc = self.scene
+        if sc is None or (not sc.text and sc.target is None and not sc.marks):
             return
         rnd = random.Random(self.seed)
         bounds = self.bounds()
-        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE).setStroke()
+        W, H = bounds.size.width, bounds.size.height
+        _ink().setStroke()
 
-        if self.target is not None:
-            tx, ty = self.target
-            # Loose ellipse, slightly open (a pencil circle never quite closes).
-            pts = []
-            for i in range(0, 40):
-                a = -0.35 + i / 39 * (2 * math.pi + 0.55)
-                pts.append((tx + 34 * math.cos(a) * 1.25, ty + 34 * math.sin(a)))
-            for path in _wobble_path(pts, rnd, 1.6, 1.8):
-                path.stroke()
-            # Text sits up-right of the circle, or up-left near the right edge; a short stroke links them.
-            right = tx + 240 < bounds.size.width
-            anchor_x = tx + 48 if right else tx - 48
-            text_x = anchor_x if right else anchor_x - 230
-            text_y = min(ty + 34, bounds.size.height - 60)
-            # Arrow from the note down to the circle, with a rough two-stroke head at the circle end.
-            start = (anchor_x + (6 if right else -6), text_y - 12)
-            end = (tx + (44 if right else -44), ty + 16)
-            mid = ((start[0] + end[0]) / 2 + (0 if right else 0), (start[1] + end[1]) / 2 + 10)
-            for path in _wobble_path([start, mid, end], rnd, 1.4, 1.2):
-                path.stroke()
-            ang = math.atan2(end[1] - mid[1], end[0] - mid[0])
-            for side in (-1, 1):
-                a = ang + math.pi + side * 0.45
-                head = [(end[0], end[1]), (end[0] + 20 * math.cos(a), end[1] + 20 * math.sin(a))]
-                for path in _wobble_path(head, rnd, 1.4, 0.8):
-                    path.stroke()
-        else:
-            # No target: a one-line draft at the top of the screen, like a note in the margin.
-            text_x, text_y = bounds.size.width / 2 - 170, bounds.size.height - 92
+        # Secondary marks first (they sit "under" the main note).
+        for m in sc.marks:
+            mx, my = m.xy
+            if m.shape == "circle":
+                _circle(mx, my, rnd, 36, 30)
+            elif m.shape == "box":
+                w, h = (m.size[0] or 160), (m.size[1] or 60)
+                _box(mx - w / 2, my - h / 2, w, h, rnd)
+            elif m.shape == "underline":
+                _stroke([(mx - 60 + i * 24, my - 10 + (2 if i % 2 else -2)) for i in range(0, 6)], rnd, 1.4, 1.2)
+            elif m.shape == "arrow" and m.to:
+                _arrow(m.xy, m.to, rnd)
+            if m.text and m.shape != "arrow":
+                # Small label next to the mark, with a short link stroke.
+                lx = mx + 50 if mx + 300 < W else mx - 50 - 220
+                ly = min(my + 26, H - 50)
+                _note(lx, ly, m.text, rnd, size=15, max_w=220, color=PAPER_SOFT, underline=False)
+                _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else 216), ly - 2)], rnd, 1.1, 1.0)
 
-        font = _hand_font(19)
-        attrs = {
-            AppKit.NSFontAttributeName: font,
-            AppKit.NSForegroundColorAttributeName: AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE),
-        }
-        s = Foundation.NSString.stringWithString_(self.text)
-        size = s.boundingRectWithSize_options_attributes_((340, 60), 1 << 0, attrs).size  # wraps on width
-        tw, th = min(size.width, 340) + 2, size.height + 2
-        _draw_paper(text_x - 10, text_y - 6, tw + 20, th + 12, rnd)
-        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*GRAPHITE).setStroke()
-        s.drawInRect_withAttributes_(((text_x, text_y), (340, th + 4)), attrs)
-        # A quick underline squiggle under the text, the way you'd stress a note.
-        under = [(text_x + i * (tw / 6), text_y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)]
-        for path in _wobble_path(under, rnd, 1.0, 1.0):
-            path.stroke()
-
+        # Main note + circle + arrow.
+        if sc.target is not None:
+            tx, ty = sc.target
+            _circle(tx, ty, rnd)
+            right = tx + 260 < W
+            text_x = tx + 48 if right else tx - 48 - 340
+            text_y = min(ty + 40, H - 70)
+            label = f"{sc.step}. {sc.text}" if sc.step else sc.text
+            w, h = _note(text_x, text_y, label, rnd)
+            if sc.why:
+                _note(text_x + 6, text_y - 18 - 44, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
+            _arrow((text_x + (6 if right else w - 26), text_y - 12), (tx + (46 if right else -46), ty + 16), rnd)
+        elif sc.text:
+            text_x, text_y = W / 2 - 170, H - 92
+            _note(text_x, text_y, sc.text, rnd)
+            if sc.why:
+                _note(text_x + 6, text_y - 18 - 44, sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
 
     def _draw_badge(self):
-        """Small pill at the bottom centre: a red dot (pulsing while recording) and a short label."""
         import time
 
         text, pulsing = self.badge
@@ -181,10 +235,8 @@ class _SketchView(AppKit.NSView):
         alpha = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(time.time() * 6)) if pulsing else 1.0
         AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.23, 0.2, alpha).setFill()
         AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x + 14, y + h / 2 - 7), (14, 14))).fill()
-        attrs = {
-            AppKit.NSFontAttributeName: AppKit.NSFont.systemFontOfSize_(14),
-            AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor(),
-        }
+        attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.systemFontOfSize_(14),
+                 AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
         Foundation.NSString.stringWithString_(text).drawInRect_withAttributes_(((x + 38, y + 8), (w - 46, 20)), attrs)
 
 
@@ -209,25 +261,33 @@ class Overlay:
         self.window.setContentView_(self.view)
         self._seed = 1
 
+    def _flip(self, xy):
+        return None if xy is None else (xy[0], self._screen_h - xy[1])
+
     # ------------------------------------------------------------------ API (any thread)
 
-    def show(self, text: str, target: tuple[float, float] | None = None) -> None:
-        """Draw a short note; circle `target` (screen points, top-left origin) when given."""
+    def show_scene(self, scene: Scene) -> None:
         self._seed += 1
+        flipped = Scene(
+            text=scene.text[:110], target=self._flip(scene.target), why=scene.why[:160], step=scene.step,
+            marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to)) for m in scene.marks],
+        )
 
         def apply() -> None:
-            self.view.target = None if target is None else (target[0], self._screen_h - target[1])
-            self.view.text = text[:90]
+            self.view.scene = flipped
             self.view.seed = self._seed
             self.view.setNeedsDisplay_(True)
             self.window.orderFrontRegardless()
 
         _on_main(apply)
 
+    def show(self, text: str, target: tuple[float, float] | None = None) -> None:
+        """Back-compat: a note, optionally circling `target` (screen points, top-left origin)."""
+        self.show_scene(Scene(text=text, target=target))
+
     def hide(self) -> None:
         def apply() -> None:
-            self.view.target = None
-            self.view.text = ""
+            self.view.scene = None
             self.view.setNeedsDisplay_(True)
             if self.view.badge is None:
                 self.window.orderOut_(None)
@@ -235,12 +295,10 @@ class Overlay:
         _on_main(apply)
 
     def badge(self, text: str | None, pulsing: bool = False) -> None:
-        """Show (or clear with None) the listening indicator."""
-
         def apply() -> None:
             self.view.badge = None if text is None else (text, pulsing)
             self.view.setNeedsDisplay_(True)
-            if self.view.badge is None and not self.view.text and self.view.target is None:
+            if self.view.badge is None and self.view.scene is None:
                 self.window.orderOut_(None)
             else:
                 self.window.orderFrontRegardless()
@@ -254,7 +312,6 @@ class Overlay:
 
     def run_until(self, done: Callable[[], bool], tick: Callable[[], None] | None = None, interval: float = 0.2,
                   hide_at_end: bool = True) -> None:
-        """Pump the AppKit run loop on the main thread until `done()`; `tick()` runs every interval."""
         while not done():
             if tick:
                 tick()
