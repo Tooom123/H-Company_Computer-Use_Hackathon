@@ -1,4 +1,38 @@
 {
+  "$defs": {
+    "DocSource": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "snippet": {
+          "default": "",
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "title": "DocSource",
+      "type": "object"
+    },
+    "Mode": {
+      "description": "`act`: the agent performs the steps. `guide`: the agent explains and points, the user performs.",
+      "enum": [
+        "act",
+        "guide"
+      ],
+      "title": "Mode",
+      "type": "string"
+    }
+  },
   "description": "What the agent proposes to do. Must be approved before any action.",
   "properties": {
     "objective": {
@@ -38,6 +72,30 @@
       "description": "Explanation adapted to the declared role.",
       "title": "Explanation",
       "type": "string"
+    },
+    "mode": {
+      "$ref": "#/$defs/Mode",
+      "default": "act"
+    },
+    "documentation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Sourced summary from the vendor documentation.",
+      "title": "Documentation"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/DocSource"
+      },
+      "title": "Sources",
+      "type": "array"
     },
     "observes": {
       "default": "Screenshots of the main display are sent to H during the intervention.",

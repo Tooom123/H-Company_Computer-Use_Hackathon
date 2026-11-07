@@ -77,6 +77,29 @@
       "title": "DeclaredResult",
       "type": "object"
     },
+    "DocSource": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "snippet": {
+          "default": "",
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "title": "DocSource",
+      "type": "object"
+    },
     "Escalation": {
       "description": "Case file handed to support when the goal was not reached.",
       "properties": {
@@ -206,6 +229,116 @@
       "title": "FeedbackCommand",
       "type": "object"
     },
+    "GuidanceStep": {
+      "description": "One step explained to the user in guide mode.",
+      "properties": {
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "instruction": {
+          "description": "What the user should do now, in plain words.",
+          "title": "Instruction",
+          "type": "string"
+        },
+        "where": {
+          "default": "",
+          "description": "Where the control is on screen.",
+          "title": "Where",
+          "type": "string"
+        },
+        "why": {
+          "default": "",
+          "description": "What this step achieves.",
+          "title": "Why",
+          "type": "string"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Screen coordinates the agent pointed at.",
+          "title": "Pointer"
+        },
+        "last": {
+          "default": false,
+          "title": "Last",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "index",
+        "instruction"
+      ],
+      "title": "GuidanceStep",
+      "type": "object"
+    },
+    "KnowledgeNote": {
+      "description": "A sourced documentation lookup (Linkup). Provided information, distinct from observation.",
+      "properties": {
+        "purpose": {
+          "enum": [
+            "explain",
+            "agent_lookup",
+            "blocker"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "answer": {
+          "title": "Answer",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/DocSource"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "simulated": {
+          "default": false,
+          "title": "Simulated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "purpose",
+        "query",
+        "answer"
+      ],
+      "title": "KnowledgeNote",
+      "type": "object"
+    },
+    "Mode": {
+      "description": "`act`: the agent performs the steps. `guide`: the agent explains and points, the user performs.",
+      "enum": [
+        "act",
+        "guide"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
     "ProposedPlan": {
       "description": "What the agent proposes to do. Must be approved before any action.",
       "properties": {
@@ -246,6 +379,30 @@
           "description": "Explanation adapted to the declared role.",
           "title": "Explanation",
           "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode",
+          "default": "act"
+        },
+        "documentation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sourced summary from the vendor documentation.",
+          "title": "Documentation"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/DocSource"
+          },
+          "title": "Sources",
+          "type": "array"
         },
         "observes": {
           "default": "Screenshots of the main display are sent to H during the intervention.",
@@ -514,6 +671,10 @@
       ],
       "title": "Symptom"
     },
+    "mode": {
+      "$ref": "#/$defs/Mode",
+      "default": "act"
+    },
     "procedure_id": {
       "anyOf": [
         {
@@ -534,6 +695,20 @@
           "type": "null"
         }
       ]
+    },
+    "guidance": {
+      "items": {
+        "$ref": "#/$defs/GuidanceStep"
+      },
+      "title": "Guidance",
+      "type": "array"
+    },
+    "knowledge": {
+      "items": {
+        "$ref": "#/$defs/KnowledgeNote"
+      },
+      "title": "Knowledge",
+      "type": "array"
     },
     "scope_note": {
       "anyOf": [

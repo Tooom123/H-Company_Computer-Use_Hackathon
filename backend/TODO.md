@@ -1,7 +1,7 @@
 # TODO — Tom (support, données, landing)
 
 Périmètre (README, PRD) : stockage, dossier d'escalade, tableau de bord, regroupement simple, données de démo.
-Mis à jour le 7 novembre 2026 (soir). Dépôt : dimanche 8 novembre, **14h00**.
+Mis à jour le 7 novembre 2026 (soir, après le P0). Dépôt : dimanche 8 novembre, **14h00**.
 
 ## État du dépôt
 
@@ -30,10 +30,12 @@ Aucune trace de Devin pour le prix « Best Use of Devin ».
 
 ### P0 — ce soir : que la démo de bout en bout passe par notre support
 
-- [ ] **Commiter et pousser** les derniers correctifs de la landing (`feature/tom-landing`)
-- [ ] **Contrats** : récupérer les schémas de `matteo` dans notre branche, relancer les tests du backend, vérifier qu'un vrai rapport de son agent passe la validation (`mode`, `guidance`, `knowledge`)
-- [ ] **Brancher l'agent sur le backend** : à la fin d'une intervention, `POST /cases` avec `Authorization: Bearer $HCS_INGEST_TOKEN`. Le mieux : je propose à Matteo un petit client (`HCS_BACKEND_URL` optionnel, sans effet s'il est absent). Une fois le rapport final envoyé, le pilote d'Edouard peut aussi utiliser l'API plutôt que le `Store` en direct.
-- [ ] **Premier cas réel** (non simulé) visible dans le dashboard, depuis le Mac de démo
+- [x] **Commiter et pousser** les derniers correctifs de la landing (`feature/tom-landing`, `274599f`)
+- [x] **Contrats** : schémas de `matteo` copiés dans `contracts/`, 13 tests backend OK, rapports réels de son agent (mode simulé) acceptés
+- [x] **Brancher l'agent sur le backend** : branche `feature/tom-agent-support-sink` (depuis `matteo`, `7cd0dd6`). `HCS_BACKEND_URL` + `HCS_INGEST_TOKEN` → rapport sur `POST /cases` (renvoyé après feedback) et événements sur `POST /events`. Désactivé par défaut, ne bloque jamais un run. 4 tests, 21/21 tests agent OK.
+- [x] **Bout en bout en simulé** : 3 runs de l'agent (1 résolu, 2 blocages permissions) → 53 envois, 0 échec, 2 groupes et 3 utilisateurs distincts dans le dashboard
+- [ ] **Premier cas réel** (non simulé) visible dans le dashboard : à faire sur le Mac de démo (clé H + Odoo), après le merge d'Edouard
+- [ ] Faire relire / fusionner `feature/tom-agent-support-sink` par Matteo
 
 ### P1 — demain matin : ce que le jury verra
 
