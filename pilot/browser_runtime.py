@@ -116,6 +116,14 @@ READ_RPC_METHODS = frozenset({
     'has_group', 'has_access', 'check_access_rights', 'check_access_rule', 'check_access',
 })
 READ_POST_PATHS = frozenset({'/web/action/load', '/web/session/get_session_info', '/web/webclient/version_info'})
+# Reviewed Odoo 20 navigation actions. These return existing-record window
+# actions; never generalize this to action_* or to other model/method pairs.
+# purchase_stock/models/purchase_order.py: action_view_picking -> _get_action_view_picking
+# sale/models/sale_order.py: action_view_invoice is explicitly @api.readonly.
+READ_NAVIGATION_ACTIONS = frozenset({
+    ('purchase.order', 'action_view_picking'),
+    ('sale.order', 'action_view_invoice'),
+})
 READ_MAIL_THREAD_MODELS = frozenset({'crm.lead', 'res.partner', 'sale.order', 'purchase.order', 'account.move',
     'stock.picking', 'mrp.production', 'mrp.bom', 'project.project', 'project.task', 'product.template', 'product.product'})
 READ_MAIL_THREAD_FIELDS = frozenset({'activities', 'attachments', 'followers', 'contact_fields', 'defaultSubject',
@@ -180,6 +188,46 @@ def read_mail_store_allowed(payload) -> bool:
     return not message_threads or not detail_threads or message_threads <= detail_threads
 
 
+def read_navigation_action_allowed(path: str, payload) -> bool:
+    """Allow only a reviewed smart button on one existing purchase/sale record."""
+    params = payload.get('params') if isinstance(payload, dict) else None
+    if not isinstance(params, dict) or set(params) != {'model', 'method', 'args', 'kwargs'}:
+        return False
+    model, method = params.get('model'), params.get('method')
+    if not isinstance(model, str) or not isinstance(method, str) or (model, method) not in READ_NAVIGATION_ACTIONS:
+        return False
+    if path not in {'/web/dataset/call_button', f'/web/dataset/call_button/{model}/{method}'}:
+        return False
+    args, kwargs = params.get('args'), params.get('kwargs')
+    if (not isinstance(args, list) or len(args) != 1 or not isinstance(args[0], list)
+            or len(args[0]) != 1 or type(args[0][0]) is not int or args[0][0] <= 0
+            or not isinstance(kwargs, dict) or set(kwargs) - {'context'}):
+        return False
+    context = kwargs.get('context', {})
+    if not isinstance(context, dict) or set(context) - {
+            'lang', 'tz', 'uid', 'allowed_company_ids', 'active_model', 'active_id',
+            'active_ids', 'bin_size', 'quotation_only'}:
+        return False
+    for key, value in context.items():
+        if key in {'lang', 'tz'} and (not isinstance(value, str) or not 0 < len(value) <= 100):
+            return False
+        if key == 'uid' and (type(value) is not int or value <= 0):
+            return False
+        if key == 'allowed_company_ids' and (not isinstance(value, list) or not 1 <= len(value) <= 20
+                or any(type(item) is not int or item <= 0 for item in value)):
+            return False
+        if key == 'active_model' and value != model:
+            return False
+        if key == 'active_id' and (type(value) is not int or value != args[0][0]):
+            return False
+        if key == 'active_ids' and (not isinstance(value, list) or value != args[0]
+                                  or any(type(item) is not int for item in value)):
+            return False
+        if key in {'bin_size', 'quotation_only'} and type(value) is not bool:
+            return False
+    return True
+
+
 def read_only_request_allowed(method: str, url: str, payload) -> tuple[bool, str]:
     """Return decision plus a safe bounded diagnostic category (never arguments)."""
     if method in {'GET', 'HEAD', 'OPTIONS'}:
@@ -191,6 +239,8 @@ def read_only_request_allowed(method: str, url: str, payload) -> tuple[bool, str
         return True, ''
     if path == '/mail/store':
         return (True, '') if read_mail_store_allowed(payload) else (False, 'mail_store_scope')
+    if path == '/web/dataset/call_button' or path.startswith('/web/dataset/call_button/'):
+        return (True, '') if read_navigation_action_allowed(path, payload) else (False, 'navigation_action_scope')
     if path == '/web/dataset/call_kw' or path.startswith('/web/dataset/call_kw/'):
         params = payload.get('params') if isinstance(payload, dict) else None
         rpc_method = params.get('method') if isinstance(params, dict) else None
@@ -422,7 +472,7 @@ class OwnedBrowserRuntime:
         return {'transport': 'browser', 'start_url': self.config.start_url,
                 'viewport': {'width': self.config.width, 'height': self.config.height},
                 'business_read_only_network_guard': self.config.read_only,
-                'read_only_network_guard_revision': 'odoo20-business-read-v3',
+                'read_only_network_guard_revision': 'odoo20-business-read-v4',
                 'permitted_navigation_side_effects': ['message_notifications_marked_read'] if self.config.read_only else [],
                 'blocked_request_categories': list(self._blocked_requests)}
 

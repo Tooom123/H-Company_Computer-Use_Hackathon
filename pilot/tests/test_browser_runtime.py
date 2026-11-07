@@ -322,6 +322,85 @@ def test_diagnostics_disclose_business_read_scope_and_navigation_side_effect(boo
     runtime, _ = bootstrap
     diagnostics = runtime.diagnostics()
     assert diagnostics['business_read_only_network_guard'] is True
-    assert diagnostics['read_only_network_guard_revision'] == 'odoo20-business-read-v3'
+    assert diagnostics['read_only_network_guard_revision'] == 'odoo20-business-read-v4'
     assert diagnostics['permitted_navigation_side_effects'] == ['message_notifications_marked_read']
     assert 'read_only_network_guard' not in diagnostics
+
+
+def navigation_payload(model='purchase.order', method='action_view_picking', **changes):
+    params = {'model': model, 'method': method, 'args': [[7]],
+              'kwargs': {'context': {'lang': 'fr_FR', 'tz': 'Europe/Paris', 'uid': 2,
+                                     'allowed_company_ids': [3], 'quotation_only': True}}}
+    params.update(changes)
+    return {'params': params}
+
+
+@pytest.mark.parametrize('model,method', sorted(module.READ_NAVIGATION_ACTIONS))
+@pytest.mark.parametrize('qualified', [False, True])
+def test_reviewed_navigation_buttons_allowed_with_matching_route(model, method, qualified):
+    path = '/web/dataset/call_button' + (f'/{model}/{method}' if qualified else '')
+    assert module.read_only_request_allowed('POST', ORIGIN + path,
+                                           navigation_payload(model, method)) == (True, '')
+
+
+@pytest.mark.parametrize('model,method', [
+    ('purchase.order', 'action_view_invoice'), ('sale.order', 'action_view_picking'),
+    ('purchase.order', 'button_confirm'), ('sale.order', 'action_confirm'),
+    ('account.move', 'action_post'), ('stock.picking', 'button_validate'),
+    ('purchase.order', 'write'), ('sale.order', '_create_invoices'),
+    ('purchase.order', 'action_create_invoice'), ('PRIVATE', 'PRIVATE'),
+    (['purchase.order'], 'action_view_picking'), ('purchase.order', ['action_view_picking']),
+])
+def test_other_buttons_and_write_actions_stay_blocked(model, method):
+    result = module.read_only_request_allowed('POST', ORIGIN + '/web/dataset/call_button',
+                                            navigation_payload(model, method))
+    assert result == (False, 'navigation_action_scope')
+
+
+@pytest.mark.parametrize('path', [
+    '/web/dataset/call_button/sale.order/action_view_invoice',
+    '/web/dataset/call_button/purchase.order/write',
+    '/web/dataset/call_button/purchase.order/action_view_picking/extra',
+    '/web/dataset/call_button/purchase.order/%61ction_view_picking',
+])
+def test_navigation_button_route_must_match_payload(path):
+    assert module.read_only_request_allowed('POST', ORIGIN + path,
+                                           navigation_payload()) == (False, 'navigation_action_scope')
+
+
+@pytest.mark.parametrize('changes', [
+    {'args': []}, {'args': [[7], False]}, {'args': [[7, 8]]}, {'args': [[]]},
+    {'args': [[True]]}, {'args': [[0]]}, {'args': [[-1]]}, {'args': [['7']]},
+    {'args': [7]}, {'kwargs': None}, {'kwargs': {'invoices': [8]}},
+    {'kwargs': {'context': {'active_model': 'account.move'}}},
+    {'kwargs': {'context': {'active_id': 8}}}, {'kwargs': {'context': {'active_id': True}}},
+    {'kwargs': {'context': {'active_ids': [8]}}},
+    {'kwargs': {'context': {'allowed_company_ids': [True]}}},
+    {'kwargs': {'context': {'allowed_company_ids': []}}},
+    {'kwargs': {'context': {'quotation_only': 'True'}}},
+    {'kwargs': {'context': {'default_move_type': 'PRIVATE'}}},
+    {'kwargs': {'context': {'sudo': True}}}, {'kwargs': {'context': []}},
+    {'kwargs': {'context': {'uid': True}}}, {'kwargs': {'context': {'lang': ['fr_FR']}}},
+    {'kwargs': {'context': {'tz': 'x' * 101}}}, {'unknown': 'PRIVATE'},
+])
+def test_navigation_payload_is_bounded_and_rejects_alternate_arguments(changes):
+    assert module.read_only_request_allowed('POST', ORIGIN + '/web/dataset/call_button',
+        navigation_payload(**changes)) == (False, 'navigation_action_scope')
+
+
+def test_navigation_exception_does_not_open_call_kw_or_write_before_network(bootstrap):
+    payload = navigation_payload()
+    assert module.read_only_request_allowed('POST', ORIGIN + '/web/dataset/call_kw', payload) == (False, 'unlisted_rpc')
+    runtime, _ = bootstrap
+    runtime._ready = True
+    calls = []
+    async def abort(reason):
+        calls.append('blocked')
+    async def continued():
+        pytest.fail('Mutating button reached Odoo')
+    route = SimpleNamespace(request=SimpleNamespace(url=ORIGIN + '/web/dataset/call_button/sale.order/action_confirm',
+        method='POST', post_data_json=navigation_payload('sale.order', 'action_confirm'),
+        is_navigation_request=lambda: False), abort=abort, continue_=continued)
+    asyncio.run(runtime._route(route))
+    assert calls == ['blocked']
+    assert runtime.diagnostics()['blocked_request_categories'] == ['navigation_action_scope']

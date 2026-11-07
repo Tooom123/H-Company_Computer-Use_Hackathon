@@ -227,7 +227,7 @@ def _browser_event_step(event, index, attempt):
 
 
 class BrowserHBackend(HBackend):
-    adapter_revision = 'pilot-isolated-browser-v3'
+    adapter_revision = 'pilot-isolated-browser-v4'
     transport = 'browser'
 
     def __init__(self, *, browser_config: BrowserConfig, browser_credentials: BrowserCredentials,
