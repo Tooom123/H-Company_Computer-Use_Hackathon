@@ -16,11 +16,13 @@ def script(name):
     return module
 
 
-def test_interrupted_episode_remains_in_campaign_index(tmp_path, monkeypatch):
+@pytest.mark.parametrize('port', [8767, 18767])
+def test_interrupted_episode_remains_in_campaign_index(tmp_path, monkeypatch, port):
     batch = script('run-rich-batch.py')
     private = tmp_path / 'private'
     private.mkdir()
     (private / 'pilot-token').write_text('offline-test')
+    (private / 'runtime.json').write_text(json.dumps({'port': port}))
     command = tmp_path / 'command.json'
     command.write_text('["fake-read-only-status"]')
     monkeypatch.setattr(batch.subprocess, 'run', lambda *a, **k: SimpleNamespace(stdout=json.dumps({
@@ -29,7 +31,7 @@ def test_interrupted_episode_remains_in_campaign_index(tmp_path, monkeypatch):
     stopped = False
     def request(req, **kwargs):
         nonlocal stopped
-        path = req.full_url.removeprefix('http://127.0.0.1:8767')
+        path = req.full_url.removeprefix(f'http://127.0.0.1:{port}')
         if path == '/pilot/status':
             value = {'busy': False, 'environment': {'id': 'odoo-rich-v2.1'}}
         elif path == '/pilot/scenarios':

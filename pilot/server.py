@@ -120,11 +120,17 @@ class PilotFeedback(BaseModel):
 
 class LocalAuth:
     """Protect HTTP and WebSocket, including inherited engine routes."""
-    def __init__(self, app, token: str):
+    def __init__(self, app, token: str, company_console: bool = False):
         self.app, self.token = app, token
+        self.company_console = company_console
 
     async def __call__(self, scope, receive, send):
         if scope['type'] not in {'http', 'websocket'}:
+            return await self.app(scope, receive, send)
+        path = scope.get('path', '')
+        # These HTTP routes have a separate Basic/CSRF gate in company_console.
+        # Do not exempt lookalike paths, WebSockets, or a disabled console.
+        if self.company_console and scope['type'] == 'http' and (path == '/company' or path.startswith('/company/')):
             return await self.app(scope, receive, send)
         headers = dict(scope.get('headers', []))
         supplied = headers.get(b'authorization', b'').decode('latin-1')
@@ -149,7 +155,9 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                exporter=None, store=None, model: str = 'holo4-35b-a3b',
                scenarios_path: Path | None = None, procedures_dir: Path | None = None,
                environment: str = 'minimal', engine_revision: str | None = None,
-               support_revision: str | None = None):
+               support_revision: str | None = None, transport: str = 'desktop',
+               viewport: dict | None = None, knowledge=None, knowledge_enabled: bool = False,
+               console_credentials: tuple[str, str] | None = None):
     """Wrap Matteo's app. Callbacks: STT(path,mime), export(report_path,archive_dir).
 
     STT returns a string or {transcript, provider}; optional .provider/.ready/.message
@@ -158,11 +166,20 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
     """
     if len(token) < 16:
         raise ValueError('Use a randomly generated local bearer token of at least 16 characters')
+    if transport not in {'desktop', 'browser'}:
+        raise ValueError('Unknown observation transport')
     demo = get_environment(environment)
     os.umask(0o077)
     root = Path(private_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
+    execution_path = root / 'execution.json'
+    if execution_path.exists():
+        if read_json(execution_path).get('transport') != transport:
+            raise ValueError('Use a separate private directory for each observation transport.')
+    elif transport != 'desktop' and any((root / 'episodes').glob('*/episode.json')):
+        raise ValueError('Existing untagged episodes require their original desktop directory.')
+    atomic_json(execution_path, {'transport': transport})
     identity_path = root / 'environment.json'
     if identity_path.exists():
         previous_demo = read_json(identity_path)
@@ -184,7 +201,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
     hub.registry = ProcedureRegistry(procedures_dir or REPO / 'docs/scenarios')
     for card in cards:
         hub.registry.get(card['procedure_id'])  # fail setup, not halfway through a recording
-    app.add_middleware(LocalAuth, token=token)
+    app.add_middleware(LocalAuth, token=token, company_console=console_credentials is not None)
     lock = threading.RLock()
     exports = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pilot-export')
     original_lifespan = app.router.lifespan_context
@@ -230,7 +247,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                 # cannot leave the exported copy older than the local episode.
                 archive = root / 'archives' / sid
                 if archive.is_dir():
-                    for filename in ('report.json', 'labels.json', 'request.json', 'procedure.json', 'agent-review.json', 'quarantine.json'):
+                    for filename in ('report.json', 'labels.json', 'request.json', 'procedure.json', 'agent-review.json', 'quarantine.json', 'observation-diagnostics.json'):
                         source = directory / filename
                         if source.exists():
                             target = archive / filename
@@ -287,10 +304,12 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                 # Keep a separate atomic final artifact even though the inherited
                 # engine also writes report.json before emitting finished.
                 atomic_json(directory / 'report.json', report)
+                diagnostics = observation_diagnostics()
+                atomic_json(directory / 'observation-diagnostics.json', diagnostics)
                 it = hub.interventions.get(sid)
                 if it is not None:
                     atomic_json(directory / 'snapshot.json', _snapshot(it))
-                update_meta(sid, finished_at=now())
+                update_meta(sid, finished_at=now(), observation_diagnostics=diagnostics)
                 store_report(report, sid)
                 schedule_export(sid, report)
         original_sink(event)
@@ -312,11 +331,24 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                     await run_in_threadpool(it.wait, 2)
                 hub.loop = None
                 exports.shutdown(wait=False)
+                if hasattr(hub.backend, 'close'):
+                    await run_in_threadpool(hub.backend.close)
 
     app.router.lifespan_context = lifespan
 
     def busy() -> bool:
         return any(not it.state.terminal or it.report is None for it in hub.interventions.values())
+
+    def knowledge_state() -> dict:
+        if knowledge is None or not knowledge_enabled:
+            return {'enabled': False, 'retrieval_method': 'none'}
+        return {'enabled': True, **knowledge.fingerprint()}
+
+    def observation_diagnostics() -> dict:
+        # The adapter exposes only bounded categories, never raw URLs/payloads.
+        if hasattr(hub.backend, 'diagnostics'):
+            return hub.backend.diagnostics()
+        return {}
 
     def audio_meta(audio_id: str | None, purpose: str) -> dict | None:
         if audio_id is None:
@@ -373,6 +405,9 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
         ready = transcriber is not None and bool(getattr(transcriber, 'ready', True))
         return {'model': model, 'simulated': bool(hub.backend.simulated), 'busy': busy(),
                 'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision,
+                'transport': transport, 'image_policy': 'browser_viewport' if transport == 'browser' else 'full_screen',
+                'viewport': viewport, 'knowledge': knowledge_state(),
+                'observation_diagnostics': observation_diagnostics(),
                 'transcription': {'provider': provider, 'ready': ready,
                                   'message': getattr(transcriber, 'message', 'Prêt' if ready else 'Transcription non configurée')}}
 
@@ -428,7 +463,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
     def create_episode(body: EpisodeBody):
         with lock:
             if busy():
-                raise HTTPException(409, 'Un passage est déjà actif sur ce Mac.')
+                raise HTTPException(409, 'Un passage est déjà actif dans cet environnement.')
             card = catalog.get(body.scenario_id)
             if card is None or not body.goal.strip():
                 raise HTTPException(422, 'Scénario inconnu ou demande vide.')
@@ -456,13 +491,21 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
             params = {'run_reference': body.run_reference} if card['requires_reference'] else {}
             req = InterventionRequest(software='odoo', software_version='20.0', role='commerçant, première semaine sur Odoo',
                     goal=body.goal, procedure_id=card['procedure_id'], parameters=params, mode='act')
+            if transport == 'browser' and hasattr(hub.backend, 'prepare_episode'):
+                try:
+                    hub.backend.prepare_episode()
+                except Exception:
+                    raise HTTPException(503, 'Le navigateur isolé n’a pas pu préparer la page de départ. Aucun essai H lancé.') from None
             directory = root / 'episodes' / req.session_id
             directory.mkdir(mode=0o700)
             workflow = workflow or req.session_id
             initial = {'session_id': req.session_id, 'scenario_id': card['id'], 'title': card['title'],
                        'procedure_id': card['procedure_id'], 'workflow_id': workflow, 'run_reference': body.run_reference,
                        'created_at': now(), 'state': 'created', 'simulated': bool(hub.backend.simulated),
-                       'model': model, 'mode': 'act', 'image_policy': 'full_screen',
+                       'model': model, 'mode': 'act',
+                       'image_policy': 'browser_viewport' if transport == 'browser' else 'full_screen',
+                       'transport': transport, 'viewport': viewport, 'knowledge': knowledge_state(),
+                       'start_url': demo['entry_url'] if transport == 'browser' else None,
                        'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision,
                        'desktop_adapter': getattr(hub.backend, 'adapter_revision', None),
                        'request_audio_id': body.request_audio_id, 'export_status': 'pending',
@@ -470,7 +513,8 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
             atomic_json(directory / 'episode.json', initial)
             atomic_json(directory / 'request.json', {'intervention': req.model_dump(mode='json'),
                         'goal_raw': body.goal, 'audio': audio, 'scenario': card, 'workflow_id': workflow,
-                        'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision})
+                        'environment': demo, 'engine_revision': engine_revision, 'support_revision': support_revision,
+                        'transport': transport, 'viewport': viewport, 'knowledge': initial['knowledge']})
             procedure = hub.registry.get(card['procedure_id'])
             atomic_json(directory / 'procedure.json', procedure.model_dump(mode='json'))
             it = hub.create(req)
@@ -514,4 +558,17 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                 atomic_json(archive / 'labels.json', labels)
             return snapshot(sid)
 
+    if console_credentials is not None:
+        if knowledge is None:
+            raise ValueError('Company console requires a private knowledge store.')
+        from .company_console import mount_company_console
+        mount_company_console(app, private_root=root, knowledge=knowledge,
+                              username=console_credentials[0], password=console_credentials[1],
+                              config={'software': 'Odoo', 'software_version': '20.0', 'company': demo['company'],
+                                      'simulated': bool(hub.backend.simulated),
+                                      'environment': demo, 'model': model, 'transport': transport,
+                                      'allowed_origins': ['https://holo-demo.62.83.79.254.sslip.io'] if transport == 'browser' else [],
+                                      'engine_revision': engine_revision, 'support_revision': support_revision,
+                                      'knowledge_enabled': knowledge_enabled},
+                              store=store, is_busy=busy, mutation_lock=lock)
     return app

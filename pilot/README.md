@@ -1,5 +1,10 @@
 # Pilote vocal H-Companion
 
+Le nouveau [pilote navigateur isolé](../docs/isolated-browser-pilot.md) est disponible
+avec `--environment rich --transport browser`. Il prépare un Chrome sans fenêtre,
+une connaissance Markdown locale et un portail entreprise `/company`. Le transport
+desktop décrit ci-dessous reste distinct, avec ses versions et ses traces historiques.
+
 Le pilote relie l’interface Electron `#voice`, le moteur de Matteo **`b59ef01`** et
 le stockage support de Tom **`bd3b2ca`**. Le lanceur extrait ces deux révisions Git
 dans son dossier privé, sans fusionner leurs fichiers avec la branche de travail.

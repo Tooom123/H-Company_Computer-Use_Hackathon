@@ -343,3 +343,29 @@ Elle a été fermée après la fin de R01. Un correctif préventif réserve dés
 le raccourci d’arrêt avant d’exposer l’IPC d’approbation ; si une autre instance
 possède ce raccourci, la nouvelle ne peut pas démarrer un passage. Deux tests
 simulés passent. Aucun conflit effectif du raccourci pendant R01 n’est établi.
+
+### Intégration navigateur isolé — 7 novembre 2026, 23:08–23:23 Europe/Paris
+
+Moteur Matteo `0ffda3f`, stockage support `e46f9ee`, Holo4 hébergé chez H,
+Chrome headless privé, images du viewport 1280 × 832 et mode `act`. Playwright
+prépare la connexion ; les actions du parcours sont choisies par Holo. Aucun
+pilotage du bureau macOS. Ce sont des essais d’intégration, pas le benchmark final.
+
+| Essai | Durée après approbation | Résultat vérifié |
+| --- | --- | --- |
+| R01, `sess_50ff5a5d980c`, v1 | 59,5 s | Partiel ; fiche trouvée, défilement mal typé et activité non chargée. Erreur de confirmation d’arrêt local également diagnostiquée |
+| R01, `sess_d67f2ecd714a`, v2 | 102,6 s | Partiel ; client, étape et revenu corrects. Le filtre réseau bloque le lot qui charge l’activité ; l’acteur conclut à tort qu’il n’y en a pas. Le vérificateur conserve ce critère faux |
+| R02, `sess_833726b1b07c`, v2, worker 2 | 198,4 s | Réussite métier selon la revue IA : trois tâches, dates et étapes exactes, liste complète du projet. Deux tentatives interdites de lecture source (`web_fetch`, `view-source`) échouent ; parcours non retenu comme exemple SFT positif |
+
+Les trois exports H sont complets et les contrôles métier avant/après correspondent
+au baseline. Les revues indépendantes inspectent uniquement des captures Odoo du
+viewport ; aucun feedback humain n’a été inventé. Pour R01 v2 et R02, `lookup_docs`
+était disponible mais n’a pas été appelé : ces essais ne démontrent pas un gain
+documentaire. Les identifiants et images restent dans les archives privées.
+
+Corrections préparées pour v3 : défilement typé, attente de confirmation terminale,
+requêtes Odoo mieux délimitées, contexte documentaire injecté automatiquement et
+interdiction explicite de lecture source. La lecture du chatter autorise désormais
+la mise à jour des notifications lues du compte fictif, toujours sans écriture
+métier. Le contrôle Playwright local affiche maintenant l’activité attendue ; il
+ne compte pas comme une réussite du modèle. Les anciens essais restent inchangés.

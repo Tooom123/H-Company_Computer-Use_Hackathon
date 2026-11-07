@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run an explicitly approved read-only rich campaign on one desktop, sequentially.
+"""Run an explicitly approved read-only rich campaign on one worker, sequentially.
 
 No human feedback is generated. Reviewers attach separate agent-review.json files.
-The caller must first leave only the rich demo visible and keep the Mac available.
+Desktop workers require the demo in front; isolated browser workers do not use the Mac desktop.
 """
 import argparse
 from datetime import datetime, timezone
@@ -34,6 +34,10 @@ def main():
     if any((p / '.git').exists() for p in (root, *root.parents)):
         parser.error('Private output must stay outside Git.')
     token = (root / 'pilot-token').read_text().strip()
+    runtime = json.loads((root / 'runtime.json').read_text())
+    port = runtime.get('port', 8767)
+    if type(port) is not int or not 1024 <= port <= 65535:
+        parser.error('Invalid private worker port.')
     output = root / 'campaigns' / args.campaign
     output.mkdir(parents=True, exist_ok=False)
     status_command = json.loads(args.state_check_command.read_text())
@@ -41,10 +45,10 @@ def main():
         parser.error('State check must be a JSON argv list.')
 
     def api(method, path, data=None):
-        req = urllib.request.Request('http://127.0.0.1:8767' + path, method=method,
+        req = urllib.request.Request(f'http://127.0.0.1:{port}' + path, method=method,
                                      data=json.dumps(data).encode() if data is not None else None,
                                      headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=90) as response:
             return json.load(response)
 
     def save(name, value):
