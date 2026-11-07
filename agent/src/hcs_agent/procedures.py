@@ -7,7 +7,7 @@ forbidden actions, H prompt, postcondition checks, attempt cap and escalation ru
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -42,6 +42,14 @@ class GuideStepSpec(BaseModel):
     element: str = Field(description="Visual description of the control, for grounding on the screenshot.")
     why: str = ""
     optional: bool = Field(default=False, description="Skip silently when the control is not on screen.")
+    kind: Literal["click", "type"] | None = Field(default=None, description="Inferred from the verb when omitted.")
+
+    @property
+    def action(self) -> str:
+        if self.kind:
+            return self.kind
+        first = self.instruction.strip().lower().split(" ")[0]
+        return "type" if first in {"tape", "écris", "ecris", "saisis", "mets", "entre", "type", "enter", "write", "fill"} else "click"
 
 
 class EscalationRule(BaseModel):
@@ -153,7 +161,7 @@ class BoundProcedure(BaseModel):
 
     def guide_script(self) -> list[GuideStepSpec]:
         return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element), why=self._r(x.why),
-                              optional=x.optional) for x in self.procedure.guide_steps]
+                              optional=x.optional, kind=x.kind) for x in self.procedure.guide_steps]
 
     @property
     def guide_instructions(self) -> str:

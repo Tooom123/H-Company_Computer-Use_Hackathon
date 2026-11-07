@@ -265,6 +265,51 @@ class _ScreenWatcher:
         return False
 
 
+class _InputWatcher:
+    """Knows what the user actually did since the step was shown: clicks, typed keys, Enter/Tab."""
+
+    def __init__(self) -> None:
+        self.armed_at = 0.0
+        self.last_click = 0.0
+        self.typed = 0
+        self.last_submit = 0.0  # Enter or Tab
+        self._listeners = []
+        try:
+            from pynput import keyboard, mouse
+
+            def on_click(x, y, button, pressed):
+                if pressed:
+                    self.last_click = time.time()
+
+            def on_press(key):
+                if key in (keyboard.Key.enter, keyboard.Key.tab):
+                    self.last_submit = time.time()
+                elif getattr(key, "char", None) or key in (keyboard.Key.space, keyboard.Key.backspace):
+                    self.typed += 1
+
+            self._listeners = [mouse.Listener(on_click=on_click), keyboard.Listener(on_press=on_press)]
+            for l in self._listeners:
+                l.start()
+        except Exception as exc:  # noqa: BLE001 - no input monitoring: screen watcher only
+            print(f"(input watcher unavailable: {exc})")
+
+    def arm(self) -> None:
+        self.armed_at = time.time()
+        self.typed = 0
+
+    def acted(self, kind: str, settle_s: float = 0.5) -> bool:
+        now = time.time()
+        if kind == "type":
+            if self.last_submit > self.armed_at and now - self.last_submit >= settle_s:
+                return True
+            return self.typed > 0 and self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
+        return self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
+
+    def stop(self) -> None:
+        for l in self._listeners:
+            l.stop()
+
+
 def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     """Main-thread loop for guide mode: draws the pencil overlay and reads Enter / notes / q from stdin."""
     import select
@@ -279,6 +324,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     shown_step = 0
     prompted = False
     watcher = _ScreenWatcher()
+    inputs = _InputWatcher()
 
     def advance(done: bool = True, note: str | None = None) -> None:
         if ov:
@@ -308,6 +354,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 shown_step = g.index
                 prompted = False
                 watcher.arm()
+                inputs.arm()
                 if ov:
                     ov.show(g.instruction, g.pointer)
             if auto:
@@ -315,11 +362,12 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 advance()
                 return
             if not prompted:
-                print("\n(do the step; I continue when the screen changes — or Enter = done / type what you see / q = stop) ",
+                print(f"\n  step {g.index}: {g.instruction}  [{g.kind}] (I continue when you act; q = stop) ",
                       end="", flush=True)
                 prompted = True
-            if watcher.changed_and_settled():
-                print("\n  screen changed, looking again…", flush=True)
+            g = it.guidance[-1]
+            if inputs.acted(g.kind) or (g.kind == "click" and watcher.changed_and_settled()):
+                print(f"\n  {'input' if inputs.acted(g.kind) else 'screen'} detected, next…", flush=True)
                 advance()
                 return
             ready, _, _ = select.select([sys.stdin], [], [], 0)
@@ -334,12 +382,15 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif ov and it.state.terminal and it.guidance and it.guidance[-1].last and it.guidance[-1].pointer:
             pass  # keep the last annotation until exit
 
-    if ov:
-        ov.run_until(lambda: it.state.terminal and it.report is not None, tick, 0.15)
-    else:
-        while not (it.state.terminal and it.report is not None):
-            tick()
-            it.wait(0.15)
+    try:
+        if ov:
+            ov.run_until(lambda: it.state.terminal and it.report is not None, tick, 0.1)
+        else:
+            while not (it.state.terminal and it.report is not None):
+                tick()
+                it.wait(0.1)
+    finally:
+        inputs.stop()
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:

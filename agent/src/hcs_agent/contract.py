@@ -158,6 +158,7 @@ class GuidanceStep(BaseModel):
     where: str = Field(default="", description="Where the control is on screen.")
     why: str = Field(default="", description="What this step achieves.")
     pointer: tuple[int, int] | None = Field(default=None, description="Screen coordinates the agent pointed at.")
+    kind: Literal["click", "type", "info"] = Field(default="click", description="What the user must do: click, type, or just read.")
     last: bool = False
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import platform
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -275,10 +276,7 @@ class Intervention:
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             step = script[i]
-            loc = self.backend.locate(step.element, context)
-            self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="observation",
-                               summary=f"locate: {step.element} -> {'found' if loc and loc.found else 'not found'}",
-                               detail={"latency_s": round(loc.latency_s, 2) if loc else None}))
+            loc = self._locate_with_retries(step.element, context, tries=1 if step.optional else 6)
             if loc is None or not loc.found:
                 if step.optional:
                     i += 1
@@ -296,7 +294,7 @@ class Intervention:
                                   instruction=f"Affiche {bound.request.software} : je ne vois pas {step.element}")
             else:
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
-                                  why=step.why, pointer=loc.screen_xy, last=False)
+                                  why=step.why, pointer=loc.screen_xy, kind=step.action, last=False)
             reply = self._on_guidance(gs)
             if reply is None:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -308,9 +306,26 @@ class Intervention:
                 done_steps.append(step.instruction)
                 i += 1
         self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
-                                       why="", pointer=None, last=True))
+                                       why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
+
+    def _locate_with_retries(self, element: str, context: str, tries: int, pause_s: float = 0.8):
+        """The page may still be updating after the user's action: look again a few times before giving up."""
+        loc = None
+        for attempt in range(tries):
+            if self._stop.is_set():
+                return loc
+            loc = self.backend.locate(element, context)
+            found = bool(loc and loc.found)
+            self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="observation",
+                               summary=f"locate ({attempt + 1}/{tries}): {element} -> {'found' if found else 'not found'}",
+                               detail={"latency_s": round(loc.latency_s, 2) if loc else None}))
+            if found:
+                return loc
+            if attempt + 1 < tries:
+                time.sleep(pause_s)
+        return loc
 
     def _on_guidance(self, step: GuidanceStep) -> tuple[bool, str | None] | None:
         """Backend callback in guide mode: publish the step, wait for the user's `next()` or a stop."""
