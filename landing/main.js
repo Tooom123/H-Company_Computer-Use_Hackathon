@@ -257,30 +257,41 @@ addEventListener("pointermove", (e) => {
 });
 
 const word = document.getElementById("word");
+const title = document.querySelector(".title");
+const ion = word.querySelector(".ion");
+const grade = document.getElementById("grade");
 const slogan = document.getElementById("slogan");
 const hero = document.getElementById("hero");
 const taps = document.getElementById("taps");
 let companion = false;
 const timers = [];
 function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
+// Company -> Companion, corrected in red pen: strike the y, write "ion", grade it, underline Help
+const STEPS = [
+  [380, () => title.classList.add("corrected")],
+  [420, () => word.classList.add("struck")],
+  [900, () => ion.classList.add("on")],
+  [1550, () => grade.classList.add("on")],
+  [1900, () => slogan.classList.add("show")],
+  [2400, () => slogan.classList.add("underlined")],
+  [2700, () => hero.classList.add("peek")],
+  [2700, () => title.setAttribute("aria-label", "H Companion")],
+];
+function correct(instant = false) {
+  for (const [ms, fn] of STEPS) instant ? fn() : later(ms, fn);
+}
+function uncorrect() {
+  for (const el of [ion, grade]) el.classList.remove("on");
+  word.classList.remove("struck");
+  slogan.classList.remove("show", "underlined");
+  hero.classList.remove("peek");
+  title.classList.remove("corrected");
+  title.setAttribute("aria-label", "H Company");
+}
 function toggleName() {
   timers.splice(0).forEach(clearTimeout);
   companion = !companion;
-  if (companion) {
-    later(450, () => word.classList.add("drop"));             // the "y" falls away
-    later(630, () => word.classList.add("grow"));             // "ion" rises in
-    later(1300, () => slogan.classList.add("show"));
-    later(1700, () => hero.classList.add("peek"));
-    later(1350, () => document.querySelector(".title").setAttribute("aria-label", "H Companion"));
-  } else {
-    slogan.classList.remove("show");
-    hero.classList.remove("peek");
-    word.classList.add("back");
-    word.classList.remove("grow");
-    later(280, () => word.classList.remove("drop"));
-    later(900, () => word.classList.remove("back"));
-    later(700, () => document.querySelector(".title").setAttribute("aria-label", "H Company"));
-  }
+  companion ? correct() : uncorrect();
 }
 function trigger() {
   if (pressT >= 0 && pressT < 0.75) return;
@@ -389,7 +400,6 @@ const qp = new URLSearchParams(location.search).get("companion");
 if (qp === "static") {
   companion = true;
   everPressed = true;
-  word.classList.add("drop", "grow");
-  slogan.classList.add("show");
-  hero.classList.add("peek");
+  document.documentElement.classList.add("no-anim");
+  correct(true);
 } else if (qp !== null) setTimeout(trigger, 600);
