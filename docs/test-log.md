@@ -205,3 +205,37 @@ Le passage **HACK-RUN-003** a ensuite été réservé avec `manage.py begin` pou
 les étapes 05–10 de cette session. La commande de réservation a confirmé sa
 réussite ; elle ne crée ni achat ni réception. Ne pas réinitialiser la base tant
 que ce passage et la session web restent actifs.
+
+### Feedback humain du scénario vocal 01 et passage 02 — 7 novembre 2026
+
+Le feedback du premier passage vocal est désormais confirmé : **réussite
+partielle**, **utilité inconnue**. Edouard rapporte avoir vu la bonne page sans
+avoir entendu ni vu les informations demandées. L’audio est présent ; la
+transcription brute et le commentaire corrigé sont conservés séparément. Les
+labels de l’épisode et de son archive correspondent. L’autorisation de préparer
+des données d’entraînement est accordée, mais `include_for_training=false` reste
+inchangé jusqu’à revue. Le verdict positif du vérificateur n’écrase pas ce retour.
+
+Constat UI : la réponse est écrite au-dessus du feedback, sans synthèse vocale ;
+la position de défilement conservée après approbation peut la laisser hors champ.
+Correction : présenter la réponse dès que le rapport final arrive, sans ramener
+ensuite le défilement à chaque actualisation ni interrompre la saisie. La réponse
+dispose d’un encadré dédié ; la restauration automatique du défilement est
+désactivée pour la fenêtre vocale. Les trois tests UI passent, dont le rapport
+différé, la conservation du focus et la restauration d’un essai avec feedback
+enregistré. TypeScript et build de production passent. Le résultat du scénario 02
+est visible dans la fenêtre native ; aucun nouveau passage H n’a été lancé pour
+cette correction d’affichage.
+
+Edouard a aussi lancé le scénario **02**, comparaison des stocks, sur le même
+moteur et en plein écran. Approbation 20:50:02, fin 20:51:24 Europe/Paris,
+**81,72 s**. L’agent annonce Gingembre 10, Pomme 8, Hibiscus 6 et désigne Hibiscus
+comme le stock le plus faible. Le vérificateur confirme les quatre critères.
+Les deux sessions H sont archivées, **77 événements**, zéro problème d’export
+signalé. Le feedback humain du scénario 02 est enregistré : **réussite partielle**,
+**utilité inconnue**. Edouard a observé la consultation des quantités, mais n’a pas
+vu la réponse désignant le stock le plus faible. Ce retour est textuel, sans
+enregistrement audio associé. Les labels de l’épisode et de l’archive
+correspondent ; le consentement à préparer des données d’entraînement ne vaut
+pas validation de cet essai pour le fine-tuning. Les deux retours d’origine
+restent conservés après la correction, sans modification de leurs labels.
