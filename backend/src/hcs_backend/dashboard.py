@@ -35,7 +35,7 @@ padding:0 5px;margin-left:6px;font-weight:600;letter-spacing:.03em}
 .hide-sm{display:none}}
 dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:4px 14px}dt{color:var(--muted)}dd{margin:0}
 .decision{border-left:4px solid var(--bad)}.muted{color:var(--muted)}ol{margin:0;padding-left:20px}
-.wrap{overflow-x:auto}.fixcard{margin-top:12px;border-left:4px solid var(--accent)}.fixbtn{margin-top:4px;padding:8px 14px;border-radius:8px;border:0;background:var(--fg);color:var(--bg);font-weight:600;cursor:pointer}.card>b{display:block;margin:0 0 8px}
+.wrap{overflow-x:auto}.fixcard{margin-top:12px;border-left:4px solid var(--accent)}.devin-ask{margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--chip)}.devin-ask textarea{width:100%;margin:6px 0;font:inherit;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.fixbtn{margin-top:4px;padding:8px 14px;border-radius:8px;border:0;background:var(--fg);color:var(--bg);font-weight:600;cursor:pointer}.card>b{display:block;margin:0 0 8px}
 """
 
 
@@ -202,7 +202,17 @@ def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
     if fix.get("error") or fix.get("last_error"):
         rows.append(("Error", escape(str(fix.get("error") or fix.get("last_error")))))
     dl = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)
-    return f'<div class="card fixcard"><b>Fix with Devin{sim}</b><dl>{dl}</dl></div>'
+    ask = ""
+    if fix.get("devin_says"):
+        ask = (
+            f'<div class="devin-ask"><b>Devin is waiting for you</b><p>{escape(fix["devin_says"])}</p>'
+            f'<form method="post" action="/dashboard/cases/{escape(case.case_id)}/fix/message">'
+            '<textarea name="message" rows="2" required placeholder="Answer Devin (e.g. access granted, go ahead)"></textarea>'
+            '<button class="fixbtn" type="submit">Reply</button></form></div>'
+        )
+    replies = "".join(f"<li>{escape(r)}</li>" for r in fix.get("replies", []))
+    replies = f'<p class="muted">Your replies:</p><ul>{replies}</ul>' if replies else ""
+    return f'<div class="card fixcard"><b>Fix with Devin{sim}</b><dl>{dl}</dl>{ask}{replies}</div>'
 
 
 def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, fix_repo: str | None = None) -> str:

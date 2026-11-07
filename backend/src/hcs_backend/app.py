@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Annotated, Any
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, status
+from fastapi import Body, Depends, FastAPI, Form, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBasic, HTTPBasicCredentials, HTTPBearer
@@ -212,7 +212,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, fix
     @app.get("/dashboard/cases/{case_id}", response_class=HTMLResponse, dependencies=[Support])
     def dash_case(case_id: str) -> str:
         case = get_case_or_404(case_id)
-        return dashboard.case_page(case, group_of(case_id), fix=store.get_fix(case_id),
+        return dashboard.case_page(case, group_of(case_id), fix=fixer.refresh(case_id),
                                    fix_repo=fixer.repo_for(case))
 
     @app.post("/dashboard/cases/{case_id}/fix", dependencies=[Support], include_in_schema=False)
@@ -231,6 +231,25 @@ def create_app(settings: Settings | None = None, store: Store | None = None, fix
             raise HTTPException(422, str(e)) from e
         except DevinError as e:
             raise HTTPException(503, str(e)) from e
+
+    @app.post("/cases/{case_id}/fix/message", dependencies=[Support])
+    def reply_fix(case_id: str, body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
+        """Answer the Devin session of this case (it waits for us: access granted, a clarification...)."""
+        get_case_or_404(case_id)
+        message = str(body.get("message") or "").strip()
+        if not message:
+            raise HTTPException(422, "empty message")
+        try:
+            return fixer.reply(case_id, message)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        except DevinError as e:
+            raise HTTPException(503, str(e)) from e
+
+    @app.post("/dashboard/cases/{case_id}/fix/message", dependencies=[Support], include_in_schema=False)
+    def dash_reply_fix(case_id: str, message: Annotated[str, Form()]) -> RedirectResponse:
+        reply_fix(case_id, {"message": message})
+        return RedirectResponse(f"/dashboard/cases/{case_id}", status_code=303)
 
     @app.get("/cases/{case_id}/fix", dependencies=[Support])
     def get_fix(case_id: str) -> dict[str, Any]:

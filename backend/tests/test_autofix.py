@@ -121,3 +121,29 @@ def test_devin_provider_payload(monkeypatch):
     assert "structured_output_schema" in sent["body"] and s["session_id"] == "devin-abc"
     g = p.get("devin-abc")
     assert sent["url"].endswith("/sessions/devin-abc") and g["pull_requests"][0]["pr_url"].endswith("/pull/7")
+
+
+def test_devin_waiting_for_user_is_shown_and_support_can_reply():
+    class Waiting(MockProvider):
+        def get(self, session_id):
+            return {"session_id": session_id, "status": "running", "status_detail": "waiting_for_user", "pull_requests": []}
+
+        def messages(self, session_id):
+            return [{"source": "devin", "message": "On it."},
+                    {"source": "devin", "message": "Blocked: I can't access the repo."}] + super().messages(session_id)
+
+    settings = Settings(ingest_token=TOKEN, dashboard_password="pw", fix_repos=f"Fake CRM={REPO}", fix_auto=False)
+    store = Store(":memory:")
+    provider = Waiting(run_s=0)
+    client = TestClient(create_app(settings, store, fixer=AutoFixer(settings, store, provider=provider), start_poller=False))
+    post(client, defect_due_date())
+    client.post("/cases/demo-005/fix", auth=AUTH)
+    html = client.get("/dashboard/cases/demo-005", auth=AUTH).text
+    assert "Devin is waiting for you" in html and "can&#x27;t access the repo" in html
+    assert client.post("/cases/demo-005/fix/message", json={"message": ""}, auth=AUTH).status_code == 422
+    r = client.post("/dashboard/cases/demo-005/fix/message", data={"message": "Access granted, please retry"},
+                    auth=AUTH, follow_redirects=False)
+    assert r.status_code == 303
+    sid = store.get_fix("demo-005")["session_id"]
+    assert provider.messages(sid)[-1] == {"source": "user", "message": "Access granted, please retry"}
+    assert store.get_fix("demo-005")["replies"] == ["Access granted, please retry"]

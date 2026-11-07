@@ -104,6 +104,8 @@ class Provider(Protocol):
 
     def create(self, *, prompt: str, repo: str, title: str, tags: list[str]) -> dict[str, Any]: ...
     def get(self, session_id: str) -> dict[str, Any]: ...
+    def messages(self, session_id: str) -> list[dict[str, Any]]: ...
+    def send(self, session_id: str, message: str) -> None: ...
 
 
 class DevinError(RuntimeError):
@@ -147,6 +149,13 @@ class DevinProvider:
     def get(self, session_id: str) -> dict[str, Any]:
         return self._call("GET", f"/sessions/{session_id}")
 
+    def messages(self, session_id: str) -> list[dict[str, Any]]:
+        d = self._call("GET", f"/sessions/{session_id}/messages")
+        return d.get("items", []) if isinstance(d, dict) else list(d or [])
+
+    def send(self, session_id: str, message: str) -> None:
+        self._call("POST", f"/sessions/{session_id}/messages", {"message": message})
+
 
 @dataclass
 class MockProvider:
@@ -175,6 +184,12 @@ class MockProvider:
             "structured_output": {"reproduced": True, "root_cause": "(simulated)", "fix_summary": "(simulated)",
                                   "test_added": "(simulated)", "pr_url": pr},
         }
+
+    def messages(self, session_id: str) -> list[dict[str, Any]]:
+        return self._sessions.get(session_id, {}).get("messages", [])
+
+    def send(self, session_id: str, message: str) -> None:
+        self._sessions.setdefault(session_id, {}).setdefault("messages", []).append({"source": "user", "message": message})
 
 
 def make_provider(settings) -> Provider:
@@ -250,6 +265,28 @@ class AutoFixer:
                    pr_state=prs[0].get("pr_state") if prs else fix.get("pr_state"),
                    result=s.get("structured_output") or fix.get("result"),
                    acus=s.get("acus_consumed", fix.get("acus")))
+        # Devin waits for us (missing access, a question...): bring its last message to the dashboard
+        if fix.get("status_detail") == "waiting_for_user":
+            try:
+                said = [m for m in self.provider.messages(fix["session_id"]) if m.get("source") == "devin"]
+                fix["devin_says"] = said[-1].get("message") if said else fix.get("devin_says")
+            except DevinError:
+                pass
+        else:
+            fix.pop("devin_says", None)
+        self.store.save_fix(fix)
+        return fix
+
+    def reply(self, case_id: str, message: str) -> dict[str, Any]:
+        """Answer Devin from the support dashboard (e.g. after granting repo access)."""
+        fix = self.store.get_fix(case_id)
+        if not fix or not fix.get("session_id"):
+            raise ValueError("no Devin session for this case")
+        if self.provider is None:
+            raise DevinError(self._provider_error or "no fix provider")
+        self.provider.send(fix["session_id"], message)
+        fix.setdefault("replies", []).append(message)
+        fix.pop("devin_says", None)
         self.store.save_fix(fix)
         return fix
 
