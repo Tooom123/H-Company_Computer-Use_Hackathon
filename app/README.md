@@ -316,6 +316,13 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
   quatre cibles de validation : **236 px d’affichage d’erreur médiane**, suivi actif et
   orientation reçue dans le panneau. Ce résultat isolé ne démontre ni une amélioration
   par rapport aux essais regard antérieurs ni la présence de la cible dans les crops.
+- Contrôle réel du test cible sur `1fa41e5`, début des captures à **18:51:57** : graine 42,
+  **Écran complet**, caméra arrêtée, source **1 470 × 956**. Sur 30 s demandées, la limite
+  de conservation de **64 Mio** a arrêté l’essai avant la fin, avec retour du panneau :
+  **26 captures**, **19 évaluables**, **7 exclues**, cible entière **19/19** (bords 16/16,
+  intérieur 3/3). Les 26 images sont des pleins écrans demandés, sans repli ni crop ;
+  surface conservée 100 %, première préparation 433 ms. Ce contrôle positif valide le
+  calcul géométrique et l’arrêt, **pas la précision webcam**. Aucun appel Holo.
 
 ## Limites et dépendances
 
