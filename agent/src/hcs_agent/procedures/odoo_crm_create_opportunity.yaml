@@ -1,0 +1,71 @@
+# Starter case: create an opportunity in the CRM pipeline. Three steps, works on an empty database.
+id: odoo_crm_create_opportunity
+software: odoo
+software_version: "19.0"
+session_type: onboarding
+title: Create an opportunity in the CRM pipeline
+reversible: true
+max_attempts: 2
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: opportunity
+    description: Name of the opportunity to create, e.g. "Acme Demo"
+    required: false
+    default: "Acme Demo"
+  - name: expected_revenue
+    description: Expected revenue, e.g. "5000"
+    required: false
+
+preconditions:
+  - Odoo is open in the browser on the main display and the user is logged in.
+  - The CRM app is installed.
+
+objective: >-
+  Create an opportunity named "{opportunity}" in the "New" column of the Odoo CRM pipeline.
+
+planned_changes:
+  - Add one opportunity card titled "{opportunity}" in the pipeline. Nothing else is modified.
+
+allowed_actions:
+  - Navigate inside the Odoo CRM app (open the app, pipeline view).
+  - Click "New", fill the quick-create card (title, optional revenue) and click "Add".
+
+forbidden_actions:
+  - Sending any email or external message.
+  - Deleting, archiving or editing any existing record.
+  - Leaving the Odoo browser tab or opening other applications.
+  - Entering credentials. If a login screen appears, stop and report it.
+
+agent_instructions: |
+  You are assisting a user inside Odoo CRM (version {software_version}) running in a browser on macOS.
+  Work only inside the Odoo tab that is already visible.
+  Procedure:
+  1. Open the CRM app if the pipeline is not displayed (app menu, top-left, then "CRM").
+  2. In the pipeline, click the "New" button (top-left, next to "Generate").
+  3. A quick-create card opens in the "New" column: type "{opportunity}" in the "Opportunity" field.
+     If an expected revenue was given, type it in "Expected Revenue".
+  4. Click "Add" to save the card. Confirm the card "{opportunity}" is visible in the "New" column.
+  If something prevents a step (login prompt, error dialog), stop and report it as blocked with the exact message.
+
+postcondition:
+  description: >-
+    The CRM pipeline shows a card titled "{opportunity}" in the "New" column.
+  checks:
+    - key: pipeline_displayed
+      prompt: The CRM pipeline (kanban with New / Qualified / Proposition / Won columns) is displayed.
+    - key: card_present
+      prompt: A card titled "{opportunity}" is visible in the pipeline.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the
+    browser window and do not reload the page. Make sure the CRM pipeline is displayed (open the CRM app from
+    the app menu if needed). Do not create, edit or delete anything. Report exactly what you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must confirm the user has the CRM access right to create opportunities.
+  default_category: unknown
