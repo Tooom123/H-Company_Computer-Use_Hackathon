@@ -4,6 +4,7 @@
     POST /interventions/{id}/approve    -> ApproveCommand
     POST /interventions/{id}/stop       -> StopCommand
     POST /interventions/{id}/next       -> NextCommand (guide mode: user did / could not do the step)
+    POST /interventions/{id}/autonomy   -> AutonomyCommand (Magnet level 0-2, live)
     POST /interventions/{id}/feedback   -> FeedbackCommand
     GET  /interventions/{id}            -> state, plan, steps so far
     GET  /interventions/{id}/report     -> InterventionReport (once finished)
@@ -27,7 +28,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from .backend import Backend, make_backend
-from .contract import AgentEvent, ApproveCommand, FeedbackCommand, InterventionRequest, NextCommand, StopCommand
+from .contract import (AgentEvent, ApproveCommand, AutonomyCommand, FeedbackCommand, InterventionRequest,
+                       NextCommand, StopCommand)
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 
@@ -86,6 +88,9 @@ def _snapshot(it: Intervention) -> dict[str, Any]:
         "declared": it.declared.model_dump(),
         "verification": it.verification.model_dump() if it.verification else None,
         "guidance": [g.model_dump() for g in it.guidance],
+        "autonomy": it.autonomy,
+        "takeover": it.takeover,
+        "mode": it.request.mode.value,
         "knowledge": [k.model_dump() for k in it.knowledge],
         "error": it.error,
         "report_ready": it.report is not None,
@@ -144,6 +149,13 @@ def create_app(backend: Backend | None = None, runs_dir: Path | None = None) -> 
             it.next(cmd or NextCommand())
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
+        return _snapshot(it)
+
+    @app.post("/interventions/{session_id}/autonomy")
+    def autonomy(session_id: str, cmd: AutonomyCommand) -> dict[str, Any]:
+        """Magnet: change the help level while the intervention runs (2 while guiding = takeover)."""
+        it = hub.get(session_id)
+        it.set_autonomy(cmd.level)
         return _snapshot(it)
 
     @app.post("/interventions/{session_id}/feedback")

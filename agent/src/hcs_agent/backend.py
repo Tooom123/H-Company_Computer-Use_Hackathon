@@ -491,6 +491,12 @@ class HBackend:
         except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
             return Located(False, None, f"grounding error: {exc}")
 
+    def effect_visible(self, expected: str) -> tuple[bool, str]:
+        try:
+            return self._grounding().effect_visible(expected)
+        except Exception as exc:  # noqa: BLE001
+            return True, f"effect check unavailable: {exc}"
+
     def screen_matches(self, expected: str) -> tuple[bool, str]:
         try:
             return self._grounding().screen_matches(expected)
@@ -499,17 +505,13 @@ class HBackend:
 
     def screenshot(self, path: Path) -> Path | None:
         try:
-            from hai_drivers.desktop.local import LocalDesktopDriver
+            from .grounding import grab_screen
 
-            driver = LocalDesktopDriver()
-            try:
-                data = base64.b64decode(driver.screenshot_b64())
-            finally:
-                driver.close()
+            img = grab_screen()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(path, format="PNG")
         except Exception:  # noqa: BLE001 - evidence is optional
             return None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
         return path
 
 
@@ -749,6 +751,9 @@ class MockBackend:
 
     def screen_matches(self, expected: str) -> tuple[bool, str]:
         return True, "[simulated] expected screen displayed"
+
+    def effect_visible(self, expected: str) -> tuple[bool, str]:
+        return True, "[simulated] effect visible"
 
     def locate(self, description: str, context: str = "") -> Located | None:
         time.sleep(self.step_delay_s)

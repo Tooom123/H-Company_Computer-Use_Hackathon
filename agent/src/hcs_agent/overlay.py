@@ -395,7 +395,7 @@ class _SketchView(AppKit.NSView):
 
         text, pulsing = self.badge
         bounds = self.bounds()
-        w, h = 210.0, 36.0
+        w, h = max(210.0, 52 + 7.6 * len(text)), 36.0  # pill grows with the text
         x, y = bounds.size.width / 2 - w / 2, 86.0  # ~2 cm above the bottom edge, clear of the Dock
         pill = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(((x, y), (w, h)), h / 2, h / 2)
         AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.08, 0.88).setFill()
@@ -509,7 +509,7 @@ class Overlay:
             self.hide()
 
 
-AUTONOMY_LABELS = ("Je montre", "J'aide si tu bloques", "Je fais, tu regardes")
+AUTONOMY_LABELS = ("Show me", "Help if I'm stuck", "Do it, I watch")
 
 
 class _MagnetView(AppKit.NSView):
@@ -554,7 +554,7 @@ class _MagnetView(AppKit.NSView):
                 for k in range(2):
                     _circle(cx, y, rnd, 11 - k * 2, 10 - k * 2)
         attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
-        Foundation.NSString.stringWithString_(f"Magnet : {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
+        Foundation.NSString.stringWithString_(f"Magnet: {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
             ((14, H - 30), (W - 28, 18)), attrs)
 
 
@@ -576,6 +576,13 @@ class MagnetWidget:
         self.view.on_change = on_change
         self.window.setContentView_(self.view)
         self.window.orderFrontRegardless()
+        # Rect in top-left screen points (pynput's frame), to tell Magnet clicks apart from clicks in the app.
+        screen_h = AppKit.NSScreen.screens()[0].frame().size.height
+        self.rect = (18.0, screen_h - 18.0 - h, w, h)
+
+    def contains(self, x: float, y: float) -> bool:
+        rx, ry, rw, rh = self.rect
+        return rx <= x <= rx + rw and ry <= y <= ry + rh
 
     def set_level(self, level: int) -> None:
         def apply() -> None:

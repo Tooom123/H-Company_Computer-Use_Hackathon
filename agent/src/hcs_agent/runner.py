@@ -252,7 +252,10 @@ class Intervention:
                 if last_attempt is None:
                     # The user is stuck: take the controls, finish the task and narrate each action.
                     self.takeover = True
-                    self._emit("state_changed", "Je prends la main pour finir la tâche.", takeover=True)
+                    with self._lock:
+                        if not self.state.terminal:
+                            self.state = State.running  # leave awaiting_user: the agent acts now
+                    self._emit("state_changed", "Taking over to finish the task.", takeover=True)
                     self.takeover = True
                     task = bound.task_message(self.scope_note, "The user started this task by hand and got stuck; "
                                               "continue from the current screen state. Before each action, say in "
@@ -272,7 +275,9 @@ class Intervention:
                 break  # escalation rule: a recognised limit is not retried
 
             self._set_state(State.verifying, "Checking the result in the software.")
-            verify = self.backend.verify(bound, self._on_step, self._stop)
+            verify = self._fast_verify(bound) if (guide and not self.takeover) else None
+            if verify is None:
+                verify = self.backend.verify(bound, self._on_step, self._stop)
             self._record_verify(verify)
             if self._stop.is_set():
                 return self._finish_stopped()
@@ -318,7 +323,7 @@ class Intervention:
             step = script[i]
             t_step = time.time()
             if step.action == "info":
-                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
+                gs = GuidanceStep(index=i + 1, instruction=step.instruction, why=step.why,
                                   pointer=None, kind="info", annotations=self._ground_annotations(step, context))
                 self._trace(f"step {gs.index} (info) shown after {time.time() - t_step:.1f}s")
                 if self._on_guidance(gs) is None:
@@ -356,10 +361,10 @@ class Intervention:
                 if doc and doc.answer:
                     why = (doc.answer.strip().split("\n")[0])[:160]
                     self._note("agent_lookup", doc)
-                gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=why,
-                                  kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
+                gs = GuidanceStep(index=i + 1, pointer=None, where=step.element, why=why,
+                                  kind=step.action, instruction=step.instruction + " (I can't see it yet)")
             else:
-                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
+                gs = GuidanceStep(index=i + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, box=loc.box, kind=step.action, last=False,
                                   annotations=self._ground_annotations(step, context))
             self._trace(f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}")
@@ -376,6 +381,38 @@ class Intervention:
 
             # Verify progress on screen before moving on.
             nxt = script[i + 1] if i + 1 < len(script) else None
+            if step.done_when:
+                # Explicit end state first; then the next control being visible also counts (the done_when
+                # wording can be stricter than reality). Another app in front is never "not done": wait.
+                outcome = self._screen_shows(step.done_when, software=bound.request.software)
+                if outcome == "yes":
+                    done_steps.append(step.instruction)
+                    i += 1
+                    misses = 0
+                    continue
+                if outcome == "away":
+                    self._trace("the software is not in front; waiting for it")
+                    time.sleep(1.5)
+                    pre_loc = loc
+                    continue  # same step, no re-show, no miss
+                if nxt and nxt.element and (n := self.backend.locate(nxt.element, context)) and n.found:
+                    self._trace(f"step {i + 1}: done_when unsure but the next control is visible; moving on")
+                    done_steps.append(step.instruction)
+                    i += 1
+                    pre_loc = n
+                    misses = 0
+                    continue
+                misses += 1
+                if misses >= 2 or nxt is None:
+                    # Do not nag: after two unconvinced checks (or on the last step) move on; the final
+                    # verification decides, and the user sees an honest outcome instead of a loop.
+                    self._trace(f"step {i + 1}: moving on after {misses} unconvinced check(s); verification will tell")
+                    done_steps.append(step.instruction)
+                    i += 1
+                    misses = 0
+                    continue
+                self._trace(f"step {i + 1} not done yet ({step.done_when[:60]}); showing it again")
+                continue
             if nxt is None:
                 done_steps.append(step.instruction)
                 i += 1
@@ -400,7 +437,7 @@ class Intervention:
             self._trace(f"no progress after step {i + 1} (miss {misses}); showing it again")
             pre_loc = still
 
-        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
+        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="Done, checking the result",
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
@@ -423,8 +460,8 @@ class Intervention:
                 return True
             if not shown:
                 gs = GuidanceStep(index=len(self.guidance) + 1, kind="wait", pointer=None,
-                                  instruction=f"Affiche {bound.request.software} (pipeline CRM) à l'écran",
-                                  why=f"Je vois : {visible[:80]}")
+                                  instruction=f"Bring {bound.request.software} (CRM pipeline) to the front",
+                                  why=f"I see: {visible[:80]}")
                 self.guidance.append(gs)
                 self._set_state(State.awaiting_user, "Show the software first.")
                 self._emit("guidance", gs.instruction, step=gs.model_dump())
@@ -449,6 +486,43 @@ class Intervention:
             if check and check(bound.expected_screen)[0]:
                 return True
         return self._ensure_screen(bound, attempts=10)
+
+    def _screen_shows(self, expected: str, tries: int = 2, pause_s: float = 0.6, software: str = "") -> str:
+        """Has the step's effect appeared? Returns "yes", "no", or "away" (another application is in front)."""
+        check = getattr(self.backend, "effect_visible", None) or getattr(self.backend, "screen_matches", None)
+        if check is None:
+            return "yes"
+        for attempt in range(tries):
+            ok, visible = check(expected)
+            self._trace(f"done check ({attempt + 1}/{tries}): {'yes' if ok else 'no'} ({visible[:60]})")
+            if ok:
+                return "yes"
+            if self._stop.is_set():
+                return "no"
+            if software and visible and software.lower() not in visible.lower():
+                return "away"
+            if attempt + 1 < tries:
+                time.sleep(pause_s)
+        return "no"
+
+    def _fast_verify(self, bound: BoundProcedure):
+        """Guide mode: the user is already on the final screen, so each postcondition check is one Holo screen
+        check (~2 s) instead of a full agent session (~15 s). Any doubt -> None, and the agent verifier runs."""
+        check = getattr(self.backend, "effect_visible", None) or getattr(self.backend, "screen_matches", None)
+        if check is None or self._stop.is_set():
+            return None
+        results: dict[str, bool] = {}
+        seen: list[str] = []
+        for key, prompt in bound.checks.items():
+            ok, visible = check(f"{prompt} (look at the exact field or area; answer false if it is not visible)")
+            self._trace(f"fast check {key}: {'yes' if ok else 'no'} ({visible[:50]})")
+            results[key] = ok
+            seen.append(visible)
+            if not ok:
+                return None  # let the agent verifier navigate and look properly
+        from .backend import VerifyResult
+
+        return VerifyResult("holo-screen-check", "completed", results, "; ".join(seen)[:400], cost_usd=0.0)
 
     def _trace(self, summary: str) -> None:
         self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))
@@ -488,13 +562,16 @@ class Intervention:
         """Backend callback in guide mode: publish the step, wait for the user's `next()` or a stop."""
         self.guidance.append(step)
         if step.last:
-            self._emit("guidance", step.instruction, step=step.model_dump())
+            step.shown_at = _now()
+            self._emit("guidance", step.instruction, step=step.model_dump(mode="json"))
             return None
         self._user_event.clear()
         self._user_reply = None
+        step.shown_at = _now()
         self._set_state(State.awaiting_user, "Your turn: do the step shown, then continue.")
-        self._emit("guidance", step.instruction, step=step.model_dump())
+        self._emit("guidance", step.instruction, step=step.model_dump(mode="json"))
         self._user_event.wait()
+        step.done_s = round((_now() - step.shown_at).total_seconds(), 1)
         if self._stop.is_set():
             return None
         self._set_state(State.running, "Looking at the screen for the next step.")
@@ -584,6 +661,8 @@ class Intervention:
             goal=self.request.goal,
             symptom=self.request.symptom,
             mode=self.request.mode,
+            autonomy=self.autonomy,
+            takeover=self.takeover,
             procedure_id=proc.id if proc else self.request.procedure_id,
             approved_scope=self.plan if self._approved else None,
             guidance=self.guidance,

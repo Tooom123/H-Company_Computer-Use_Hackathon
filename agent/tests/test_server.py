@@ -37,3 +37,30 @@ def test_full_flow_over_http_and_ws(tmp_path):
         assert fb["report_ready"]
         assert c.get(f"/interventions/{sid}/report").json()["feedback"]["comment"] == "clear"
         assert c.post(f"/interventions/{sid}/approve", json={"approved": True}).status_code == 409
+
+
+def test_guide_mode_over_http_with_next_and_autonomy(tmp_path):
+    import time
+
+    app = create_app(MockBackend(step_delay_s=0.01), tmp_path)
+    with TestClient(app) as c:
+        body = {"software": "odoo", "goal": "show me", "procedure_id": "odoo_crm_create_opportunity",
+                "mode": "guide", "autonomy": 1, "parameters": {"opportunity": "Acme Demo"}}
+        sid = c.post("/interventions", json=body).json()["session_id"]
+        c.post(f"/interventions/{sid}/approve", json={"approved": True})
+        for _ in range(100):
+            snap = c.get(f"/interventions/{sid}").json()
+            if snap["state"] == "awaiting_user":
+                break
+            time.sleep(0.02)
+        assert snap["state"] == "awaiting_user" and snap["guidance"]
+        step = snap["guidance"][-1]
+        assert step["pointer"] and step["box"] and step["kind"] in ("click", "type")
+        assert c.post(f"/interventions/{sid}/autonomy", json={"level": 2}).json()["autonomy"] == 2
+        for _ in range(200):
+            snap = c.get(f"/interventions/{sid}").json()
+            if snap["report_ready"]:
+                break
+            time.sleep(0.02)
+        assert snap["takeover"] is True and snap["report_ready"]
+        assert c.get(f"/interventions/{sid}/report").json()["status"] == "resolved"

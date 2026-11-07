@@ -299,6 +299,7 @@ L’API produit prévue reste `127.0.0.1:8765` :
 | POST | `/interventions/{id}/approve` | `ApproveCommand` |
 | POST | `/interventions/{id}/stop` | `StopCommand` |
 | POST | `/interventions/{id}/next` | `NextCommand` — guide mode, after a `guidance` event (state `awaiting_user`) |
+| POST | `/interventions/{id}/autonomy` | `AutonomyCommand {level: 0|1|2}` — the Magnet, live; 2 while guiding = the agent takes over |
 | POST | `/interventions/{id}/feedback` | `FeedbackCommand` |
 | GET | `/interventions/{id}` | Snapshot |
 | GET | `/interventions/{id}/report` | `InterventionReport` |
@@ -309,9 +310,13 @@ explicitement simulées ; une vraie analyse Holo n’est pas une validation de l
 
 ## Vérifier
 
-Request `mode` is `act` (agent does it) or `guide` (agent explains and points; show each `guidance` event as a
-card with instruction / where / why and a "Done" + "I can't" button that call `/next`). `plan.documentation`
-and `plan.sources` (Linkup) should be displayed with the proposed plan.
+Request `mode` is `act` (agent does it) or `guide` (agent explains and points), `autonomy` 0-2 is the Magnet
+level. Each `guidance` event carries `step` with `instruction`, `why`, `kind` (click / type / key / info / wait),
+`pointer` (screen points), `box` (x, y, w, h of the control) and `annotations[]` (extra marks with their own
+`box` and short `text`): draw them on screen (the Python CLI draws a hand-sketched overlay; the app may do the
+same or render a side card). Call `/next` with `{done: true}` when the user did it, `{done: false, note}` when
+stuck. Snapshot fields `takeover` and `mode` tell whether the agent is now acting; in that case `step` events
+with `detail.tools` are the agent's actions (`detail.pointer`, `detail.element`) for live narration.
 
 ```bash
 npm run typecheck

@@ -88,9 +88,27 @@ class Transcriber:
         options: dict = {"model": "solaria-3", "language_config": {"languages": [self.language]}}
         if vocabulary:
             options["custom_vocabulary"] = True
-            options["custom_vocabulary_config"] = {"vocabulary": vocabulary[:50]}
+            # Keep the bias gentle: at high intensity Gladia replaces ordinary words with vocabulary terms
+            # ("mettre une note" became "opportunité CRM CRM").
+            options["custom_vocabulary_config"] = {"vocabulary": [_vocab_entry(v) for v in vocabulary[:50]],
+                                                   "default_intensity": 0.3}
         result = self._client.transcribe(wav_path, options)
         return _full_transcript(result)
+
+
+# How French speakers actually say the demo names; Gladia maps these pronunciations back to the spelling.
+_PRONUNCIATIONS = {
+    "Acme Demo": ["acmé démo", "akmé démo"],
+    "Acme Corp": ["acmé corp", "akmé corp"],
+}
+
+
+def _vocab_entry(word: str) -> dict:
+    entry: dict = {"value": word, "intensity": 0.3}
+    if word in _PRONUNCIATIONS:
+        entry["pronunciations"] = _PRONUNCIATIONS[word]
+        entry["intensity"] = 0.5
+    return entry
 
 
 def _full_transcript(result) -> str:
@@ -136,7 +154,7 @@ def _intent_prompt(transcript: str, procedures: list[Procedure]) -> str:
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say, list it in "
         "missing instead), role (string or null, if the user mentions who "
-        "they are), goal (one clean sentence in the user's language), missing (required parameters the user did not "
+        "they are), goal (one clean sentence in English, whatever language the user spoke), missing (required parameters the user did not "
         "give). No prose."
     )
 

@@ -1,0 +1,16 @@
+{
+  "description": "Live change of the help level (the Magnet): 0 show only, 1 help when stuck, 2 do it and narrate.",
+  "properties": {
+    "level": {
+      "maximum": 2,
+      "minimum": 0,
+      "title": "Level",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "level"
+  ],
+  "title": "AutonomyCommand",
+  "type": "object"
+}

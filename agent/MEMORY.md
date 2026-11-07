@@ -1,7 +1,7 @@
 # Memory — branch `matteo` (H desktop agent, "H-Companion")
 
 Written for the next agent (Claude Code or a human) who will test this tool end to end on the Mac and be
-critical about it. State as of 2026-11-07 ~22:00, Paris. Read `AGENTS.md` at the repo root first.
+critical about it. State as of 2026-11-07 ~23:30, Paris. Read `AGENTS.md` at the repo root first.
 
 ## 1. What this is, in one paragraph
 
@@ -80,6 +80,26 @@ is **Odoo 20** on Netcup via Édouard's tunnel; labels may differ):
 (Log note vs Send message trap), `odoo_crm_qualify_opportunity` (7 steps incl. an info "tour" step),
 `odoo_crm_change_stage_restricted` (blocked case, permissions).
 
+## 4b. Validated on the real Odoo 20 (Claude Code, 2026-11-07 evening)
+
+- Procedures rewritten against **Odoo 20** (commit `0da7530`): Contact (not Customer), "Opportunity's Name" is
+  the 2nd line of the quick-create card (cursor starts in Contact), Enter saves and reopens an empty card
+  (so "type name" and "Add" are one step), chatter on the right, Activity dialog button is **Save** (type
+  To-Do preselected, summary pre-filled "To-Do"), internal notes have no yellow background any more.
+- **Grounding**: 26/28 element descriptions framed the right control first try, 0.7–2 s (median 0.9 s).
+  Details in `docs/grounding-odoo20-2026-11-07.md`. Failures were descriptions containing a value that
+  changes ("0.00 €") and a header covered by Odoo's tutorial bubble (close the tutorial on the demo base).
+- **`done_when`** (per-step end state checked by Holo before advancing): 16/18 first try, 20/20 after
+  rewording. Rules: name the exact field (Holo reads the whole screen and may match history text behind a
+  dialog); write positive statements (Holo answers negatives badly: not "no cloud icon" but "the form is
+  saved: only the ⋮ menu is shown").
+- Full guided run with the overlay **still not observed end to end** (screen was busy). That is the test.
+- "Won blocked" needs a non-admin Odoo user AND an opportunity owned by someone else (a salesperson may
+  mark their own opportunity Won). Decide the setup before the demo.
+- API for the Electron app: `autonomy` on the request, `POST /interventions/{id}/autonomy` (live Magnet),
+  snapshot `autonomy`/`takeover`/`mode`; `guidance` events carry `box` and `annotations`. Stop (Ctrl+C or
+  `/stop`) is clean mid-guide and mid-takeover; voice "reprends / continue" re-runs the last request.
+
 ## 5. Measured numbers (keep them honest)
 
 - Holo text answer, thinking off: 0.6 s. Grounding with 1024-px screenshot: 1.2–1.8 s (+0.4 s capture).
@@ -93,14 +113,14 @@ is **Odoo 20** on Netcup via Édouard's tunnel; labels may differ):
 ## 6. Known problems and open questions — be critical here
 
 1. **Guide reliability on real Odoo is unproven beyond the first steps.** Verified live: screen check,
-   card located and framed, New button. Not yet seen live: a full guided run to the closing note with the
-   bounding-box frames. Test each procedure end to end and record per-step: was the right control framed?
+   card located and framed, New button; grounding and done_when validated offline on real screenshots
+   (see 4b). Not yet seen live: a full guided run to the closing note with the bounding-box frames. Test each procedure end to end and record per-step: was the right control framed?
    did progress detection fire after the user's click? how many seconds per step?
 2. **Progress detection** uses real input (click/Enter/Esc) then a screen re-check. Typing steps advance on
    Enter/Tab or a click after typing. Expect false positives when the user clicks elsewhere (the screen
    re-check should catch it) and false negatives on fields filled without Enter.
-3. **Grounding descriptions live in YAML and are guesses** (Odoo 19 labels, English UI). Wrong frames are
-   almost always a description problem. Odoo 20 may rename things.
+3. **Grounding descriptions live in YAML**, now aligned with Odoo 20 and tested offline (26/28). Wrong frames
+   are almost always a description problem; never put changing values in a description.
 4. **Takeover narration circles** rely on the agent's action coordinates (normalised 0–1 of the screen);
    mapping untested on a second display or non-retina screen. Narration text quality depends on the agent
    obeying "one French sentence before each action".

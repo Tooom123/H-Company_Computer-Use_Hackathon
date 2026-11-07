@@ -40,8 +40,10 @@ def test_guide_mode_waits_for_user_between_steps(tmp_path):
     assert r.status is CaseStatus.resolved
     # scripted guide: 7 steps minus the optional "open CRM" (not visible in the mock) + the closing note
     assert len(r.guidance) == 7 and r.guidance[-1].last
-    assert [g.index for g in r.guidance] == list(range(1, 8))
-    assert all(g.pointer for g in r.guidance[:-1])  # every real step was grounded
+    # step index = position in the script (stable when a step is shown again); the optional "open CRM" is skipped
+    assert [g.index for g in r.guidance[:-1]] == [2, 3, 4, 5, 6, 7]
+    assert all(g.pointer for g in r.guidance[:-1] if g.kind != "info")  # every control step was grounded
+    assert any(g.kind == "info" and g.annotations for g in r.guidance)  # To-Do chip shown, not clicked
     guidance_events = [e for e in events if e.type == "guidance"]
     assert len(guidance_events) == 7
     assert any(e.type == "state_changed" and e.state is State.awaiting_user for e in events)
@@ -101,3 +103,62 @@ def test_act_mode_records_agent_lookups(tmp_path):
     it.wait(5)
     assert {k.purpose for k in it.report.knowledge} == {"agent_lookup"}  # only when the agent asked
     assert any(e.type == "knowledge" for e in events)
+
+
+def test_raising_autonomy_mid_guide_hands_over_and_finishes(tmp_path):
+    events = []
+    it = Intervention(_request("odoo_crm_followup_activity"), MockBackend(step_delay_s=0.01), ProcedureRegistry(),
+                      events.append, tmp_path)
+    it.start()
+    it.approve(ApproveCommand())
+    for _ in range(200):
+        if it.state is State.awaiting_user:
+            break
+        time.sleep(0.02)
+    assert it.state is State.awaiting_user
+    it.set_autonomy(2)  # the user clicks the Magnet's right notch while a step is shown
+    it.wait(5)
+    assert it.takeover is True
+    assert it.report is not None and it.report.status is CaseStatus.resolved
+    # the agent took the controls: the session left awaiting_user and ran the act path, then verified
+    states = [e.state for e in events if e.type == "state_changed"]
+    assert State.running in states[states.index(State.awaiting_user):]
+    assert any(e.type == "state_changed" and e.data.get("takeover") for e in events)
+
+
+def test_lowering_autonomy_mid_guide_keeps_guiding(tmp_path):
+    events = []
+    it = Intervention(_request("odoo_crm_followup_activity"), MockBackend(step_delay_s=0.01), ProcedureRegistry(),
+                      events.append, tmp_path)
+    it.start()
+    it.approve(ApproveCommand())
+    for _ in range(200):
+        if it.state is State.awaiting_user:
+            break
+        time.sleep(0.02)
+    it.set_autonomy(0)
+    assert it.state is State.awaiting_user  # nothing stops, the step is still waiting for the user
+    _auto_next(it, events, [])
+    it.wait(5)
+    assert it.report.status is CaseStatus.resolved and it.takeover is False
+
+
+def test_new_voice_request_mid_task_stops_the_current_one(tmp_path, monkeypatch):
+    """⌘H during a task: the transcript queue fills, the guide loop stops the intervention right away."""
+    import queue
+    from types import SimpleNamespace
+
+    from hcs_agent import cli
+    from hcs_agent.contract import InterventionRequest
+
+    q: "queue.Queue[str]" = queue.Queue()
+    q.put("en fait montre-moi autre chose")
+    monkeypatch.setitem(cli._VOICE, "ptt", SimpleNamespace(transcripts=q))
+    monkeypatch.setitem(cli._MAGNET, "level", 1)
+    req = InterventionRequest(software="odoo", goal="g", procedure_id="odoo_crm_create_opportunity",
+                              parameters={"opportunity": "Acme Demo"})
+    code = cli._execute(req, MockBackend(step_delay_s=0.01), tmp_path, auto_approve=True, overlay=False, ov=None)
+    it = cli._MAGNET["current"]
+    assert code == 3 and it.report.status is CaseStatus.abandoned
+    assert it.report.timings.stop_requested_at is not None
+    assert not q.empty()  # the new request is still queued for the talk loop to run next

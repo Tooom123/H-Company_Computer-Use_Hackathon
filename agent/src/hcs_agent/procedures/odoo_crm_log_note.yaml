@@ -1,7 +1,7 @@
 # Usage case with a real trap: "Log note" (internal) vs "Send message" (emails the customer).
 id: odoo_crm_log_note
 software: odoo
-software_version: "19.0"
+software_version: "20.0"
 session_type: onboarding
 title: Log an internal note on an opportunity (without emailing the customer)
 reversible: true
@@ -44,38 +44,44 @@ agent_instructions: |
   the visible Odoo tab.
   Procedure:
   1. Open the CRM pipeline and click the card "{opportunity}".
-  2. In the chatter (bottom of the form), click "Log note" — NOT "Send message", which emails followers.
-  3. Type "{note}" and click "Log".
-  4. Confirm the note appears in the chatter with the internal-note styling.
+  2. In the chatter (panel on the right of the form on a wide screen, below it on a narrow one), click
+     "Log note" — NOT "Send message", which emails the followers.
+  3. A composer with the placeholder "Log an internal note..." opens: type "{note}" and click "Log".
+  4. Confirm the note appears at the top of the chatter history.
   If something prevents a step, stop and report it as blocked with the exact message.
 
+# Checked live on Odoo 20 (h-companion.odoo.com, 2026-11-07).
 guide_steps:
-  - instruction: "Clique sur la carte « {opportunity} »"
+  - instruction: "Click the card \"{opportunity}\""
     element: "the pipeline card titled {opportunity}"
-    why: "Les notes se mettent sur la fiche, pour que toute l'équipe les voie au bon endroit."
-  - instruction: "Clique sur Log note (pas Send message)"
-    element: "the Log note button in the chatter area at the bottom of the opportunity form"
-    why: "Log note = interne, visible par l'équipe seulement. Send message = envoie un e-mail au client."
+    why: "Notes go on the record so the whole team sees them in the right place."
+    done_when: "the form view of the opportunity {opportunity} is open (large title {opportunity}, chatter with Send message and Log note)"
+  - instruction: "Click Log note (not Send message)"
+    element: "the Log note button at the top of the chatter panel, between Send message and Activity"
+    why: "Log note = internal, team only. Send message = emails the customer."
     annotations:
-      - element: "the Send message button in the chatter area"
-        text: "Envoie un e-mail au client !"
+      - element: "the Send message button at the top of the chatter panel"
+        text: "Emails the customer!"
         shape: box
-        size: [150, 40]
-  - instruction: "Écris « {note} »"
-    element: "the note text editor that opened in the chatter"
-    why: "Sois factuel : qui, quoi, prochaine étape. Tu peux mentionner un collègue avec @."
-  - instruction: "Clique sur Log"
-    element: "the Log button under the note editor in the chatter"
-    why: "La note est horodatée et attachée à l'affaire ; elle n'est pas modifiable après, mais tu peux en ajouter."
+    done_when: "the chatter shows a composer with the placeholder 'Log an internal note...' and a Log button"
+  - instruction: "Type \"{note}\""
+    kind: type
+    element: "the 'Log an internal note...' text box in the chatter"
+    why: "Keep it factual: who, what, next step. You can mention a colleague with @."
+    done_when: "the internal note composer in the chatter contains the text {note}"
+  - instruction: "Click Log"
+    element: "the Log button just under the internal note composer in the chatter"
+    why: "The note is timestamped and attached to the deal; nothing is sent to the customer."
+    done_when: "the chatter history shows a new entry {note} and the note composer is closed"
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
-    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
-    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
-    element: "the apps grid icon at the far top-left of the Odoo top bar"
-    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+  - instruction: "Click Pipeline (or CRM) at the top left"
+    element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
+    why: "We always restart from the pipeline: the app's home screen."
+  - instruction: "Click the Odoo logo at the top left, then CRM"
+    element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
+    why: "If you are in another Odoo app, the home menu brings you back to CRM."
     optional: true
 
 postcondition:
@@ -87,7 +93,9 @@ postcondition:
     - key: note_present
       prompt: The chatter shows a note containing "{note}".
     - key: internal_styling
-      prompt: That entry is displayed as an internal note (yellow/beige background), not as a sent message.
+      prompt: >-
+        That entry is an internal note, not a sent message: in Odoo 20 a note is plain text in the history
+        (no speech bubble, no envelope icon, no "To:" recipients line).
   verification_instructions: |
     You are a read-only verifier. Stay inside the visible Odoo browser tab; never click outside the browser
     window and do not reload the page. Open the opportunity "{opportunity}" from the CRM pipeline. Scroll the

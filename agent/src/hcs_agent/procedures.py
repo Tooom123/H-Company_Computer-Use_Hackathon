@@ -52,6 +52,9 @@ class GuideStepSpec(BaseModel):
     why: str = ""
     optional: bool = Field(default=False, description="Skip silently when the control is not on screen.")
     kind: Literal["click", "type", "info"] | None = Field(default=None, description="Inferred from the verb when omitted.")
+    done_when: str | None = Field(
+        default=None, description="What the screen shows once this step is done (checked by Holo). Use it when the "
+                                  "next control is already visible before the step, so a stray click cannot advance.")
     annotations: list[AnnotationSpec] = Field(default_factory=list)
 
     @property
@@ -61,7 +64,8 @@ class GuideStepSpec(BaseModel):
         if not self.element:
             return "info"
         first = self.instruction.strip().lower().split(" ")[0]
-        return "type" if first in {"tape", "écris", "ecris", "saisis", "mets", "entre", "type", "enter", "write", "fill"} else "click"
+        return "type" if first in {"tape", "écris", "ecris", "saisis", "mets", "entre", "type", "enter", "write", "fill",
+                                   "replace"} else "click"
 
 
 class EscalationRule(BaseModel):
@@ -97,7 +101,9 @@ class Procedure(BaseModel):
     # ------------------------------------------------------------------ templating
 
     def resolve_parameters(self, given: dict[str, str]) -> dict[str, str]:
-        values = {"software_version": self.software_version or "unknown"}
+        from datetime import date
+
+        values = {"software_version": self.software_version or "unknown", "today": date.today().isoformat()}
         missing = []
         for p in self.parameters:
             if p.name in given:
@@ -176,7 +182,9 @@ class BoundProcedure(BaseModel):
 
     def recovery_script(self) -> list[GuideStepSpec]:
         return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element) if x.element else None,
-                              why=self._r(x.why), optional=x.optional, kind=x.kind) for x in self.procedure.recovery_steps]
+                              why=self._r(x.why), optional=x.optional, kind=x.kind,
+                              done_when=self._r(x.done_when) if x.done_when else None)
+                for x in self.procedure.recovery_steps]
 
     @property
     def expected_screen(self) -> str:
@@ -185,6 +193,7 @@ class BoundProcedure(BaseModel):
     def guide_script(self) -> list[GuideStepSpec]:
         return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element) if x.element else None,
                               why=self._r(x.why), optional=x.optional, kind=x.kind,
+                              done_when=self._r(x.done_when) if x.done_when else None,
                               annotations=[AnnotationSpec(element=self._r(a.element), text=self._r(a.text), shape=a.shape,
                                                           size=a.size) for a in x.annotations])
                 for x in self.procedure.guide_steps]
@@ -250,8 +259,8 @@ class BoundProcedure(BaseModel):
             )
         else:
             parts.append(
-                "The user watches you work: before EACH action, write one short sentence in French saying what "
-                "you are about to do and why (e.g. « Je clique sur Qualified pour changer l'étape »). "
+                "The user watches you work: before EACH action, write one short sentence in English saying what "
+                "you are about to do and why (e.g. \"I click Qualified to change the stage\"). "
                 "When finished, answer with: result (done / blocked / unclear), a one-paragraph summary, "
                 "the exact blocker text if blocked, and the list of steps you actually performed."
             )
