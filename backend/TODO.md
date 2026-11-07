@@ -1,33 +1,64 @@
-# TODO — Tom (support & données)
+# TODO — Tom (support, données, landing)
 
 Périmètre (README, PRD) : stockage, dossier d'escalade, tableau de bord, regroupement simple, données de démo.
-Mis à jour le 7 novembre 2026.
+Mis à jour le 7 novembre 2026 (soir). Dépôt : dimanche 8 novembre, **14h00**.
 
-## Fait (branche `tom`)
+## État du dépôt
 
-- [x] `POST /cases` : `InterventionReport` validé contre `contracts/`, stocké tel quel (SQLite, `runs/`)
-- [x] `POST /events` : `AgentEvent` stockés par session
-- [x] Authentification : jeton pour l'agent, login/mot de passe pour le support ; aucune lecture publique
-- [x] Regroupement : même logiciel + même catégorie, puis similarité des mots-clés du blocage ; sources consultables
-- [x] Dossier d'escalade JSON + Markdown : décision attendue, essais, étapes ; déclaré utilisateur / agent / observé séparés
-- [x] Captures transmises au support seulement avec l'accord de l'utilisateur
-- [x] Dashboard HTML : KPIs, groupes, cas, badges SIMULATED / DEMO
-- [x] 4 cas de démo simulés (1 résolu, 2 permissions similaires, 1 configuration) + `seed-demo` / `reset-demo`
-- [x] 11 tests (`uv run pytest backend`)
+`main` n'a toujours que le squelette (`84e2b83`). Rien n'est fusionné, aucune PR n'est ouverte.
 
-## À faire
+| Branche | Qui | Contenu | Lien avec nous |
+| --- | --- | --- | --- |
+| `matteo` (26 commits) | Matteo | Agent H complet : modes `act` et `guide` (l'agent pointe, l'utilisateur clique), 5 procédures Odoo CRM, vérification en session H séparée en lecture seule, arrêt local, Linkup (`lookup_docs`), overlay. **Contrat étendu** : `mode`, `guidance`, `knowledge`, `timings.stop_latency_s`… | Nos 4 cas de démo valident aussi contre son nouveau schéma. Son agent **n'envoie pas** encore le rapport à `POST /cases`. |
+| `edouard/gaze-desktop` (18 commits) | Edouard | Vision Lab Electron (WebGazer, calibration, zones de tête, recadrage, Holo Models API) et **pilote vocal Odoo** (Gladia → plan → approbation atteinte en réel). Scénarios Odoo inventaire et achats. | Le pilote embarque **notre `Store` (`bd3b2ca`)** directement, sans passer par l'API HTTP. |
+| `edouard/gaze-research-protocol` | Edouard | Protocole de recherche du regard (doc) | — |
+| `tom` | Tom | Backend support (`bd3b2ca`) + 1re landing | Utilisé par le pilote d'Edouard |
+| `feature/tom-landing` | Tom | Landing stylo rouge, pompier, paywall Stripe + `POST /billing/checkout` | Modifs non commitées : ratures qui suivent le scroll, correction définitive |
+| `feature/tom-gaze-heatmap` | Tom | Module heatmap ruche pour le tracker d'Edouard | À intégrer côté Edouard |
 
-- [ ] **Base Odoo de test** (bloquant) : obtenir URL + compte admin, puis créer les données fictives
-      — opportunité « Acme Démo », commercial « Demo Sales », utilisateur aux droits limités pour le cas bloqué
-- [ ] **Script de remise à zéro** dans `scripts/` (XML-RPC Odoo) : état initial reproductible, vérifié avant chaque run
-- [ ] Brancher l'agent de Matteo : envoi du rapport final vers `POST /cases` (`Authorization: Bearer`, port 8766)
-- [ ] Premier cas réel reçu de l'agent (non simulé) visible dans le dashboard
-- [ ] Proposer à Matteo un champ `user_ref` dans `InterventionReport` (utilisateurs distincts) — remplace l'en-tête `X-HCS-User`
-- [ ] Au moins 3 cas **réels** pour le regroupement : deux similaires, un différent (checklist de démo)
-- [ ] Ouvrir la PR `tom` → `main`, relue par un coéquipier
-- [ ] Optionnel : suivi en direct des sessions dans le dashboard (à partir des `AgentEvent`)
-- [ ] Optionnel : 2ᵉ techno partenaire côté backend (ex. Linkup pour sourcer la « cause supposée »)
+Technos partenaires présentes : **H** (obligatoire), **Gladia** (voix, Edouard), **Linkup** (Matteo), **Stripe** (nous).
+Aucune trace de Devin pour le prix « Best Use of Devin ».
+
+## Fait
+
+- [x] Backend support : `POST /cases` / `/events`, auth, regroupement, dossier d'escalade, dashboard, cas de démo, 13 tests
+- [x] Paiement Stripe Checkout en mode test (`/billing/checkout`, clés live refusées)
+- [x] Landing : 3D, Company → Companion, ratures au scroll, pompier, offres
+- [x] Heatmap du regard : module, page de test, 12 tests, README pour Edouard
+
+## La suite, par priorité (barème : 50 % computer use + fiabilité)
+
+### P0 — ce soir : que la démo de bout en bout passe par notre support
+
+- [ ] **Commiter et pousser** les derniers correctifs de la landing (`feature/tom-landing`)
+- [ ] **Contrats** : récupérer les schémas de `matteo` dans notre branche, relancer les tests du backend, vérifier qu'un vrai rapport de son agent passe la validation (`mode`, `guidance`, `knowledge`)
+- [ ] **Brancher l'agent sur le backend** : à la fin d'une intervention, `POST /cases` avec `Authorization: Bearer $HCS_INGEST_TOKEN`. Le mieux : je propose à Matteo un petit client (`HCS_BACKEND_URL` optionnel, sans effet s'il est absent). Une fois le rapport final envoyé, le pilote d'Edouard peut aussi utiliser l'API plutôt que le `Store` en direct.
+- [ ] **Premier cas réel** (non simulé) visible dans le dashboard, depuis le Mac de démo
+
+### P1 — demain matin : ce que le jury verra
+
+- [ ] **Dashboard** : afficher ce que l'agent apporte maintenant
+  - le mode `guide` / `act`
+  - les sources Linkup (`knowledge`) dans le dossier d'escalade : « ce que dit la doc » à côté du blocage
+  - la latence d'arrêt mesurée (`timings.stop_latency_s`)
+- [ ] **Regroupement sur cas réels** : au moins 3 cas réels, deux similaires et un différent (checklist de démo)
+- [ ] **Ne pas montrer les données de démo pendant le pitch** : bouton ou `reset-demo` avant la présentation
+- [ ] **Landing ↔ produit** : le bouton « Open the support dashboard » et le paywall fonctionnent sur la machine du pitch (clé `sk_test_` Stripe, backend lancé)
+
+### P2 — si le temps le permet
+
+- [ ] Champ `user_ref` dans le rapport (utilisateurs distincts), à proposer à Matteo
+- [ ] Suivi en direct des sessions dans le dashboard (`AgentEvent`)
+- [ ] PR `tom` → `main` relue par un coéquipier, puis `feature/tom-landing`
+
+### À trancher avec l'équipe
+
+- Qui fusionne quoi dans `main` avant 14h, et qui le contrôle ?
+- La démo passe-t-elle par l'app Electron d'Edouard avec le pilote vocal, ou par l'API de Matteo ?
+- Script de remise à zéro Odoo : aucune branche n'en a. Qui s'en charge ?
 
 ## Notes
 
 - `uv run <script>` plante sans sortie dans notre environnement (code 120) : utiliser `.venv/bin/hcs-backend`.
+- Ports : agent 8765, backend 8766, pilote vocal 8767, landing 5173, heatmap 5174.
+- Convention de branches : `tom/<sujet>` est impossible tant que la branche `tom` existe, d'où `feature/tom-*`.

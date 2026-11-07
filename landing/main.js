@@ -280,18 +280,11 @@ const STEPS = [
 function correct(instant = false) {
   for (const [ms, fn] of STEPS) instant ? fn() : later(ms, fn);
 }
-function uncorrect() {
-  for (const el of [ion, grade]) el.classList.remove("on");
-  word.classList.remove("struck");
-  slogan.classList.remove("show", "underlined");
-  hero.classList.remove("peek");
-  title.classList.remove("corrected");
-  title.setAttribute("aria-label", "H Company");
-}
+// one-way: once corrected in red pen, the hero stays corrected (the key still clicks)
 function toggleName() {
-  timers.splice(0).forEach(clearTimeout);
-  companion = !companion;
-  companion ? correct() : uncorrect();
+  if (companion) return;
+  companion = true;
+  correct();
 }
 function trigger() {
   if (pressT >= 0 && pressT < 0.75) return;
