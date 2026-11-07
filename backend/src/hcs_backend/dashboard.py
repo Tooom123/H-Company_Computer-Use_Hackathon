@@ -168,11 +168,15 @@ def group_page(group: Group) -> str:
         '<div class="grid2"><div class="card"><dl>'
         f"<dt>Shared keywords</dt><dd>{_chips(s['keywords'])}</dd>"
         f"<dt>Procedures</dt><dd>{_chips(s['procedures'])}</dd>"
-        f"<dt>Verified resolved</dt><dd>{s['verified_resolved']}</dd>"
+        f"<dt>Verified results</dt><dd>{s['verified']['observed']} observed · {s['verified']['not_observed']} not observed"
+        f" · {s['verified']['not_checked']} not checked</dd>"
         f"<dt>Needs a human</dt><dd>{s['needs_human']}</dd>"
         "</dl></div>"
         f'<div class="card"><b>Feedback expressed by users</b><ul>{fb or "<li class=muted>none</li>"}</ul></div></div>'
-        "<h2>Source cases</h2>"
+        + (("<div class='card decision' style='margin-top:12px'><b>Decision(s) expected from support</b><ul>"
+            + "".join(f"<li>{escape(d)}</li>" for d in s["decisions_expected"]) + "</ul></div>")
+           if s["decisions_expected"] else "")
+        + "<h2>Source cases</h2>"
         + _cases_table(group.cases)
     )
     return _page(f"Group {s['group_id']}", body)
