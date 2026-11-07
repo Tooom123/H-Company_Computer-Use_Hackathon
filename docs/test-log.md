@@ -48,3 +48,56 @@ La présence de la cible dans un plein écran gonfle le score global ; rapporter
 ensemble couverture des crops et taux de repli. Les causes observées motivent un
 bras expérimental de sélection par cinq zones, sans conclure à sa supériorité avant
 un nouveau passage humain. Voir [la suite du protocole](lab-to-odoo-lora.md).
+
+### Essai humain cinq zones — dernière capture à 19:59:27
+
+Source : résultats communiqués par Edouard puis relus dans le panneau natif par
+Codex le 7 novembre 2026. Code des zones `0812b53`, checkout `9a903ac`.
+Tête seule, politique « 5 zones stables · expérimental », calibration « Bords
+étendus », parcours 42, 30 secondes, cadre Écran, crop demandé **800 × 600**,
+source **1 470 × 956**. Aperçu global préparé de 640 × 416. Aucun appel Holo.
+
+| Mesure | Observation |
+| --- | --- |
+| Captures analysées / conservées | 30 / 30, arrêt à la durée prévue |
+| Captures évaluables / exclues | 23 / 7, notamment pendant la stabilisation |
+| Cible entière, toutes captures évaluables | 20/23, soit 87 % arrondi |
+| Cible entière, crops évaluables seulement | 18/21, soit 86 % arrondi |
+| Pleins écrans / replis | 2 / 2 ; 2/30 = 7 % arrondi de toutes les captures |
+| Causes de repli | 1 orientation au-delà de la plage élargie ; 1 changement de direction en stabilisation (250 ms) |
+| Centre de cible inclus | 23/23, soit 100 % |
+| Cible entière aux bords / à l’intérieur | 14/17 (82 %) / 6/6 (100 %) |
+| Surface détaillée / écran, moyenne affichée | 40 % ; moyenne des captures évaluables, incluant les pleins écrans, hors aperçu global |
+| Validation tête affichée | 125 px d’affichage ; validation du pointeur, pas un score des cinq zones |
+| Dernière capture | coin haut droit, (670, 0, 800, 600), signal âgé de 14 ms, préparation 381 ms ; valeur ponctuelle, pas une moyenne |
+
+Retour utilisateur : « Ça a beaucoup mieux marché ». Les trois cibles incomplètes
+se trouvent aux bords ; le centre reste inclus dans les 23 captures évaluables.
+La capture retenue couvre 34 % de la source ; la moyenne de 40 % inclut les replis.
+
+Comparaison descriptive avec 19:20 : replis **14/30 → 2/30**, couverture des crops
+**10/12 → 18/21**, surface moyenne **64 % → 40 %**. La calibration a changé et les
+dimensions de l’ancien crop ne sont pas confirmées : **ce n’est pas un A/B contrôlé**.
+Le score global 91 % → 87 % ne suffit pas à juger la politique, car les pleins
+écrans contiennent presque automatiquement la cible. Un seul participant et un
+seul parcours ne permettent pas de conclure à la robustesse générale.
+
+Décision : conserver ces réglages comme candidat pour le pilote métier ; arrêter
+d’ajuster les seuils sur la graine 42. Tester ensuite des parcours inédits et les
+captures Odoo. Les 60 % de surface détaillée retirée **ne sont pas 60 % de tokens
+économisés** : l’aperçu global, le traitement d’image du modèle et les relances
+doivent être comptés. La boucle autonome Matteo n’utilise pas encore ces crops.
+
+### Précontrôle du pilote Odoo 01 — 20:07 Europe/Paris
+
+Moteur Matteo `185ab70`, procédure `odoo_inventory_read_product`, modèle demandé
+`holo4-35b-a3b`, nettoyage global des sessions désactivé. La session démo existante
+a été vérifiée puis replacée sur la liste Inventaire / Produits : prix 10 EUR,
+stock 10 pour `HACK-GING-033`. Aucune donnée métier modifiée.
+
+Le lanceur réel s’est arrêté en **preflight_failed** après 4,29 s : permission macOS
+Accessibilité manquante pour le processus Python. Le rapport privé porte
+`simulated=false`, `status=abandoned`, `declared.outcome=not_run`, aucune approbation,
+aucune vérification et **aucun `h_session_id`**. Il s’agit d’un échec de préparation,
+pas d’une tâche exécutée par Holo ni d’une trace d’entraînement. Reprendre seulement
+après activation autorisée de la permission et lancement d’un nouveau processus.

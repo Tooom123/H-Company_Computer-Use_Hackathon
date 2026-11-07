@@ -3,6 +3,14 @@
 État du 7 novembre 2026. Les consignes et procédures sont préparées pour le moteur
 Matteo `185ab70`. Un test simulé ne constitue pas un passage réel Holo.
 
+Le dernier essai humain Vision Lab est terminé : 18/21 crops évaluables contiennent
+la cible entière, 2/30 replis, 40 % de surface détaillée moyenne conservée. Voir
+[les mesures et leurs limites](../test-log.md#essai-humain-cinq-zones--dernière-capture-à-195927).
+Ces chiffres ne mesurent pas encore les tokens ou la réussite d’une tâche Holo.
+Le premier lancement Odoo 01 a ensuite été arrêté au précontrôle macOS : permission
+Accessibilité manquante pour Python. Aucun appel H et aucune action métier ; le
+premier épisode réel et son export restent à valider.
+
 ## Ordre de passage
 
 1. Dernier essai Vision Lab : Tête → 5 zones stables, 800 × 600, cadre Écran,
