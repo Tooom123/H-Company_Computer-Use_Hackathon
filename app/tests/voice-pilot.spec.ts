@@ -12,13 +12,14 @@ async function mockPilot(page: Page, failFeedback = false, options: { longPlan?:
     ];
     Object.defineProperty(window, '__vpCalls', { value: calls });
     Object.defineProperty(window, '__vpReportReady', { value: () => { snapshot = { ...snapshot, report_ready: true }; persist(); } });
+    Object.defineProperty(window, '__vpSetState', { value: (state: string, reportReady: boolean) => { snapshot = { ...snapshot, state, report_ready: reportReady }; persist(); } });
     Object.defineProperty(window, 'voicePilot', { value: {
       request: async (method: string, path: string, body?: Record<string, unknown>) => {
         calls.push({ method, path, body });
         if (path === '/pilot/status') return { model: 'holo4-test', simulated: true, busy: false, transcription: { provider: 'test', ready: false } };
         if (path === '/pilot/scenarios') return scenarios;
         if (path === '/pilot/episodes' && method === 'POST') {
-          snapshot = { session_id: 'test-episode', state: 'awaiting_approval', simulated: true, request: { goal: body?.goal }, report_ready: false,
+          snapshot = { session_id: snapshot ? crypto.randomUUID() : 'test-episode', state: 'awaiting_approval', simulated: true, request: { goal: body?.goal }, report_ready: false,
             plan: { objective: 'Lire la fiche sans rien modifier', allowed_actions: options.longPlan ? Array.from({ length: 30 }, (_, index) => `Étape ${index + 1} : lire les informations de cette fiche sans modifier les données.`) : ['Lire les valeurs'], forbidden_actions: ['Modifier le stock'] },
             pilot: { scenario_id: body?.scenario_id, export_status: 'simulated' } };
           persist(); return snapshot;
@@ -28,7 +29,7 @@ async function mockPilot(page: Page, failFeedback = false, options: { longPlan?:
           snapshot = { ...snapshot, pilot: { scenario_id: '01', feedback: body, export_status: 'simulated' } };
           persist(); return snapshot;
         }
-        if (path === '/pilot/episodes/test-episode') return snapshot;
+        if (path === `/pilot/episodes/${snapshot?.session_id}`) return snapshot;
         throw new Error(`Unexpected request ${method} ${path}`);
       },
       approve: async (id: string) => {
@@ -131,4 +132,41 @@ test('brings a ready answer into view once, preserves feedback scrolling and res
   await expect(answer).toBeInViewport({ ratio: 1 });
   await page.getByRole('button', { name: 'Préparer le scénario 02' }).click();
   await expect(page.getByRole('heading', { name: 'Posez votre question' })).toBeInViewport();
+});
+
+test('retries a stopped restored episode without labels or automatic approval, but never skips an active episode', async ({ page }) => {
+  await mockPilot(page);
+  await page.goto('/#voice');
+  await page.getByLabel('Votre demande · transcription à relire').fill('Vérifie le prix.');
+  await page.getByRole('button', { name: 'Préparer le plan', exact: true }).click();
+  const retry = page.getByRole('button', { name: 'Retenter sans ajouter de feedback' });
+  await expect(retry).toHaveCount(0);
+  const setState = (state: string, reportReady: boolean) => page.evaluate(({ state, reportReady }) => {
+    (window as unknown as { __vpSetState: (state: string, ready: boolean) => void }).__vpSetState(state, reportReady);
+  }, { state, reportReady });
+  await setState('running', false);
+  await expect(page.getByRole('heading', { name: 'H-Companion agit', exact: true })).toBeVisible();
+  await expect(retry).toHaveCount(0);
+  await setState('stopping', false);
+  await expect(page.getByRole('heading', { name: 'Arrêt demandé', exact: true })).toBeVisible();
+  await expect(retry).toHaveCount(0);
+
+  await setState('stopped', false);
+  await page.reload();
+  await expect(retry).toBeEnabled();
+  await expect(page.getByText('Cet essai reste conservé sans feedback ni nouveau consentement d’entraînement.', { exact: false })).toBeVisible();
+  await retry.click();
+  await expect(page.getByLabel('Votre demande · transcription à relire')).toHaveValue('');
+  const calls = () => page.evaluate(() => (window as unknown as { __vpCalls: { method: string; path: string }[] }).__vpCalls);
+  expect((await calls()).filter(call => call.method === 'APPROVE' || (call.method === 'POST' && call.path.endsWith('/feedback')))).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('vp-test-backend') || '{}').state)).toBe('stopped');
+
+  await page.getByLabel('Votre demande · transcription à relire').fill('Retrouve la bonne fiche et vérifie son prix.');
+  await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Préparer le plan', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+  expect((await calls()).filter(call => call.method === 'APPROVE')).toEqual([]);
+  await page.getByRole('button', { name: 'Approuver et observer Odoo' }).click();
+  expect((await calls()).filter(call => call.method === 'APPROVE')).toHaveLength(1);
+  expect((await calls()).filter(call => call.method === 'POST' && call.path.endsWith('/feedback'))).toEqual([]);
 });

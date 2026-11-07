@@ -53,10 +53,11 @@ def main():
         extract(ref, part, runtime)
     sys.path[:0] = [str(ROOT), str(runtime / 'agent/src'), str(runtime / 'backend/src')]
     from dotenv import dotenv_values
-    from hcs_agent.backend import HBackend, MockBackend
+    from hcs_agent.backend import MockBackend
     from hcs_agent.knowledge import NoKnowledge
     from hcs_backend.store import Store
     from pilot.server import create_app
+    from pilot.desktop_backend import PilotHBackend
     from pilot.local_speech import LocalSpeech
     import uvicorn
     config = dotenv_values(ROOT / 'app/.env')
@@ -67,7 +68,7 @@ def main():
     token = secrets.token_urlsafe(32)
     token_path.write_text(token)
     os.chmod(token_path, 0o600)
-    backend = MockBackend() if args.mock else HBackend(model='holo4-35b-a3b', api_key=key, knowledge=NoKnowledge())
+    backend = MockBackend() if args.mock else PilotHBackend(model='holo4-35b-a3b', api_key=key, knowledge=NoKnowledge())
 
     def export(report_path: Path, archive_dir: Path):
         env = os.environ.copy()
@@ -91,6 +92,7 @@ def main():
                      exporter=export, store=store, model='holo4-35b-a3b',
                      scenarios_path=ROOT / 'docs/scenarios/odoo-scenarios.md', procedures_dir=ROOT / 'docs/scenarios')
     (private / 'runtime.json').write_text(json.dumps({'engine_revision': ENGINE_REV, 'support_revision': SUPPORT_REV,
+                                                   'desktop_adapter': 'pilot-bridge-health-v1',
                                                    'simulated': args.mock, 'model': 'holo4-35b-a3b',
                                                    'transcription_provider': transcriber.provider, 'port': args.port}, indent=2) + '\n')
     print(f'Voice pilot ready on 127.0.0.1:{args.port}; token file: {token_path}; simulated={args.mock}', flush=True)

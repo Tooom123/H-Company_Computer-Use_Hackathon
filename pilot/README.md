@@ -6,6 +6,12 @@ dans son dossier privé, sans fusionner leurs fichiers avec la branche de travai
 Il utilise **`holo4-35b-a3b`**, le mode **`act`** et des captures **plein écran**.
 Le recadrage du Vision Lab n’est pas connecté à ce parcours.
 
+Le pilote ajoute un contrôle de la liaison bureau avant de réutiliser un canal H.
+Une liaison arrêtée ou un canal terminé est remplacé ; une erreur réseau de
+contrôle remonte comme un blocage explicite. Cette adaptation ne change pas la
+révision épinglée de Matteo et apparaît dans `runtime.json` sous
+`desktop_adapter=pilot-bridge-health-v1`.
+
 Les dix scénarios sont disponibles ; leur présence dans l’app ne signifie pas
 qu’ils ont tous été exécutés et évalués. Les demandes et préconditions figurent dans
 [le guide de séance](../docs/scenarios/odoo-voice-session.md).
@@ -82,6 +88,11 @@ et d’Accessibilité nécessaires à ses actions.
    réutilisation pour l’entraînement reste séparé.
 6. Attendre la confirmation de sauvegarde. L’export des sessions H continue en
    arrière-plan ; contrôler son état avant de fermer le serveur.
+
+Après un essai interrompu ou un échec de démarrage, **Retenter sans ajouter de
+feedback** conserve l’épisode sans fabriquer de label. Le formulaire revient au
+même scénario ; il faut préparer puis approuver une nouvelle demande. Ce bouton
+n’est pas disponible tant que l’intervention ou son arrêt est en cours.
 
 Les scénarios 05–10 partagent une référence et un `workflow_id`. Le serveur exige
 une étape précédente vérifiée pour poursuivre ; cela ne remplace pas le contrôle

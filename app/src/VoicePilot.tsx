@@ -46,6 +46,7 @@ export default function VoicePilot() {
   const active = Boolean(sessionId && snapshot && !terminal);
   const blockedSelection = Boolean(sessionId && !feedbackSaved);
   const speaking = Boolean(recording || busy?.startsWith('audio'));
+  const canRetryWithoutFeedback = Boolean(sessionId && snapshot && ['stopped', 'failed', 'preflight_failed'].includes(snapshot.state) && !feedbackSaved && !snapshot.pilot?.feedback);
   const api = window.voicePilot;
 
   useEffect(() => {
@@ -153,8 +154,9 @@ export default function VoicePilot() {
       setError(errorText(cause)); setBusy(null);
     }
   }
-  function chooseScenario(id: string) {
-    if (blockedSelection) return;
+  function chooseScenario(id: string, retryWithoutFeedback = false) {
+    const retryCurrent = retryWithoutFeedback && id === scenarioId && canRetryWithoutFeedback;
+    if (busy || speaking || (retryWithoutFeedback ? !retryCurrent : blockedSelection)) return;
     setScenarioId(id); setSessionId(null); setSnapshot(null); setGoal(''); setComment('');
     setRequestAudio(null); setFeedbackAudio(null); setFeedbackSaved(false);
     setOutcome('unknown'); setUseful('unknown'); setAllowTraining(false); setError(null); setNotice(null);
@@ -247,6 +249,10 @@ export default function VoicePilot() {
             <div className="vp-verification"><p className="vp-eyebrow">VÉRIFICATION SÉPARÉE</p><p>{snapshot.verification?.observed || 'Aucune vérification disponible.'}</p></div>
             <div className="vp-metrics"><span>{duration === null ? 'Durée non disponible' : `${duration.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s · action et vérification`}</span><span>{archiveLabel(snapshot.pilot?.export_status)}</span></div>
           </>}
+          {canRetryWithoutFeedback && <div className="vp-alert">
+            <p>Cet essai reste conservé sans feedback ni nouveau consentement d’entraînement. Votre brouillon de retour ne sera pas ajouté. Pour réessayer, posez une nouvelle question puis approuvez son plan.</p>
+            <div className="vp-actions"><button className="vp-button" disabled={Boolean(busy) || speaking} onClick={() => chooseScenario(scenarioId, true)}>Retenter sans ajouter de feedback</button></div>
+          </div>}
         </section>}
 
         {terminal && snapshot?.report_ready && <section className="vp-card" ref={feedbackSection} aria-label="Retour utilisateur">

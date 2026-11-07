@@ -239,3 +239,45 @@ enregistrement audio associé. Les labels de l’épisode et de l’archive
 correspondent ; le consentement à préparer des données d’entraînement ne vaut
 pas validation de cet essai pour le fine-tuning. Les deux retours d’origine
 restent conservés après la correction, sans modification de leurs labels.
+
+### Scénario vocal 03 interrompu — 7 novembre 2026, 21:07–21:10 Europe/Paris
+
+La consigne de recherche du fournisseur est approuvée à 21:07:48. Aucun audio
+de demande n’est associé à cet essai. H reçoit la consigne, mais l’observation
+du bureau expire deux fois. La trace ne contient aucune observation réussie :
+une attente puis une intention de déplacer la souris ne prouvent pas une action
+effectuée ni une progression métier.
+
+L’utilisateur demande l’arrêt à 21:09:53 ; il devient effectif à 21:10:03
+(**9,74 s**). Durée approbation → fin : **134,66 s**. Statut `abandoned`, aucune
+vérification métier effectuée. Le rapport est sauvegardé ; l’export initial reste
+partiel (16 événements, trois problèmes signalés, notamment un changement de
+statut pendant l’export). Ce passage ne constitue pas une réussite.
+
+Le retour textuel confirmé indique qu’aucune action n’a été observée ; les labels
+choisis sont **réussite inconnue**, **utilité inconnue**. Ils sont conservés tels
+quels, distinctement du diagnostic technique.
+
+Diagnostic : la requête de ce passage référence le canal bureau créé pendant le
+scénario 01. Sa consultation en lecture seule renvoie `status=failed`. Le backend
+mémorisait ce canal sans contrôler qu’il était encore utilisable. La correction
+du pilote vérifie le canal avant sa réutilisation et ne remplace que sa propre
+liaison. La révision de Matteo reste `343e393` ; le marqueur d’adaptation permet
+de distinguer les prochains passages de cette première série.
+
+Une seconde tentative a été approuvée à 21:11:50 avant le chargement du correctif
+et a rencontré la même absence d’observation. Arrêt explicitement autorisé par
+Edouard, terminé à 21:14:03 : **132,81 s**, dont **14,81 s** après la demande
+d’arrêt. Rapport `abandoned`, export partiel. Un troisième plan préparé à 21:14:15
+n’a jamais été approuvé : il a été clos pendant le redémarrage à 21:14:33, sans
+session H. Ne pas le compter comme une exécution du modèle.
+
+Le pilote redémarré charge `pilot-bridge-health-v1`. Les tests simulés couvrent
+les canaux terminés, absents et vivants, les erreurs réseau/authentification,
+l’arrêt limité à sa propre liaison et la production d’un rapport de blocage.
+Une reprise réelle sur Odoo reste nécessaire pour confirmer le raccordement.
+
+La fenêtre a été relancée et le scénario 03 remis au formulaire de demande.
+La reprise sans feedback ne soumet aucun label ni approbation. Validation : suite
+du pilote hors ligne passée (62 tests, puis un test additionnel de rapport
+terminal passé), quatre tests UI, TypeScript et build de production réussis.
