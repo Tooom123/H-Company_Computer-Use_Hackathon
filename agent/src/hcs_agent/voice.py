@@ -154,7 +154,7 @@ def _intent_prompt(transcript: str, procedures: list[Procedure]) -> str:
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say, list it in "
         "missing instead), role (string or null, if the user mentions who "
-        "they are), goal (one clean sentence in the user's language), missing (required parameters the user did not "
+        "they are), goal (one clean sentence in English, whatever language the user spoke), missing (required parameters the user did not "
         "give). No prose."
     )
 

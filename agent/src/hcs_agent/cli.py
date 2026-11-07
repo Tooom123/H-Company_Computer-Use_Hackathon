@@ -72,6 +72,9 @@ def _print_event(e: AgentEvent) -> None:
         det = e.data["step"]["detail"]
         _LAST_ACTION.update(summary=e.message, pointer=det.get("pointer"), element=det.get("element"),
                             at=time.time(), id=e.event_id)
+    elif e.type == "step" and e.data["step"]["kind"] == "observation":
+        # The agent took a new screenshot: the page may have changed, marks for the previous action are stale.
+        _LAST_ACTION["stale_at"] = time.time()
     tag = "SIM " if e.simulated else ""
     msg = e.message or ""
     if e.type == "step":
@@ -170,7 +173,7 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
     deadline = time.time() + timeout
     if ov is not None:
         ov.hide()
-        ov.badge("Arrêt en cours…", pulsing=True)
+        ov.badge("Stopping…", pulsing=True)
         try:
             ov.run_until(lambda: (it.state.terminal and it.report is not None) or time.time() > deadline, None, 0.1,
                          hide_at_end=False)
@@ -193,7 +196,7 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
     ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
     ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
-    ov.badge("⌘H : nouvelle demande")
+    ov.badge("⌘H: new request")
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
@@ -203,12 +206,12 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     r = it.report
     doodle = None
     if r.status.value == "resolved":
-        text, why, doodle = "Terminé : résultat vérifié dans le logiciel", "", "check"
+        text, why, doodle = "Done: result verified in the software", "", "check"
     elif r.status.value == "abandoned":
-        text, why = "Arrêté. Rien d'autre ne sera modifié.", ""
+        text, why = "Stopped. Nothing else will be changed.", ""
     else:
-        text = "Je n'ai pas pu vérifier le résultat"
-        why = (r.escalation.blocked_on if r.escalation else "") or "Dossier transmis au support."
+        text = "I could not verify the result"
+        why = (r.escalation.blocked_on if r.escalation else "") or "Case handed over to support."
         doodle = "question"
     ov.badge(None)
     ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
@@ -241,9 +244,9 @@ def cmd_talk(args: argparse.Namespace) -> int:
         if ov is None:
             return
         if s == "recording":
-            ov.badge("Je t'écoute…", pulsing=True)
+            ov.badge("Listening…", pulsing=True)
         elif s == "transcribing":
-            ov.badge("Transcription…")
+            ov.badge("Transcribing…")
         else:
             ov.badge(None)
 
@@ -262,7 +265,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
           f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
     if ov is not None:
-        ov.badge("Maintiens ⌘H et dis ce que tu veux faire" if "cmd" in ptt.key_name else f"Maintiens {ptt.key_name} et parle")
+        ov.badge("Hold ⌘H and say what you need" if "cmd" in ptt.key_name else f"Hold {ptt.key_name} and speak")
 
     def next_transcript() -> str:
         """Wait for a transcript while keeping the overlay (badge) alive on the main thread."""
@@ -299,17 +302,17 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
                 continue
             if ov is not None:
-                ov.badge("Je réfléchis…", pulsing=True)
+                ov.badge("Thinking…", pulsing=True)
             try:
                 intent = router.route(text)
             except Exception as exc:  # noqa: BLE001
                 print(f"  could not understand the request ({exc}); try again.")
-                _flash(ov, "Je n'ai pas compris, redis-le autrement", "question")
+                _flash(ov, "I did not get that, please rephrase", "question")
                 continue
             if not intent.procedure_id:
                 print("  I don't have a procedure for that yet. Known: " + ", ".join(p.id for p in registry.all()))
-                _flash(ov, "Je ne sais pas encore faire ça", "question",
-                       why="Je sais : créer une opportunité, planifier une relance, mettre une note, qualifier")
+                _flash(ov, "I cannot do that yet", "question",
+                       why="I can: create an opportunity, schedule a follow-up, log a note, qualify")
                 continue
             proc = registry.get(intent.procedure_id)
             for name in list(intent.missing):
@@ -336,7 +339,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if _new_request_pending():
                 continue  # the user spoke during the task: it was stopped, run the new request right away
             if ov is not None:
-                ov.badge(f"⌘H : nouvelle demande" if "cmd" in ptt.key_name else f"{ptt.key_name} : nouvelle demande")
+                ov.badge(f"⌘H: new request" if "cmd" in ptt.key_name else f"{ptt.key_name}: new request")
             print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
     except KeyboardInterrupt:
         print("\nbye")
@@ -507,27 +510,35 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         if it.state is State.awaiting_user:
             ov.badge(None)
         elif time.time() - _LAST_LOOKUP_AT < 4:
-            ov.badge("Je cherche sur le web…", pulsing=True)
+            ov.badge("Searching the web…", pulsing=True)
         elif it.state is State.running:
-            ov.badge("Je regarde l'écran…", pulsing=True)
+            ov.badge("Looking at the screen…", pulsing=True)
         elif it.state is State.verifying:
-            ov.badge("Je vérifie le résultat…", pulsing=True)
+            ov.badge("Checking the result…", pulsing=True)
         elif it.state.terminal:
             ov.badge(None)
 
-    shown_action = {"id": None}
+    shown_action: dict = {"id": None, "at": None}
 
     def narrate() -> None:
-        """Takeover: show what the agent is doing, where, as it does it."""
-        if ov is None or not _LAST_ACTION or _LAST_ACTION.get("id") == shown_action["id"]:
+        """Takeover: show what the agent is doing, where, as it does it; clear it as soon as it is stale."""
+        if ov is None or not _LAST_ACTION:
             return
-        shown_action["id"] = _LAST_ACTION["id"]
-        from .overlay import Scene
+        if _LAST_ACTION.get("id") != shown_action["id"] and _LAST_ACTION.get("id"):
+            shown_action["id"] = _LAST_ACTION["id"]
+            shown_action["at"] = time.time()
+            from .overlay import Scene
 
-        ov.badge("Je prends la main…", pulsing=True)
-        text = _short(_LAST_ACTION.get("summary") or "", 110)
-        why = _LAST_ACTION.get("element") or ""
-        ov.show_scene(Scene(text=text, why=why[:60], target=_LAST_ACTION.get("pointer")))
+            ov.badge("Taking over…", pulsing=True)
+            text = _short(_LAST_ACTION.get("summary") or "", 110)
+            why = _LAST_ACTION.get("element") or ""
+            ov.show_scene(Scene(text=text, why=why[:60], target=_LAST_ACTION.get("pointer")))
+            return
+        shown_at = shown_action.get("at")
+        if shown_at and ov.view.scene is not None:
+            stale = _LAST_ACTION.get("stale_at", 0) > shown_at + 0.3  # a screenshot came after this action
+            if stale or time.time() - shown_at > 2.0:
+                ov.hide()  # the badge stays; only the marks go
 
     interrupted = {"done": False}
 
@@ -538,7 +549,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             print("\n>> new voice request: stopping the current task", flush=True)
             if ov:
                 ov.hide()
-                ov.badge("Nouvelle demande…", pulsing=True)
+                ov.badge("New request…", pulsing=True)
             it.stop(StopCommand(reason="replaced by a new voice request"))
             return
         status_badge()
@@ -558,7 +569,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     ov.show_scene(Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
-                        doodle="question" if "je ne le vois" in g.instruction else None,
+                        doodle="question" if "can't see" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
                                     None, a.box)
                                for a in g.annotations if a.pointer]))

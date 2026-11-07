@@ -248,7 +248,7 @@ class Intervention:
                     with self._lock:
                         if not self.state.terminal:
                             self.state = State.running  # leave awaiting_user: the agent acts now
-                    self._emit("state_changed", "Je prends la main pour finir la tâche.", takeover=True)
+                    self._emit("state_changed", "Taking over to finish the task.", takeover=True)
                     self.takeover = True
                     task = bound.task_message(self.scope_note, "The user started this task by hand and got stuck; "
                                               "continue from the current screen state. Before each action, say in "
@@ -355,7 +355,7 @@ class Intervention:
                     why = (doc.answer.strip().split("\n")[0])[:160]
                     self._note("agent_lookup", doc)
                 gs = GuidanceStep(index=i + 1, pointer=None, where=step.element, why=why,
-                                  kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
+                                  kind=step.action, instruction=step.instruction + " (I can't see it yet)")
             else:
                 gs = GuidanceStep(index=i + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, box=loc.box, kind=step.action, last=False,
@@ -430,7 +430,7 @@ class Intervention:
             self._trace(f"no progress after step {i + 1} (miss {misses}); showing it again")
             pre_loc = still
 
-        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
+        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="Done, checking the result",
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
@@ -453,8 +453,8 @@ class Intervention:
                 return True
             if not shown:
                 gs = GuidanceStep(index=len(self.guidance) + 1, kind="wait", pointer=None,
-                                  instruction=f"Affiche {bound.request.software} (pipeline CRM) à l'écran",
-                                  why=f"Je vois : {visible[:80]}")
+                                  instruction=f"Bring {bound.request.software} (CRM pipeline) to the front",
+                                  why=f"I see: {visible[:80]}")
                 self.guidance.append(gs)
                 self._set_state(State.awaiting_user, "Show the software first.")
                 self._emit("guidance", gs.instruction, step=gs.model_dump())

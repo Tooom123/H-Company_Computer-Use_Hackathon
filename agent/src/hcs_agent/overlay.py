@@ -509,7 +509,7 @@ class Overlay:
             self.hide()
 
 
-AUTONOMY_LABELS = ("Je montre", "J'aide si tu bloques", "Je fais, tu regardes")
+AUTONOMY_LABELS = ("Show me", "Help if I'm stuck", "Do it, I watch")
 
 
 class _MagnetView(AppKit.NSView):
@@ -554,7 +554,7 @@ class _MagnetView(AppKit.NSView):
                 for k in range(2):
                     _circle(cx, y, rnd, 11 - k * 2, 10 - k * 2)
         attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
-        Foundation.NSString.stringWithString_(f"Magnet : {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
+        Foundation.NSString.stringWithString_(f"Magnet: {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
             ((14, H - 30), (W - 28, 18)), attrs)
 
 

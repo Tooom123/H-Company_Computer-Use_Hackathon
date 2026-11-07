@@ -77,50 +77,50 @@ agent_instructions: |
 # Checked live on Odoo 20 (h-companion.odoo.com, 2026-11-07): the dialog has no field labels, type chips,
 # and Save / Mark Done / Discard buttons (no "Schedule" button).
 guide_steps:
-  - instruction: "Ouvre l'application CRM"
+  - instruction: "Open the CRM app"
     element: "the CRM app icon or menu entry"
-    why: "Les relances se planifient depuis la fiche de l'opportunité."
+    why: "Follow-ups are scheduled from the opportunity record."
     optional: true
-  - instruction: "Clique sur la carte « {opportunity} »"
+  - instruction: "Click the card \"{opportunity}\""
     element: "the pipeline card titled {opportunity}"
-    why: "Ça ouvre la fiche de l'opportunité."
+    why: "This opens the opportunity record."
     done_when: "the form view of the opportunity {opportunity} is open (large title {opportunity}, Won and Lost buttons, stage bar)"
-  - instruction: "Clique sur Activity"
+  - instruction: "Click Activity"
     element: "the Activity button at the top of the chatter panel, right of Log note"
-    why: "Une activité est un rappel daté, assigné à quelqu'un : c'est la relance."
+    why: "An activity is a dated reminder assigned to someone: that is the follow-up."
     done_when: "a dialog titled Schedule Activity is open"
-  - instruction: "Vérifie que To-Do est sélectionné"
-    why: "To-Do = tâche simple, sans appel ni e-mail automatique. Odoo le sélectionne par défaut."
+  - instruction: "Check that To-Do is selected"
+    why: "To-Do = a simple task, no call or automatic email. Odoo selects it by default."
     annotations:
       - element: "the To-Do chip (check-mark icon) at the top-left of the Schedule Activity dialog"
         text: "To-Do"
         shape: circle
-  - instruction: "Remplace « To-Do » par « {activity_title} »"
+  - instruction: "Replace \"To-Do\" with \"{activity_title}\""
     kind: type
     element: "the summary text field (tag icon, prefilled with To-Do) at the top of the Schedule Activity dialog"
-    why: "Odoo pré-remplit le nom du type ; écris par-dessus. Ce résumé apparaît dans ta liste d'activités."
+    why: "Odoo pre-fills the type name; type over it. This summary shows in your activity list."
     done_when: "inside the Schedule Activity dialog, the first text field (tag icon, right under the type chips) reads exactly {activity_title}, not To-Do"
-  - instruction: "Clique sur la date et choisis le {due_date}"
+  - instruction: "Click the date and pick {due_date}"
     element: "the due date field (calendar icon) under the summary in the Schedule Activity dialog"
-    why: "C'est la date à laquelle Odoo te rappellera la relance."
+    why: "This is the date Odoo will remind you to follow up."
     done_when: "the Schedule Activity dialog shows the due date {due_date} (in any date format) and no calendar popup is open"
-  - instruction: "Clique sur Save (pas Mark Done)"
+  - instruction: "Click Save (not Mark Done)"
     element: "the Save button at the bottom-left of the Schedule Activity dialog"
-    why: "Save planifie l'activité ; Mark Done la clôturerait tout de suite."
+    why: "Save schedules the activity; Mark Done would close it right away."
     annotations:
       - element: "the Mark Done button at the bottom of the Schedule Activity dialog, right of Save"
-        text: "Clôture tout de suite !"
+        text: "Closes it immediately!"
         shape: label
     done_when: "the Schedule Activity dialog is closed and the chatter lists a planned activity {activity_title}"
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+  - instruction: "Click Pipeline (or CRM) at the top left"
     element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
-    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    why: "We always restart from the pipeline: the app's home screen."
+  - instruction: "Click the Odoo logo at the top left, then CRM"
     element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
-    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
+    why: "If you are in another Odoo app, the home menu brings you back to CRM."
     optional: true
 
 postcondition:

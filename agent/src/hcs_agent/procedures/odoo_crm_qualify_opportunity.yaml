@@ -63,65 +63,65 @@ agent_instructions: |
 # Checked live on Odoo 20 (h-companion.odoo.com, 2026-11-07): "Customer" is now "Contact", the chatter sits
 # on the right of the form, and the cloud save icon stays visible after a stage change until clicked.
 guide_steps:
-  - instruction: "Clique sur la carte « {opportunity} »"
+  - instruction: "Click the card \"{opportunity}\""
     element: "the pipeline card titled {opportunity}"
-    why: "On qualifie toujours depuis la fiche : c'est là que vivent les infos de l'affaire."
+    why: "You always qualify from the record: that is where the deal's information lives."
     annotations:
       - element: "the word New, title of the first pipeline column, above its progress bar"
-        text: "New = pas encore qualifié"
+        text: "New = not qualified yet"
         shape: underline
       - element: "the word Qualified, title of the second pipeline column, above its progress bar"
-        text: "Qualified = besoin + budget OK"
+        text: "Qualified = need + budget confirmed"
         shape: underline
     done_when: "the form view of the opportunity {opportunity} is open (large title {opportunity}, Won and Lost buttons, stage bar)"
-  - instruction: "Regarde la fiche : trois zones comptent pour qualifier"
-    why: "En haut = combien et qui ; la barre d'étapes = où en est l'affaire ; le panneau de droite = l'historique."
+  - instruction: "Look at the record: three areas matter to qualify"
+    why: "Top = how much and who; stage bar = where the deal stands; right panel = the history."
     annotations:
       - element: "the Expected Revenue amount under the opportunity title"
-        text: "Montant espéré"
+        text: "Expected amount"
         shape: circle
       - element: "the stage bar at the top of the form showing New, Qualified, Proposition, Won"
-        text: "Étapes du pipeline"
+        text: "Pipeline stages"
         shape: box
       - element: "the chatter panel on the right of the form, with Send message, Log note and Activity"
-        text: "Historique + notes"
+        text: "History + notes"
         shape: box
-  - instruction: "Tape « {customer} » dans Contact"
+  - instruction: "Type \"{customer}\" in Contact"
     kind: type
     element: "the Contact field, right of the Contact label, in the opportunity form under Expected Revenue"
-    why: "Lier un client permet de retrouver toutes ses affaires et factures ensemble."
-  - instruction: "Choisis « {customer} » dans la liste"
+    why: "Linking a customer groups all their deals and invoices together."
+  - instruction: "Pick \"{customer}\" in the list"
     element: "the option {customer} in the dropdown under the Contact field (the existing contact, else Create \"{customer}\")"
-    why: "S'il existe déjà, prends-le : Create ferait un doublon. Évite les suggestions en MAJUSCULES : annuaire externe."
+    why: "If it already exists, pick it: Create would make a duplicate. Avoid UPPERCASE suggestions: external directory."
     optional: true
     done_when: "the Contact field of the opportunity form shows {customer} and no dropdown is open"
-  - instruction: "Mets {expected_revenue} dans Expected Revenue"
+  - instruction: "Enter {expected_revenue} in Expected Revenue"
     kind: type
     element: "the Expected Revenue amount field (large number with €) under the opportunity title"
-    why: "C'est ce montant qui alimente les prévisions de ventes de l'équipe."
+    why: "This amount feeds the team's sales forecast."
     done_when: "the Expected Revenue field shows {expected_revenue} (possibly formatted, e.g. 12,000.00 €)"
-  - instruction: "Clique sur Qualified dans la barre d'étapes"
+  - instruction: "Click Qualified in the stage bar"
     element: "the Qualified stage in the stage bar at the top of the opportunity form"
-    why: "Changer d'étape ici déplace la carte dans le pipeline ; c'est réversible."
+    why: "Changing the stage here moves the card in the pipeline; it is reversible."
     annotations:
       - element: "the Won button at the top-left of the opportunity form"
-        text: "Pas Won : ça clôture"
+        text: "Not Won: it closes the deal"
         shape: label
     done_when: "the stage bar of the opportunity form highlights Qualified"
-  - instruction: "Clique sur l'icône de sauvegarde (nuage)"
+  - instruction: "Click the save icon (cloud)"
     element: "the cloud-shaped save icon right of the breadcrumb Pipeline / {opportunity} at the top-left"
-    why: "Sans ce clic, les changements restent en attente et peuvent être perdus."
+    why: "Without this click the changes stay pending and can be lost."
     optional: true
     done_when: "the form is saved: right of the breadcrumb there is just the ⋮ menu (an unsaved form would also show a cloud icon and an X there)"
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+  - instruction: "Click Pipeline (or CRM) at the top left"
     element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
-    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    why: "We always restart from the pipeline: the app's home screen."
+  - instruction: "Click the Odoo logo at the top left, then CRM"
     element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
-    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
+    why: "If you are in another Odoo app, the home menu brings you back to CRM."
     optional: true
 
 postcondition:

@@ -54,37 +54,37 @@ agent_instructions: |
 # Scripted guide: the service knows the app. Holo only locates each control on the user's screen.
 # Checked live on Odoo 20 (h-companion.odoo.com, 2026-11-07).
 guide_steps:
-  - instruction: "Ouvre l'application CRM"
+  - instruction: "Open the CRM app"
     element: "the CRM app icon or menu entry"
-    why: "C'est l'application où vivent tes opportunités commerciales."
+    why: "This is the app where your sales opportunities live."
     optional: true
-  - instruction: "Clique sur New"
+  - instruction: "Click New"
     element: "the New button at the top-left of the CRM pipeline, left of the Generate dropdown"
-    why: "Ça ouvre une petite carte pour créer une opportunité directement dans la colonne New."
+    why: "This opens a small card to create an opportunity right in the New column."
     done_when: "a quick-create card is open at the top of the New column, with the fields Contact and Opportunity's Name"
   # One step for name + Add: Enter in the name field already saves the card, and the card then reopens empty,
   # so a separate "click Add" step would point at an empty card.
-  - instruction: "Clique sur « Opportunity's Name » et tape « {opportunity} », puis Entrée"
+  - instruction: "Click \"Opportunity's Name\", type \"{opportunity}\", then Enter"
     kind: type
     element: "the Opportunity's Name field (second line, briefcase icon) of the quick-create card in the New column"
-    why: "Le curseur démarre dans Contact : écris bien sur la 2e ligne. Entrée (ou Add) enregistre la carte."
+    why: "The cursor starts in Contact: type on the 2nd line. Enter (or Add) saves the card."
     annotations:
       - element: "the Contact field (first line, person icon) of the quick-create card"
-        text: "Pas ici : c'est le client"
+        text: "Not here: that is the customer"
         shape: label
       - element: "the Add button at the bottom-left of the quick-create card"
-        text: "ou Add"
+        text: "or Add"
         shape: label
     done_when: "the New column of the pipeline contains a saved card titled {opportunity} (not only text typed in the open quick-create form)"
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+  - instruction: "Click Pipeline (or CRM) at the top left"
     element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
-    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    why: "We always restart from the pipeline: the app's home screen."
+  - instruction: "Click the Odoo logo at the top left, then CRM"
     element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
-    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
+    why: "If you are in another Odoo app, the home menu brings you back to CRM."
     optional: true
 
 postcondition:

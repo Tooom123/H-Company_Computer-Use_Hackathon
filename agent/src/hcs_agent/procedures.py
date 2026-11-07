@@ -64,7 +64,8 @@ class GuideStepSpec(BaseModel):
         if not self.element:
             return "info"
         first = self.instruction.strip().lower().split(" ")[0]
-        return "type" if first in {"tape", "écris", "ecris", "saisis", "mets", "entre", "type", "enter", "write", "fill"} else "click"
+        return "type" if first in {"tape", "écris", "ecris", "saisis", "mets", "entre", "type", "enter", "write", "fill",
+                                   "replace"} else "click"
 
 
 class EscalationRule(BaseModel):
@@ -258,8 +259,8 @@ class BoundProcedure(BaseModel):
             )
         else:
             parts.append(
-                "The user watches you work: before EACH action, write one short sentence in French saying what "
-                "you are about to do and why (e.g. « Je clique sur Qualified pour changer l'étape »). "
+                "The user watches you work: before EACH action, write one short sentence in English saying what "
+                "you are about to do and why (e.g. \"I click Qualified to change the stage\"). "
                 "When finished, answer with: result (done / blocked / unclear), a one-paragraph summary, "
                 "the exact blocker text if blocked, and the list of steps you actually performed."
             )

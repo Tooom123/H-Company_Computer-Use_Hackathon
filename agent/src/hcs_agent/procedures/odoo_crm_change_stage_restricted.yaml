@@ -49,12 +49,12 @@ agent_instructions: |
 
 expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
 recovery_steps:
-  - instruction: "Clique sur Pipeline (ou CRM) en haut à gauche"
+  - instruction: "Click Pipeline (or CRM) at the top left"
     element: "the Pipeline breadcrumb link, or the CRM app name, at the top-left of the Odoo page"
-    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
-  - instruction: "Clique sur le logo Odoo en haut à gauche, puis sur CRM"
+    why: "We always restart from the pipeline: the app's home screen."
+  - instruction: "Click the Odoo logo at the top left, then CRM"
     element: "the colored Odoo logo (home menu) at the far top-left of the Odoo top bar, left of the app name"
-    why: "Si tu es dans une autre app Odoo, le menu d'accueil ramène à CRM."
+    why: "If you are in another Odoo app, the home menu brings you back to CRM."
     optional: true
 
 postcondition:
