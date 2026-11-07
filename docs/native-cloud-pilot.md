@@ -116,13 +116,35 @@ uniquement sur `http://127.0.0.1:3003` ; le profil est hors Git, dans le dossier
 privé `HCompanionResearch/h-platform-linux-sso`. La page de connexion H est
 visible à l'intérieur de ce navigateur ; le propriétaire doit y effectuer son
 SSO lui-même, sans synchronisation Chrome ni enregistrement de mot de passe.
-La connexion et l'import ne sont pas encore validés.
+La connexion manuelle, la reprise d'une copie réduite et l'import ont été
+validés : l'essai cloud `cloud_feacd88328844147` ouvre la session HC01 désignée.
+La frame `000002` confirme l'accès à la trace et à la réponse, sans écran de
+connexion. Cela valide l'authentification, pas la justesse de sa réponse métier.
+Les deux conteneurs locaux de préparation/validation sont ensuite arrêtés ;
+les campagnes utilisent le profil importé dans le cloud, pas ces navigateurs.
 
 Même neuf, ce profil peut contenir des cookies Google après le SSO. Ne pas
 envoyer directement son répertoire brut : vérifier les domaines et stockages,
 préparer une copie limitée à H et valider qu'elle conserve l'accès nécessaire.
 Si cette réduction n'est pas vérifiable, rester bloqué sur l'import. Les écrans
 de connexion et ce profil restent exclus des traces et du portail.
+
+Pour ce compte, cinq cookies H ont suffi : les 43 cookies Google/YouTube ont
+été omis, ainsi que le stockage local, l'historique et les autres fichiers du
+profil. `scripts/minimize-h-profile.py` reconstruit une base SQLite neuve sans
+modifier la source fermée ; il ne copie pas les pages de la base d'origine.
+Le navigateur de validation ouvre une copie de cet exact profil minimal,
+jamais l'archive à importer elle-même. L'archive privée ne contient que quatre
+fichiers. Ce résultat ne garantit pas qu'une autre application fonctionne sans
+son stockage local.
+
+`scripts/import-h-browser-profile.py` inspecte l'archive sans réseau par défaut.
+L'upload exige `--apply`, le hash explicitement revu et un journal hors Git.
+Il n'envoie pas la clé API H au stockage présigné, ne modifie pas le profil par
+défaut et ne retente pas une création incertaine. Le contrôle des domaines et
+du ZIP n'est pas une preuve universelle d'effacement : reconstruction fraîche,
+revue et essai de connexion restent nécessaires. Les deux helpers ont 74 tests
+hors réseau ; aucune valeur de cookie n'entre dans leurs rapports.
 
 Les campagnes emploieront `browser_profile_id` explicitement,
 `use_default_browser_profile=false` et `persist_browser_profile=false` :

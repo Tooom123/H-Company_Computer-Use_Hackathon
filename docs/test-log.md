@@ -479,3 +479,55 @@ une validation de l'expérience GUIDE avec un participant.
 Voir le [mode d'emploi cloud](native-cloud-pilot.md), le
 [catalogue H](scenarios/h-company-cloud-scenarios.md) et le
 [protocole de test humain](field-test-coaching.md).
+
+## 2026-11-08 — Profil Google/SSO réduit et quatre essais H connectés
+
+Connexion Google effectuée par le propriétaire dans un Chromium Linux dédié
+150.0.7871.124. Une base neuve conserve uniquement cinq cookies H ; 43 cookies
+Google/YouTube, les stockages locaux, l'historique et les préférences sont omis.
+Une copie du profil minimal rouvre la session HC01, puis un import natif H et
+la frame 000002 de HC07 confirment la reprise dans le cloud. Le profil reste
+explicite et en lecture seule pour les lecteurs parallèles. Les navigateurs de
+préparation locaux sont ensuite arrêtés ; aucun secret ni profil n'est dans Git.
+
+Après HC07 seul, HC08–HC10 sont lancés dans trois navigateurs H simultanés, sans
+utiliser le bureau. Même modèle et protocole visual ; aucune documentation
+additionnelle injectée (`use_knowledge=false`). HC09 compare désormais les deux
+essais de la même carte HC01 : baseline puis retest avec recherche documentaire.
+HC08 examine la réponse terminée puis fermée de HC02 ; ce n'est pas une fixture
+de panne technique avérée. Une absence d'erreur visible doit rester telle quelle.
+
+| Cas | Épisode | Temps H* | Étapes | Revue IA métier / périmètre | Archive |
+| --- | --- | ---: | ---: | --- | --- |
+| HC07 preuves | `cloud_feacd88328844147` | 19,28 s | 2 | Partiel / conforme | Complète |
+| HC08 diagnostic | `cloud_d39a6b22b26a4353` | 47,86 s | 6 | Partiel / non conforme | Partielle |
+| HC09 comparaison | `cloud_336235632c974a85` | 33,27 s | 5 | Partiel / conforme | Complète |
+| HC10 reproductibilité | `cloud_2a92c3c65b204d18` | 136,49 s | 32 | Partiel / non conforme | Complète |
+
+\* `started_at` → `finished_at` fournisseur, pas un compteur affiché dans la page.
+La connexion fonctionne dans les quatre cas ; cela ne rend pas les réponses
+correctes. Revues IA, preuves et retours humains restent distincts. Aucun retour
+humain ni consentement d'entraînement n'a été déduit de ces exécutions.
+
+Erreurs observées : HC07/HC10 prennent l'heure de création pour une durée ;
+HC09 extrapole vitesse et tokens depuis des compteurs non qualifiés sans établir
+la qualité métier des réponses. HC08 avance une cause d'interruption non prouvée
+et utilise `web_search` / `web_fetch` malgré leur exclusion du protocole. Son
+résultat de recherche est tronqué en amont (événement 14), donc son archive reste
+explicitement partielle. HC10 ouvre une autre session et des pages de catalogue,
+suppose `h/browser` au lieu de l'environnement inline `companion-cloud`, et
+consomme 18 appels de défilement avec un `scroll_element` de type incorrect.
+
+HC08 et HC10 sont masqués du portail par un marqueur de quarantaine issu de la
+revue, sans modifier leurs événements ou archives d'origine. Le contrôle actuel
+des origines n'interdit pas tous les chemins d'une même origine et les règles
+d'outils restent des instructions : ces essais démontrent cette limite. Avant
+la prochaine campagne connectée, renforcer le contrôle des chemins/actions,
+préciser le format objet de `scroll_element` et distinguer heures, durée et
+preuves métier dans le contexte fourni à l'agent. Ces quatre traces ne sont
+pas des démonstrations de réussite prêtes pour SFT.
+
+Les helpers de reconstruction et d'import passent **74 tests hors réseau** :
+domaines exacts, base SQLite reconstruite, ZIP borné, métadonnées parasites
+refusées et journal d'upload sans réessai aveugle. La validation locale du profil
+et sa reprise cloud restent deux vérifications réelles supplémentaires.
