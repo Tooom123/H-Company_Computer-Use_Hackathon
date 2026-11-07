@@ -181,3 +181,27 @@ Le feedback du pilote antérieur réussi est conservé comme **non évalué par
 l’utilisateur**, avec utilité inconnue : Edouard n’a pas pu observer l’action.
 Le verdict automatique positif reste séparé. Les exports restent privés et
 `ready_for_sft=false` jusqu’à leur revue et conversion.
+
+### Premier scénario lancé vocalement par Edouard — 20:46 Europe/Paris
+
+Scénario 01, moteur `343e393`, Holo4 `holo4-35b-a3b`, mode act / plein écran.
+Edouard a dicté la demande, préparé le plan puis approuvé lui-même l’intervention.
+La transcription Gladia a rendu la référence sous la forme « Hack Jeans 033 » ;
+le plan de la procédure sélectionnée affichait `HACK-GING-033`. Conserver cette
+erreur de transcription, sans la remplacer silencieusement dans le verbatim.
+
+Durée approbation → fin : **33,41 s**. L’agent annonce la fiche Gingembre ouverte,
+prix 10 EUR et quantité disponible 10. Le vérificateur H confirme les quatre
+critères : société fictive, produit, prix et stock. Le contrôle opérateur
+`manage.py status`, effectué ensuite en lecture seule, retrouve les stocks
+10/8/6, le prix Gingembre 10 EUR et aucune commande.
+
+Les deux sessions H (action et vérification) sont archivées : **27 événements**,
+zéro problème d’export signalé. Rapport et événements sont conservés dans le
+backend privé. **Le feedback utilisateur était encore attendu au moment de cette
+entrée** ; le verdict automatique n’est pas converti en satisfaction utilisateur.
+
+Le passage **HACK-RUN-003** a ensuite été réservé avec `manage.py begin` pour
+les étapes 05–10 de cette session. La commande de réservation a confirmé sa
+réussite ; elle ne crée ni achat ni réception. Ne pas réinitialiser la base tant
+que ce passage et la session web restent actifs.
