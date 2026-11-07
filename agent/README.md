@@ -82,13 +82,13 @@ Statuses: `resolved, workaround, escalated, abandoned`.
 - `guide`: the agent only explains and moves the pointer to the control; the user performs each step and
   answers with `/next`; the state alternates `running ↔ awaiting_user`. Same verification at the end.
 
-## Knowledge (Linkup)
+## Web lookups (Linkup, optional)
 
-With `LINKUP_API_KEY`, documentation is searched (restricted to the vendor's domains) at three points:
-before the plan (`plan.documentation` + `sources`, so the explanation is grounded), during the H session
-through the custom tool `lookup_docs` the agent may call, and at escalation for the blocker text. Each lookup
-is recorded in `report.knowledge` with `purpose` ∈ explain, agent_lookup, blocker. Without a key, nothing
-is looked up and the run continues.
+Not central. With `LINKUP_API_KEY`, the H agent gets a custom tool `lookup_docs` it can call when it needs
+information from the internet (a menu path, what an error means); at escalation the blocker text is looked
+up so support gets context. Optional: `HCS_GROUND_PLAN=1` adds a sourced summary to the plan before approval,
+`HCS_RESTRICT_DOMAINS=1` limits searches to the vendor's domains. Each lookup is recorded in
+`report.knowledge` (`purpose` ∈ agent_lookup, blocker, explain). Without a key, nothing is looked up.
 
 ## State machine
 

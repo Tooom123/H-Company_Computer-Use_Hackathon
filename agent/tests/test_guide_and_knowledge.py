@@ -31,7 +31,7 @@ def test_guide_mode_waits_for_user_between_steps(tmp_path):
     plan = it.plan
     assert plan.mode is Mode.guide
     assert any("Clicking" in x for x in plan.forbidden_actions)
-    assert plan.documentation and plan.sources  # grounded by (mock) Linkup
+    assert plan.documentation is None  # no automatic web lookup before the plan
     it.approve(ApproveCommand())
     _auto_next(it, events, ["done", "I see the form"])
     it.wait(5)
@@ -44,7 +44,7 @@ def test_guide_mode_waits_for_user_between_steps(tmp_path):
     assert len(guidance_events) == 3
     assert any(e.type == "state_changed" and e.state is State.awaiting_user for e in events)
     assert r.verification.satisfied is True
-    assert any(k.purpose == "explain" for k in r.knowledge)
+    assert not any(k.purpose == "explain" for k in r.knowledge)
 
 
 def test_guide_mode_blocked_escalates_with_doc_lookup(tmp_path):
@@ -58,7 +58,7 @@ def test_guide_mode_blocked_escalates_with_doc_lookup(tmp_path):
     r = it.report
     assert r.status is CaseStatus.escalated and r.category is Category.permissions
     assert r.declared.outcome == "blocked"
-    assert {k.purpose for k in r.knowledge} >= {"explain", "blocker"}
+    assert {k.purpose for k in r.knowledge} == {"blocker"}
     assert all(k.simulated for k in r.knowledge)
 
 
@@ -80,6 +80,16 @@ def test_stop_while_waiting_for_user(tmp_path):
     assert it.report.timings.stop_latency_s < 1
 
 
+def test_plan_grounding_is_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setenv("HCS_GROUND_PLAN", "1")
+    it = Intervention(_request("odoo_crm_followup_activity", Mode.act), MockBackend(step_delay_s=0.01),
+                      ProcedureRegistry(), lambda e: None, tmp_path)
+    it.start()
+    assert it.plan.documentation and it.plan.sources
+    it.stop()
+    it.wait(5)
+
+
 def test_act_mode_records_agent_lookups(tmp_path):
     events = []
     it = Intervention(_request("odoo_crm_followup_activity", Mode.act), MockBackend(step_delay_s=0.01),
@@ -87,5 +97,5 @@ def test_act_mode_records_agent_lookups(tmp_path):
     it.start()
     it.approve(ApproveCommand())
     it.wait(5)
-    assert {k.purpose for k in it.report.knowledge} == {"explain", "agent_lookup"}
+    assert {k.purpose for k in it.report.knowledge} == {"agent_lookup"}  # only when the agent asked
     assert any(e.type == "knowledge" for e in events)

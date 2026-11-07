@@ -111,7 +111,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_env() -> None:
+    """Load the nearest .env (current dir, then parents), without overriding the shell environment."""
+    from dotenv import find_dotenv, load_dotenv
+
+    path = find_dotenv(usecwd=True)
+    if path:
+        load_dotenv(path, override=False)
+
+
 def main(argv: list[str] | None = None) -> int:
+    _load_env()
     ap = argparse.ArgumentParser(prog="hcs-agent", description="Customer-success assistant agent (H desktop).")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

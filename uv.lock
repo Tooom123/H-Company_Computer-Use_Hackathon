@@ -330,6 +330,7 @@ dependencies = [
     { name = "hai-agents", extra = ["cli", "desktop"] },
     { name = "linkup-sdk" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -346,6 +347,7 @@ requires-dist = [
     { name = "hai-agents", extras = ["cli", "desktop"], specifier = ">=1.4.3" },
     { name = "linkup-sdk", specifier = ">=0.24.0" },
     { name = "pydantic", specifier = ">=2.14.3" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]

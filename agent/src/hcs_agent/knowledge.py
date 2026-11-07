@@ -1,9 +1,7 @@
-"""Software knowledge through Linkup: sourced answers from the vendor's documentation.
-
-Used in three places:
-- before the plan, to ground the explanation given to the user (`explain`);
-- during the H session, as the custom tool `lookup_docs` the agent can call when stuck;
-- at escalation, to attach documentation about the blocker to the support case (`explain_blocker`).
+"""Optional web knowledge through Linkup. Not central: the agent works from what it sees on screen and
+from the procedure; it may call `lookup_docs` when it needs information from the internet (menu path,
+error meaning). The blocker is also looked up at escalation so support gets context.
+Plan grounding before approval is opt-in (`HCS_GROUND_PLAN=1`).
 
 Every answer keeps its sources: the product distinguishes provided information from observation.
 """
@@ -15,6 +13,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
+# Optional preferred domains per software (set HCS_RESTRICT_DOMAINS=1 to enforce them). Default: whole web.
 DOC_DOMAINS: dict[str, list[str]] = {
     "odoo": ["odoo.com"],
 }
@@ -55,7 +54,7 @@ class LinkupKnowledge:
         self.timeout = timeout
 
     def ask(self, query: str, software: str | None = None, depth: str = "standard") -> DocAnswer | None:
-        domains = DOC_DOMAINS.get((software or "").lower())
+        domains = DOC_DOMAINS.get((software or "").lower()) if os.environ.get("HCS_RESTRICT_DOMAINS") else None
         try:
             res = self._client.search(
                 query=query,

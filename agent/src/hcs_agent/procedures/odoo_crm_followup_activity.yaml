@@ -58,7 +58,7 @@ agent_instructions: |
   Procedure:
   1. Open the CRM app and find the opportunity "{opportunity}" (use the search bar if needed).
   2. Open its form view.
-  3. In the chatter area, click "Activities" (or "Schedule activity").
+  3. In the chatter area, click "Activity" to open the "Schedule Activity" dialog.
   4. Set Activity Type = "To Do", Summary = "{activity_title}", Due Date = {due_date}, Assigned to = {assignee}.
   5. Click "Schedule" (not "Mark as Done"). Confirm the activity appears on the opportunity.
   If something prevents you from completing a step (missing permission, record not found, unexpected

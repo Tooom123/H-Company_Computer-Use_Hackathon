@@ -12,6 +12,7 @@ Guarantees enforced here, not in the prompt:
 
 from __future__ import annotations
 
+import os
 import platform
 import threading
 from datetime import datetime, timezone
@@ -129,7 +130,8 @@ class Intervention:
             self._finish()
             return
         self.plan = self._bound.plan()
-        self._ground_plan()
+        if os.environ.get("HCS_GROUND_PLAN", "").lower() in {"1", "true", "yes"}:
+            self._ground_plan()
         self._set_state(State.awaiting_approval, "Waiting for the user to approve the proposed scope.")
         self._emit("plan_proposed", self.plan.explanation, plan=self.plan.model_dump(),
                    preconditions=self._bound.preconditions)
@@ -137,7 +139,7 @@ class Intervention:
         self._thread.start()
 
     def _ground_plan(self) -> None:
-        """Attach a sourced documentation summary (Linkup) to the plan so the explanation is not invented."""
+        """Opt-in: attach a sourced web summary (Linkup) to the plan before approval."""
         assert self._bound is not None and self.plan is not None
         req = self.request
         ans = self.backend.knowledge.ask(
