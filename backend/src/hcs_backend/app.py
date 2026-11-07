@@ -225,6 +225,10 @@ def create_app(settings: Settings | None = None, store: Store | None = None, fix
         return dashboard.case_page(case, group_of(case_id), fix=fixer.refresh(case_id),
                                    fix_repo=fixer.repo_for(case))
 
+    @app.get("/dashboard/cases/{case_id}/dossier", response_class=HTMLResponse, dependencies=[Support])
+    def dash_dossier(case_id: str) -> str:
+        return dashboard.dossier_page(get_case_or_404(case_id))
+
     @app.post("/dashboard/cases/{case_id}/fix", dependencies=[Support], include_in_schema=False)
     def dash_case_fix(case_id: str) -> RedirectResponse:
         request_fix(case_id)

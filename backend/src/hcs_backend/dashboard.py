@@ -37,6 +37,7 @@ padding:0 5px;margin-left:6px;font-weight:600;letter-spacing:.03em}
 dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:4px 14px}dt{color:var(--muted)}dd{margin:0}
 .decision{border-left:4px solid var(--bad)}.muted{color:var(--muted)}ol{margin:0;padding-left:20px}
 .wrap{overflow-x:auto}
+@media print{.noprint{display:none}body{background:#fff;color:#000}main{max-width:none;padding:0}.card{break-inside:avoid}}
 .timeline{list-style:none;margin:0;padding:0}.tl{display:grid;grid-template-columns:64px 104px 1fr;gap:10px;
 padding:7px 8px;border-left:4px solid var(--line);margin:3px 0;border-radius:4px}.tl-when{color:var(--muted);
 font-variant-numeric:tabular-nums}.tl-tag{font-size:12px;font-weight:600}.tl-explain{border-color:#7c4dff}
@@ -230,6 +231,52 @@ def _fix_card(case: StoredCase, fix: dict | None, fix_repo: str | None) -> str:
     return f'<div class="card fixcard"><b>Fix with Devin{sim}</b><dl>{dl}</dl>{ask}{replies}</div>'
 
 
+def dossier_page(case: StoredCase) -> str:
+    """Printable escalation file: what a support agent at the vendor receives (item 5)."""
+    e = build_escalation(case)
+    ctx, user, obs = e["context"], e["user_declared"], e["observed"]
+    flags = _flags(e["simulated"], e["demo_data"])
+    docs = "".join(
+        f"<li><b>{escape(d['query'] or '')}</b>{' <i>(simulated)</i>' if d['simulated'] else ''}"
+        f"<p>{escape(d['answer'] or '')}</p><ul>"
+        + "".join(f'<li><a href="{escape(x["url"] or "")}">{escape(x["name"] or x["url"] or "")}</a> '
+                  f'<span class="muted">{escape(x["url"] or "")}</span></li>' for x in d["sources"])
+        + "</ul></li>" for d in e["documentation"]) or "<li class='muted'>No documentation lookup on this blocker.</li>"
+    course = "".join(f"<li><b>{escape(PHASE_LABEL.get(ev['phase'], ev['phase']))}</b> "
+                     f"<span class='muted'>({escape(ev['actor'])})</span> {escape(str(ev['text']))}</li>"
+                     for ev in e["session_course"]) or "<li class='muted'>No step recorded.</li>"
+    checks = "".join(f"<li><code>{escape(k)}</code>: {'ok' if v else 'FAILED'}</li>" for k, v in obs["checks"].items())
+    evidence = "".join(f"<li><code>{escape(ev['ref'])}</code> ({escape(ev['kind'])}) {escape(ev['description'])}</li>"
+                       for ev in e["evidence"])
+    if e["evidence_withheld"]:
+        evidence += f"<li class='muted'>{e['evidence_withheld']} screenshot(s) withheld — the user did not allow sharing.</li>"
+    dl = lambda rows: "<dl>" + "".join(f"<dt>{k}</dt><dd>{_v(v)}</dd>" for k, v in rows) + "</dl>"  # noqa: E731
+    body = (
+        '<p class="noprint"><a href="/dashboard/cases/' + escape(e["case_id"]) + '">← Case</a> · '
+        '<button onclick="window.print()">Print / save as PDF</button></p>'
+        f"<h1>Escalation file — case {escape(e['case_id'])}{flags}</h1>"
+        f"<p class='sub'>{escape(str(ctx['software']))} {escape(str(ctx['software_version'] or ''))} · "
+        f"{escape(str(ctx['os']))} · status {escape(str(e['status']))} · category {escape(str(e['category']))} · "
+        f"received {escape(e['received_at'])}</p>"
+        "<div class='card decision'><b>Decision expected from support</b>"
+        f"<p>{_v(e['decision_expected'])}</p>"
+        + dl([("Exact blocker", e["blocked_on"]), ("Attempts", e["attempts"]),
+              ("Suspected cause (hypothesis)", e["suspected_cause"]), ("Suggested next step", e["suggested_next_step"])])
+        + "</div><h2>The user</h2>"
+        + dl([("Role", user["role"]), ("Goal", user["goal"]), ("Symptom", user["symptom"]),
+              ("Feedback", (user["feedback"] or {}).get("comment"))])
+        + "<h2>State observed by the verifier</h2>"
+        + dl([("Postcondition", obs["postcondition"]), ("Satisfied", obs["postcondition_satisfied"]),
+              ("Observed", obs["observed_state"])]) + f"<ul>{checks}</ul>"
+        + f"<h2>What the documentation says about the blocker</h2><ul>{docs}</ul>"
+        + f"<h2>What happened</h2><ol>{course}</ol>"
+        + f"<h2>Evidence</h2><ul>{evidence or '<li class=muted>none</li>'}</ul>"
+        + f"<p class='muted'>Mode: {escape(str(e['mode'] or 'act'))} · procedure {escape(str(ctx['procedure_id'] or '—'))}"
+        f" · H sessions: {escape(', '.join(e['h_session_ids']) or '—')}</p>"
+    )
+    return _page(f"Escalation file {e['case_id']}", body)
+
+
 def _pct(x: float | None) -> str:
     return "—" if x is None else f"{x * 100:.0f} %"
 
@@ -360,7 +407,8 @@ def case_page(case: StoredCase, group_id: str | None, fix: dict | None = None, f
         f"<h1>Case {escape(e['case_id'])}{_flags(e['simulated'], e['demo_data'])}</h1>"
         f'<p class="sub">{_status(e["status"])} · <span class="chip">{escape(e["category"] or "")}</span> · '
         f'{escape(str(ctx["software"]))} {escape(str(ctx["software_version"] or ""))} · {escape(str(ctx["os"]))}{group_link} · '
-        f'<a href="/cases/{escape(e["case_id"])}/escalation.md">escalation file (.md)</a></p>'
+        f'<a href="/cases/{escape(e["case_id"])}/escalation.md">escalation file (.md)</a> · '
+        f'<a href="/dashboard/cases/{escape(e["case_id"])}/dossier">printable escalation file</a></p>'
         f'<p>{facts_html}</p>'
         + decision
         + _fix_card(case, fix, fix_repo)

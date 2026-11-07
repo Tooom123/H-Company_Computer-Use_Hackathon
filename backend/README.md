@@ -24,7 +24,9 @@ uv run pytest backend
 | Basic | GET | `/cases/{id}/escalation` · `.md` | escalation file, JSON or Markdown |
 | Basic | GET | `/groups`, `/groups/{id}` | difficulty groups with source cases |
 | Basic | GET | `/sessions/{id}/events` | events of a session |
-| Basic | GET | `/dashboard`, `/dashboard/groups/{id}`, `/dashboard/cases/{id}` | HTML dashboard |
+| Basic | GET | `/dashboard`, `/dashboard/groups/{id}`, `/dashboard/cases/{id}` | HTML dashboard (case timeline, Linkup lookups) |
+| Basic | GET | `/metrics`, `/dashboard/metrics` | reliability per scenario, real sessions only |
+| Basic | GET | `/dashboard/cases/{id}/dossier` | printable escalation file (print / save as PDF) |
 
 Invalid payloads get a 422 listing the schema errors.
 
@@ -35,8 +37,9 @@ Invalid payloads get a 422 listing the schema errors.
   by dropping quoted names, numbers, accents and case. Two similar cases share a group, a different one stays
   distinct; every group lists its source cases, the procedures tried, the verified results and the decisions
   expected from support.
-- **Escalation file**: decision expected, blocked on, attempts, suspected cause (labelled hypothesis),
-  steps attempted. User-declared, agent-declared and observed facts stay in separate sections.
+- **Escalation file**: decision expected, exact blocker, attempts, suspected cause (labelled hypothesis),
+  what the documentation says about the blocker (Linkup, with sources), what happened (explained / stuck /
+  takeover / agent / verifier), evidence refs. User-declared, agent-declared and observed facts stay in separate sections.
 - **Consent**: a screenshot is shown to support only if the evidence is `shareable_with_support` and the
   user's feedback has `allow_screenshots_to_support`; withheld screenshots are counted, not shown.
 - **Flags**: `simulated` and `demo_data` are displayed on every case and group.

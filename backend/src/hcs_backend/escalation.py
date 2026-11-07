@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from .store import StoredCase
+from .timeline import build_timeline
 
 
 def shareable_evidence(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -87,6 +88,18 @@ def build_escalation(case: StoredCase) -> dict[str, Any]:
             for s in steps
             if s.get("kind") in ("action", "error", "observation")
         ],
+        # readable course of the session (explained / stuck / takeover / agent / verifier), grounding noise left out
+        "session_course": [
+            {"at": ev.get("at"), "phase": ev["phase"], "actor": ev["actor"], "text": ev["text"]}
+            for ev in build_timeline(r) if ev["phase"] != "system"
+        ],
+        # what the vendor documentation says about the exact blocker (Linkup lookups with purpose=blocker)
+        "documentation": [
+            {"query": k.get("query"), "answer": k.get("answer"), "simulated": bool(k.get("simulated")),
+             "sources": [{"name": x.get("name"), "url": x.get("url")} for x in k.get("sources") or []]}
+            for k in r.get("knowledge") or [] if k.get("purpose") == "blocker"
+        ],
+        "mode": r.get("mode"),
         "blocked_on": esc.get("blocked_on") or declared.get("blocker"),
         "attempts": esc.get("attempts"),
         "suspected_cause": r.get("suspected_cause"),
@@ -127,11 +140,22 @@ def escalation_markdown(case: StoredCase) -> str:
         _line("Suspected cause (hypothesis)", e["suspected_cause"]),
         _line("Suggested next step", e["suggested_next_step"]),
         "",
+        "## What the documentation says about the blocker",
+        "",
+    ]
+    for d in e["documentation"]:
+        out += [f"- **Q:** {d['query']}" + (" _(simulated)_" if d["simulated"] else ""), f"  **A:** {d['answer']}"]
+        out += [f"  - source: [{x['name'] or x['url']}]({x['url']})" for x in d["sources"]]
+    if not e["documentation"]:
+        out.append("— (no documentation lookup on this blocker)")
+    out += [
+        "",
         "## Context",
         "",
         _line("Software", f"{ctx['software']} {ctx['software_version'] or ''}".strip()),
         _line("OS", ctx["os"]),
         _line("Session type", ctx["session_type"]),
+        _line("Mode", e["mode"]),
         _line("Procedure", ctx["procedure_id"]),
         "",
         "## Declared by the user",
@@ -164,9 +188,9 @@ def escalation_markdown(case: StoredCase) -> str:
         _line("Observed state", obs["observed_state"]),
     ]
     out += [f"  - check `{k}`: {'ok' if v else 'FAILED'}" for k, v in obs["checks"].items()]
-    out += ["", "## Steps attempted", ""]
-    out += [f"{i}. [attempt {s['attempt']}, {s['kind']}] {s['summary']}" for i, s in enumerate(e["attempted_steps"], 1)]
-    if not e["attempted_steps"]:
+    out += ["", "## What happened", ""]
+    out += [f"{i}. **{ev['phase']}** ({ev['actor']}) {ev['text']}" for i, ev in enumerate(e["session_course"], 1)]
+    if not e["session_course"]:
         out.append("—")
     out += ["", "## Evidence", ""]
     out += [f"- `{ev['ref']}` ({ev['kind']}): {ev['description']}" for ev in e["evidence"]]
