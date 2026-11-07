@@ -490,11 +490,19 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif ov and it.state.terminal and it.guidance and it.guidance[-1].last and it.guidance[-1].pointer:
             pass  # keep the last annotation until exit
 
+    def finished() -> bool:
+        if it.state.terminal and it.report is not None:
+            return True
+        if it._thread is not None and not it._thread.is_alive():
+            print("\n[worker thread ended without a report — see runs/hcs-agent.log]", flush=True)
+            return True
+        return False
+
     try:
         if ov:
-            ov.run_until(lambda: it.state.terminal and it.report is not None, tick, 0.1)
+            ov.run_until(finished, tick, 0.1)
         else:
-            while not (it.state.terminal and it.report is not None):
+            while not finished():
                 tick()
                 it.wait(0.1)
     finally:
@@ -535,11 +543,55 @@ def _load_env() -> None:
         load_dotenv(path, override=False)
 
 
-def main(argv: list[str] | None = None) -> int:
-    import faulthandler
+class _Tee:
+    """Mirror a stream into a log file so a silent exit still leaves a trace."""
 
-    faulthandler.enable()  # a native crash (AppKit, event tap) prints a Python traceback instead of vanishing
+    def __init__(self, stream, log):
+        self._s, self._log = stream, log
+
+    def write(self, data):
+        self._s.write(data)
+        self._log.write(data)
+        self._log.flush()
+        return len(data)
+
+    def flush(self):
+        self._s.flush()
+        self._log.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._s, name)
+
+
+def _setup_logging() -> None:
+    import atexit
+    import faulthandler
+    import logging
+    import threading
+
+    log_dir = Path(os.environ.get("HCS_RUNS_DIR", "runs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log = open(log_dir / "hcs-agent.log", "a", encoding="utf-8")
+    log.write(f"\n===== start {time.strftime('%Y-%m-%d %H:%M:%S')} pid={os.getpid()} argv={sys.argv[1:]}\n")
+    sys.stdout, sys.stderr = _Tee(sys.stdout, log), _Tee(sys.stderr, log)
+    faulthandler.enable(file=log, all_threads=True)  # native crash -> traceback of every thread in the log
+    logging.basicConfig(level=logging.INFO, stream=log, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    def thread_hook(args):
+        import traceback
+
+        print(f"\n[thread {args.thread.name if args.thread else '?'} crashed]", flush=True)
+        traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+
+    threading.excepthook = thread_hook
+    atexit.register(lambda: log.write(f"===== exit {time.strftime('%H:%M:%S')}\n"))
+
+
+def main(argv: list[str] | None = None) -> int:
     _load_env()
+    _setup_logging()
     ap = argparse.ArgumentParser(prog="hcs-agent", description="Customer-success assistant agent (H desktop).")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
