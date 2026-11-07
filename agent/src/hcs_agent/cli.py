@@ -153,7 +153,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
     except KeyboardInterrupt:
         print(">> Ctrl+C: stopping (new commands blocked locally, asking H to cancel)")
         it.stop(StopCommand(reason="Ctrl+C"))
-        _wait_stopped(it, ov, timeout=60)
+        _wait_stopped(it, ov, timeout=20)
     if it.report:
         print(f"\nreport: {it.runs_dir / 'report.json'}")
         print(json.dumps(it.report.to_support_summary(), indent=2))

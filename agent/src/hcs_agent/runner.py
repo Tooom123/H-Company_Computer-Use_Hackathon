@@ -316,7 +316,7 @@ class Intervention:
             step = script[i]
             t_step = time.time()
             if step.action == "info":
-                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
+                gs = GuidanceStep(index=i + 1, instruction=step.instruction, why=step.why,
                                   pointer=None, kind="info", annotations=self._ground_annotations(step, context))
                 self._trace(f"step {gs.index} (info) shown after {time.time() - t_step:.1f}s")
                 if self._on_guidance(gs) is None:
@@ -354,10 +354,10 @@ class Intervention:
                 if doc and doc.answer:
                     why = (doc.answer.strip().split("\n")[0])[:160]
                     self._note("agent_lookup", doc)
-                gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=why,
+                gs = GuidanceStep(index=i + 1, pointer=None, where=step.element, why=why,
                                   kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
             else:
-                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
+                gs = GuidanceStep(index=i + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, box=loc.box, kind=step.action, last=False,
                                   annotations=self._ground_annotations(step, context))
             self._trace(f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}")
@@ -375,10 +375,24 @@ class Intervention:
             # Verify progress on screen before moving on.
             nxt = script[i + 1] if i + 1 < len(script) else None
             if step.done_when:
-                # Explicit end state: the only reliable test when the next control is already on screen.
-                if self._screen_shows(step.done_when):
+                # Explicit end state first; then the next control being visible also counts (the done_when
+                # wording can be stricter than reality). Another app in front is never "not done": wait.
+                outcome = self._screen_shows(step.done_when, software=bound.request.software)
+                if outcome == "yes":
                     done_steps.append(step.instruction)
                     i += 1
+                    misses = 0
+                    continue
+                if outcome == "away":
+                    self._trace("the software is not in front; waiting for it")
+                    time.sleep(1.5)
+                    pre_loc = loc
+                    continue  # same step, no re-show, no miss
+                if nxt and nxt.element and (n := self.backend.locate(nxt.element, context)) and n.found:
+                    self._trace(f"step {i + 1}: done_when unsure but the next control is visible; moving on")
+                    done_steps.append(step.instruction)
+                    i += 1
+                    pre_loc = n
                     misses = 0
                     continue
                 misses += 1
@@ -458,19 +472,23 @@ class Intervention:
                 return True
         return self._ensure_screen(bound, attempts=10)
 
-    def _screen_shows(self, expected: str, tries: int = 3, pause_s: float = 0.6) -> bool:
-        """Has the step's effect appeared? The page may still be updating, so look a few times."""
+    def _screen_shows(self, expected: str, tries: int = 2, pause_s: float = 0.6, software: str = "") -> str:
+        """Has the step's effect appeared? Returns "yes", "no", or "away" (another application is in front)."""
         check = getattr(self.backend, "screen_matches", None)
         if check is None:
-            return True
+            return "yes"
         for attempt in range(tries):
             ok, visible = check(expected)
             self._trace(f"done check ({attempt + 1}/{tries}): {'yes' if ok else 'no'} ({visible[:60]})")
-            if ok or self._stop.is_set():
-                return ok
+            if ok:
+                return "yes"
+            if self._stop.is_set():
+                return "no"
+            if software and visible and software.lower() not in visible.lower():
+                return "away"
             if attempt + 1 < tries:
                 time.sleep(pause_s)
-        return False
+        return "no"
 
     def _fast_verify(self, bound: BoundProcedure):
         """Guide mode: the user is already on the final screen, so each postcondition check is one Holo screen

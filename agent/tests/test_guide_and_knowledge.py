@@ -40,7 +40,8 @@ def test_guide_mode_waits_for_user_between_steps(tmp_path):
     assert r.status is CaseStatus.resolved
     # scripted guide: 7 steps minus the optional "open CRM" (not visible in the mock) + the closing note
     assert len(r.guidance) == 7 and r.guidance[-1].last
-    assert [g.index for g in r.guidance] == list(range(1, 8))
+    # step index = position in the script (stable when a step is shown again); the optional "open CRM" is skipped
+    assert [g.index for g in r.guidance[:-1]] == [2, 3, 4, 5, 6, 7]
     assert all(g.pointer for g in r.guidance[:-1] if g.kind != "info")  # every control step was grounded
     assert any(g.kind == "info" and g.annotations for g in r.guidance)  # To-Do chip shown, not clicked
     guidance_events = [e for e in events if e.type == "guidance"]

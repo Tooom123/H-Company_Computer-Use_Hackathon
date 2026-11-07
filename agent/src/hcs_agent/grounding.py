@@ -103,8 +103,9 @@ class Grounder:
             r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
             if r.status_code != 429 or attempt == 3:
                 break
-            # Rate limited (bursts of locate / screen checks during a guide): back off and retry.
-            time.sleep(float(r.headers.get("retry-after") or 0) or 1.0 * (attempt + 1))
+            # Rate limited (bursts of locate / screen checks during a guide): back off briefly and retry.
+            # Never honour a long Retry-After blindly: the user would see the guide freeze.
+            time.sleep(min(float(r.headers.get("retry-after") or 0) or 1.0 * (attempt + 1), 3.0))
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
