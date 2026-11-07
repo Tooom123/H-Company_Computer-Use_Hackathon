@@ -140,3 +140,24 @@ def test_lowering_autonomy_mid_guide_keeps_guiding(tmp_path):
     _auto_next(it, events, [])
     it.wait(5)
     assert it.report.status is CaseStatus.resolved and it.takeover is False
+
+
+def test_new_voice_request_mid_task_stops_the_current_one(tmp_path, monkeypatch):
+    """⌘H during a task: the transcript queue fills, the guide loop stops the intervention right away."""
+    import queue
+    from types import SimpleNamespace
+
+    from hcs_agent import cli
+    from hcs_agent.contract import InterventionRequest
+
+    q: "queue.Queue[str]" = queue.Queue()
+    q.put("en fait montre-moi autre chose")
+    monkeypatch.setitem(cli._VOICE, "ptt", SimpleNamespace(transcripts=q))
+    monkeypatch.setitem(cli._MAGNET, "level", 1)
+    req = InterventionRequest(software="odoo", goal="g", procedure_id="odoo_crm_create_opportunity",
+                              parameters={"opportunity": "Acme Demo"})
+    code = cli._execute(req, MockBackend(step_delay_s=0.01), tmp_path, auto_approve=True, overlay=False, ov=None)
+    it = cli._MAGNET["current"]
+    assert code == 3 and it.report.status is CaseStatus.abandoned
+    assert it.report.timings.stop_requested_at is not None
+    assert not q.empty()  # the new request is still queued for the talk loop to run next

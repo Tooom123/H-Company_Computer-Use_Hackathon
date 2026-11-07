@@ -26,6 +26,12 @@ from .runner import Intervention
 _LAST_LOOKUP_AT = 0.0
 _LAST_ACTION: dict = {}  # latest agent action (summary, pointer) for on-screen narration
 _MAGNET = {"level": int(os.environ.get("HCS_AUTONOMY", "1")), "widget": None, "current": None}
+_VOICE: dict = {"ptt": None, "state": None}  # push-to-talk handle and its last state, visible to the guide loop
+
+
+def _new_request_pending() -> bool:
+    ptt = _VOICE.get("ptt")
+    return ptt is not None and not ptt.transcripts.empty()
 
 
 def _ensure_magnet():
@@ -153,7 +159,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         print(json.dumps(it.report.to_support_summary(), indent=2))
         if it.report.timings.stop_latency_s is not None:
             print(f"stop latency: {it.report.timings.stop_latency_s:.2f}s")
-        if ov is not None:
+        if ov is not None and not _new_request_pending():
             _show_outcome(ov, it)
         return 0 if it.report.status.value == "resolved" else 3
     return 1
@@ -230,6 +236,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
     def on_state(s: str) -> None:
         voice_state["s"] = s
+        _VOICE["state"] = s
         print(f"  [voice] {s}", flush=True)
         if ov is None:
             return
@@ -249,6 +256,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         print("  preparing the desktop channel…", flush=True)
         backend._desktop_channel()
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
+    _VOICE["ptt"] = ptt
     router = IntentRouter(registry)
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
@@ -281,7 +289,6 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
                 print(f"  -> resuming {request.procedure_id} from the current screen")
-                ptt.pause()
                 try:
                     _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
                              overlay=not args.no_overlay, ov=ov)
@@ -289,7 +296,6 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     import traceback
 
                     traceback.print_exc()
-                ptt.resume()
                 print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
                 continue
             if ov is not None:
@@ -317,7 +323,6 @@ def cmd_talk(args: argparse.Namespace) -> int:
             request = intent_to_request(intent)
             last_request = request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
-            ptt.pause()
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
                                 overlay=not args.no_overlay, ov=ov)
@@ -328,7 +333,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 code = 1
             if args.once:
                 return code
-            ptt.resume()
+            if _new_request_pending():
+                continue  # the user spoke during the task: it was stopped, run the new request right away
             if ov is not None:
                 ov.badge(f"⌘H : nouvelle demande" if "cmd" in ptt.key_name else f"{ptt.key_name} : nouvelle demande")
             print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
@@ -496,6 +502,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     def status_badge() -> None:
         if ov is None:
             return
+        if _VOICE.get("state") in ("recording", "transcribing"):
+            return  # the voice badge is already shown; do not overwrite it mid-sentence
         if it.state is State.awaiting_user:
             ov.badge(None)
         elif time.time() - _LAST_LOOKUP_AT < 4:
@@ -521,8 +529,18 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         why = _LAST_ACTION.get("element") or ""
         ov.show_scene(Scene(text=text, why=why[:60], target=_LAST_ACTION.get("pointer")))
 
+    interrupted = {"done": False}
+
     def tick() -> None:
         nonlocal shown_step, prompted
+        if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
+            interrupted["done"] = True
+            print("\n>> new voice request: stopping the current task", flush=True)
+            if ov:
+                ov.hide()
+                ov.badge("Nouvelle demande…", pulsing=True)
+            it.stop(StopCommand(reason="replaced by a new voice request"))
+            return
         status_badge()
         if getattr(it, "takeover", False) and it.state in (State.running, State.verifying):
             narrate()
