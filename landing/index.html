@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>H Companion</title>
+<meta name="description" content="H Companion — help, one key away. A desktop assistant that does it with you inside your software, verifies the result and hands support a ready-to-act case.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<main>
+  <section class="hero" id="hero">
+    <canvas class="dots" id="dots" aria-hidden="true"></canvas>
+    <h1 class="title" aria-label="H Company">
+      <span class="key-slot" aria-hidden="true"><svg class="taps" id="taps" viewBox="-40 -40 40 40"><path d="M-2 -12 L-2 -30"/><path d="M-10 -10 L-24 -24"/><path d="M-12 -2 L-30 -2"/></svg><canvas id="key" title="Press me — or press H on your keyboard"></canvas></span>
+      <span class="word" id="word" aria-hidden="true"><span>Compan</span><span class="y">y</span><span class="ion"><span>i</span><span>o</span><span>n</span></span></span>
+    </h1>
+    <div class="sub">
+        <p class="slogan" id="slogan" aria-live="polite">
+      <span>Get&nbsp;</span><svg class="hmark" viewBox="838 195 197 220" aria-label="H"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg><span>elp, one key away.</span>
+    </p>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <p class="eyebrow mono">How it works</p>
+    <h2>From “I'm stuck” to verified, with you in control.</h2>
+    <ol class="steps">
+      <li><span class="num mono">01</span><h3>Ask</h3><p>Say what you want and who you are. “New sales rep — schedule the follow-up on Acme for Friday.”</p></li>
+      <li><span class="num mono">02</span><h3>Approve</h3><p>H Companion shows exactly what it will change. Nothing moves until you say yes.</p></li>
+      <li><span class="num mono">03</span><h3>Act</h3><p>The H agent clicks and types in your real app, on screen. A stop button is always one click away.</p></li>
+      <li><span class="num mono">04</span><h3>Verify</h3><p>“The agent said so” is not enough. It reopens the record and checks the result.</p></li>
+      <li><span class="num mono">05</span><h3>Escalate</h3><p>Blocked? It stops, and support receives the goal, what was seen, what was tried and the decision needed.</p></li>
+    </ol>
+  </section>
+
+  <section class="section split" id="vendors">
+    <div>
+      <p class="eyebrow mono">For software vendors</p>
+      <h2>Tickets that already did the investigation.</h2>
+      <p class="muted">Every session becomes a structured case: role, goal, steps, verified result, category and the user's own feedback. Similar difficulties are grouped, so product teams see what really blocks people.</p>
+      <a class="btn" href="http://127.0.0.1:8766/dashboard">Open the support dashboard</a>
+    </div>
+    <pre class="case mono" aria-label="Example escalation case"><span class="c-k">case</span>      demo-002 · <span class="c-bad">escalated</span>
+<span class="c-k">category</span>  permissions
+<span class="c-k">goal</span>      Give 'Globex Démo' to my colleague
+<span class="c-k">observed</span>  Salesperson unchanged after reload
+<span class="c-k">blocked</span>   Access error on crm.lead
+<span class="c-k">attempts</span>  1 — not retried
+<span class="c-k">decision</span>  Grant reassign rights, or
+          reassign it for the user</pre>
+  </section>
+
+  <section class="section" id="trust">
+    <p class="eyebrow mono">Control by design</p>
+    <div class="grid3">
+      <div class="card"><h3>You trigger it</h3><p>No background watching. It starts when you ask, and only on what you approved.</p></div>
+      <div class="card"><h3>Stop, anytime</h3><p>Stop blocks new actions locally and cancels the agent. Nothing restarts without a new yes.</p></div>
+      <div class="card"><h3>Your screenshots, your call</h3><p>Support only sees the screenshots you agreed to share. Facts, claims and guesses stay labelled.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>H Companion — built at the Computer Use Hackathon (H Company × 42AI, Paris, Nov 2026).</span>
+  <span class="muted">Powered by H Company's agents. Not an official H Company product.</span>
+</footer>
+<script type="module" src="main.js"></script>
+</body>
+</html>
