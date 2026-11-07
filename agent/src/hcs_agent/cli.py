@@ -23,6 +23,7 @@ from .runner import Intervention
 
 
 _LAST_LOOKUP_AT = 0.0
+_LAST_ACTION: dict = {}  # latest agent action (summary, pointer) for on-screen narration
 
 
 def _short(text: str, n: int) -> str:
@@ -39,6 +40,10 @@ def _print_event(e: AgentEvent) -> None:
     global _LAST_LOOKUP_AT
     if e.type == "knowledge":
         _LAST_LOOKUP_AT = time.time()
+    if e.type == "step" and e.data["step"]["kind"] == "action" and e.data["step"].get("detail", {}).get("tools"):
+        det = e.data["step"]["detail"]
+        _LAST_ACTION.update(summary=e.message, pointer=det.get("pointer"), element=det.get("element"),
+                            at=time.time(), id=e.event_id)
     tag = "SIM " if e.simulated else ""
     msg = e.message or ""
     if e.type == "step":
@@ -103,6 +108,9 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
     try:
         if request.mode.value == "guide":
             _guide_loop(it, auto=auto_next, overlay=overlay, ov=ov)
+        elif ov is not None:
+            it.takeover = True  # act mode: narrate the agent's actions on screen
+            _guide_loop(it, auto=True, overlay=overlay, ov=ov)
         else:
             it.wait()
     except KeyboardInterrupt:
@@ -381,9 +389,25 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif it.state.terminal:
             ov.badge(None)
 
+    shown_action = {"id": None}
+
+    def narrate() -> None:
+        """Takeover: show what the agent is doing, where, as it does it."""
+        if ov is None or not _LAST_ACTION or _LAST_ACTION.get("id") == shown_action["id"]:
+            return
+        shown_action["id"] = _LAST_ACTION["id"]
+        from .overlay import Scene
+
+        ov.badge("Je prends la main…", pulsing=True)
+        text = _short(_LAST_ACTION.get("summary") or "", 110)
+        why = _LAST_ACTION.get("element") or ""
+        ov.show_scene(Scene(text=text, why=why[:60], target=_LAST_ACTION.get("pointer")))
+
     def tick() -> None:
         nonlocal shown_step, prompted
         status_badge()
+        if getattr(it, "takeover", False) and it.state in (State.running, State.verifying):
+            narrate()
         if it.state is State.awaiting_user and it.guidance:
             g = it.guidance[-1]
             if g.index != shown_step:

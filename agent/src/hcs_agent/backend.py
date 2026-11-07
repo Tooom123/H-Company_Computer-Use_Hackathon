@@ -511,8 +511,15 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
             reqs = d.get("tool_reqs") or []
             actions = [f"{r.get('tool_name')}({_short(r.get('args'))})" for r in reqs]
             summary = d.get("content") or "; ".join(actions) or "agent decided"
+            pointer, element = None, None
+            for r in reqs:
+                a = _as_dict(r.get("args"))
+                if "x" in a and "y" in a:
+                    pointer = _agent_xy_to_screen(a["x"], a["y"])
+                    element = a.get("element") or element
             return Step(index=index, attempt=attempt, timestamp=ts, kind="action", summary=summary[:300],
-                        detail={"actions": actions, "reasoning": _short(d.get("reasoning_content"), 500)})
+                        detail={"actions": actions, "reasoning": _short(d.get("reasoning_content"), 500),
+                                "pointer": pointer, "element": element, "tools": [r.get("tool_name") for r in reqs]})
         if kind == "observation_event":
             img = (d.get("image") or {}).get("source")
             return Step(index=index, attempt=attempt, timestamp=ts, kind="observation", summary="screen observed",
@@ -571,6 +578,20 @@ def _last_pointer(events: list[Any]) -> tuple[int, int] | None:
                 except (TypeError, ValueError):
                     pass
     return pointer
+
+
+def _agent_xy_to_screen(x, y) -> tuple[int, int] | None:
+    """Desktop-agent action coordinates (normalised 0-1 of the screen) -> screen points for the overlay."""
+    try:
+        from .overlay import screen_size_points
+
+        sw, sh = screen_size_points()
+        fx, fy = float(x), float(y)
+        if fx > 1 or fy > 1:  # defensive: pixel coordinates of a 1280-wide screenshot
+            return int(fx * sw / 1280), int(fy * sw / 1280)
+        return int(fx * sw), int(fy * sh)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _agent_name(raw: str) -> str:

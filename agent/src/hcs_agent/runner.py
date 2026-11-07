@@ -82,6 +82,7 @@ class Intervention:
         self.timings = Timings(started_at=_now())
         self.cost_usd = 0.0
         self.attempts = 0
+        self.takeover = False
         self.guidance: list[GuidanceStep] = []
         self.knowledge: list[KnowledgeNote] = []
         self.error: str | None = None
@@ -227,9 +228,14 @@ class Intervention:
             on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
             if guide and bound.guide_script():
                 last_attempt = self._scripted_guide(bound)
-                if last_attempt is None:  # script could not follow the screen: hand over to the H agent
-                    last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
-                                                             self._stop, on_lookup)
+                if last_attempt is None:
+                    # The user is stuck: take the controls, finish the task and narrate each action.
+                    self.takeover = True
+                    self._emit("state_changed", "Je prends la main pour finir la tâche.", takeover=True)
+                    task = bound.task_message(self.scope_note, "The user started this task by hand and got stuck; "
+                                              "continue from the current screen state. Before each action, say in "
+                                              "one short French sentence what you do and why.")
+                    last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
             elif guide:
                 last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
                                                          self._stop, on_lookup)
@@ -310,11 +316,10 @@ class Intervention:
                     continue
                 misses += 1
                 if misses >= 2:
-                    # Lost: bring the user back to the base screen, then restart the script from the top.
-                    if not self._recover(bound):
-                        return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
-                    i, misses, pre_loc = 0, 0, None
-                    continue
+                    # Lost: stop explaining, take over (the caller runs the narrated agent).
+                    self._emit("needs_human", f"Script lost at step {i + 1}: {step.element} not visible.",
+                               fallback="takeover")
+                    return None
                 why = step.why
                 doc = self.backend.knowledge.ask(f"In {bound.request.software}, where is: {step.element}?",
                                                  software=bound.request.software, depth="fast")
@@ -333,7 +338,7 @@ class Intervention:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             did, note = reply
             if not did:
-                self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="h_agent")
+                self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="takeover")
                 return None
 
             # Verify progress on screen before moving on.
