@@ -1,4 +1,5 @@
 import type { GazeSample } from './types';
+import { extractHeadPose, type HeadPose } from './head-pose';
 
 type Prediction = { x: number; y: number } | null;
 type WebGazer = {
@@ -12,6 +13,7 @@ type WebGazer = {
   removeMouseEventListeners(): WebGazer;
   recordScreenPosition(x: number, y: number, type: 'click'): WebGazer;
   getRegression(): Array<{ getData(): unknown[] }>;
+  getTracker(): { getPositions(): unknown };
   saveDataAcrossSessions(value: boolean): WebGazer;
   showPredictionPoints(value: boolean): WebGazer;
   showVideoPreview(value: boolean): WebGazer;
@@ -68,8 +70,9 @@ export class WebGazerTracker {
   private lastCallbackAt = 0;
   private sampleSerial = 0;
   private recordedSerial = -1;
+  private lastPositions: unknown;
 
-  constructor(private readonly onSample: (sample: GazeSample | null) => void) {}
+  constructor(private readonly onSample: (sample: GazeSample | null, head: HeadPose | null) => void) {}
 
   async start(): Promise<void> {
     const api = await loadWebGazer();
@@ -87,7 +90,13 @@ export class WebGazerTracker {
       const sample = data && Number.isFinite(data.x) && Number.isFinite(data.y)
         ? { x: data.x, y: data.y, emittedAt: Date.now() }
         : null;
-      this.onSample(sample);
+      // WebGazer 3.5.3 retains its previous mesh when a face disappears.
+      // Only a new array identifies landmarks from this inference, even when
+      // the eye regression has not yet learned enough to predict a gaze point.
+      const positions = api.getTracker().getPositions();
+      const head = positions && positions !== this.lastPositions ? extractHeadPose(positions) : null;
+      this.lastPositions = positions;
+      this.onSample(sample, head);
     });
     try {
       await api.begin();

@@ -1,12 +1,12 @@
 export type Rect = { x: number; y: number; width: number; height: number };
 export type DisplayInfo = { id: number; bounds: Rect; scaleFactor: number };
-export type Settings = { selection: 'gaze' | 'cursor' | 'full'; roiWidth: number; roiHeight: number; includeGlobal: boolean; overlay: boolean; regionScope?: 'screen' | 'window' };
+export type Settings = { selection: 'gaze' | 'head' | 'hybrid' | 'cursor' | 'full'; roiWidth: number; roiHeight: number; includeGlobal: boolean; overlay: boolean; regionScope?: 'screen' | 'window' };
 export type RuntimeStatus = { platform: string; model: string; models?: string[]; apiKeyConfigured: boolean; captureAvailable: boolean; captureError?: string; display: DisplayInfo; observationShortcutAvailable?: boolean };
-export type TrackerStatus = { state: 'off' | 'calibrating' | 'tracking' | 'lost' | 'error'; message?: string; calibrationErrorPx?: number };
+export type TrackerStatus = { state: 'off' | 'calibrating' | 'tracking' | 'lost' | 'error'; message?: string; calibrationErrorPx?: number; gazeCalibrated?: boolean; headCalibrated?: boolean; headCalibrationErrorPx?: number; headMessage?: string };
 export type ObservationStatus = { status: 'idle' | 'running' | 'stopping' | 'stopped'; sampleCount: number; startedAt: string | null; durationSeconds: number; intervalMs: number; error?: string; stopReason?: string };
 export type SelectedWindow = { id: number; appName: string; bounds: Rect };
 export type ObservationLabel = 'present' | 'absent' | 'uncertain';
-export type LiveState = { tracker: TrackerStatus; candidate: Rect | null; sent: { frameId: string; rect: Rect } | null; observed?: { frameId: string; rect: Rect } | null; busy: 'capture' | 'inference' | null; settings: Settings; observation?: ObservationStatus };
+export type LiveState = { tracker: TrackerStatus; candidate: Rect | null; sent: { frameId: string; rect: Rect } | null; observed?: { frameId: string; rect: Rect } | null; busy: 'capture' | 'inference' | null; settings: Settings; observation?: ObservationStatus; head?: { available: boolean; yaw: number | null; pitch: number | null; roll: number | null; ageMs: number | null } };
 export type EncodedImage = { dataUrl: string; width: number; height: number; sha256: string };
 export type CaptureFrame = {
   frameId: string; capturedAt: string; sourceWidth: number; sourceHeight: number;
@@ -17,16 +17,19 @@ export type CaptureFrame = {
   reference?: EncodedImage;
   selectedWindow?: SelectedWindow;
   windowFallbackReason?: string;
+  signalUsed?: Settings['selection']; signalReason?: string; headAgeMs?: number | null;
   detail: EncodedImage; global: EncodedImage | null; preparationMs: number; gazeAgeMs: number | null;
   simulated: boolean; captureMethod: string;
 };
-export type ObservationSample = Pick<CaptureFrame, 'frameId' | 'capturedAt' | 'cropRect' | 'sourceWidth' | 'sourceHeight' | 'preparationMs' | 'gazeAgeMs' | 'fallbackReason' | 'regionDisposition' | 'selectedWindow'> & { annotation: ObservationLabel | null };
+export type ObservationSample = Pick<CaptureFrame, 'frameId' | 'capturedAt' | 'cropRect' | 'sourceWidth' | 'sourceHeight' | 'preparationMs' | 'gazeAgeMs' | 'fallbackReason' | 'regionDisposition' | 'selectedWindow' | 'signalUsed' | 'signalReason' | 'headAgeMs'> & { annotation: ObservationLabel | null };
 export type InferenceResult = {
   frameId: string; requestId: string | null; startedAt: string; latencyMs: number;
   usage: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null; cachedInputTokens: number | null };
   text: string; model: string; status: 'completed' | 'failed' | 'cancelled'; error?: string; simulated: boolean;
 };
 export type GazeSample = { x: number; y: number; emittedAt: number };
+/** Approximate FaceMesh orientation in degrees; no camera images or raw mesh cross IPC. */
+export type HeadSample = { point: { x: number; y: number } | null; pose: { yaw: number; pitch: number; roll: number }; emittedAt: number };
 export interface CompanionBridge {
   getStatus(): Promise<RuntimeStatus>;
   getState(): Promise<LiveState>;
@@ -45,6 +48,7 @@ export interface CompanionBridge {
   onState(callback: (state: LiveState) => void): () => void;
   // Restricted by main process to the tracker window; viewport coordinates on the primary display.
   reportGaze(sample: GazeSample | null): void;
+  reportHead(sample: HeadSample | null): void;
   reportTracker(status: TrackerStatus): void;
   finishCalibration(): Promise<void>;
   requestCamera(): Promise<void>;

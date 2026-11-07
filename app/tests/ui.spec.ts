@@ -25,6 +25,8 @@ async function installFixture(page: Page, keyConfigured = true) {
           trackerStartCalls: number;
           deferCalibration: () => void;
           setTrackerState: (state: "tracking" | "error") => void;
+          setTrackerDetails: (details: Record<string, unknown>) => void;
+          useHeadFallback: () => void;
         };
       };
       const fixtureWindow = window as unknown as FixtureWindow;
@@ -49,6 +51,7 @@ async function installFixture(page: Page, keyConfigured = true) {
       let configurationRejected = false;
       let fullSizeCapture = false;
       let calibrationDeferred = false;
+      let headFallback = false;
       const configurationResolvers: Array<() => void> = [];
       let resolveInference: ((value: any) => void) | null = null;
       let observationFrames: any[] = [];
@@ -140,6 +143,8 @@ async function installFixture(page: Page, keyConfigured = true) {
         trackerStartCalls: 0,
         deferCalibration: () => { calibrationDeferred = true; },
         setTrackerState: next => { state.tracker = { state: next }; emit(); },
+        setTrackerDetails: details => { state.tracker = { ...state.tracker, ...details }; emit(); },
+        useHeadFallback: () => { headFallback = true; },
         finishObservation: () => {
           observationFrames = [1, 2].map(index => ({
             frameId: `observed-fixture-${index}`,
@@ -149,6 +154,9 @@ async function installFixture(page: Page, keyConfigured = true) {
             requestedRegion: { width: state.settings.roiWidth, height: state.settings.roiHeight },
             regionDisposition: "crop", screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
             selection: state.settings.selection, fallbackReason: null,
+            signalUsed: headFallback ? "head" : state.settings.selection,
+            signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
+            headAgeMs: headFallback ? 45 : null,
             selectedWindow: { id: 7, appName: "Odoo · fixture", bounds: { x: 0, y: 0, width: 1200, height: 800 } },
             reference: makeImage(960, 600), detail: makeImage(state.settings.roiWidth, state.settings.roiHeight),
             global: state.settings.includeGlobal ? makeImage(480, 300) : null,
@@ -184,7 +192,8 @@ async function installFixture(page: Page, keyConfigured = true) {
         },
         startTracker: async () => {
           fixtureWindow.__labFixture.trackerStartCalls += 1;
-          state.tracker = { state: calibrationDeferred ? "calibrating" : "tracking" };
+          state.tracker = { state: calibrationDeferred ? "calibrating" : "tracking",
+            gazeCalibrated: state.settings.selection !== "head", headCalibrated: ["head", "hybrid"].includes(state.settings.selection) };
           emit();
         },
         stopTracker: async () => {
@@ -204,6 +213,9 @@ async function installFixture(page: Page, keyConfigured = true) {
             regionDisposition: "crop",
             screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
             selection: state.settings.selection,
+            signalUsed: headFallback ? "head" : state.settings.selection,
+            signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
+            headAgeMs: headFallback ? 45 : null,
             fallbackReason: null,
             detail: makeImage(state.settings.roiWidth, state.settings.roiHeight),
             global: state.settings.includeGlobal ? makeImage(480, 300) : null,
@@ -250,6 +262,7 @@ async function installFixture(page: Page, keyConfigured = true) {
           };
         },
         reportGaze: () => {},
+        reportHead: () => {},
         reportTracker: () => {},
         finishCalibration: async () => {},
         requestCamera: async () => {},
@@ -340,6 +353,51 @@ test("offers a calibration retry in the observation card after a tracker error",
   await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
   await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
   expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
+
+test("requires the selected head and gaze calibrations independently", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
+  await page.getByRole("radio", {name: "Tête", exact: true}).check();
+  await expect(card.getByRole("button", {name: "Calibrer la tête", exact: true})).toBeEnabled();
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toHaveCount(0);
+  await page.evaluate(() => (window as any).__labFixture.setTrackerDetails({state: "tracking", gazeCalibrated: false, headCalibrated: true, headMessage: "Tête calibrée · fixture"}));
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  await expect(card.getByLabel("Suivi de la tête")).toContainText("Tête calibrée · fixture");
+  await page.getByRole("radio", {name: "Regard + tête", exact: true}).check();
+  await expect(card.getByRole("button", {name: "Calibrer les yeux et la tête", exact: true})).toBeEnabled();
+  await page.evaluate(() => (window as any).__labFixture.setTrackerDetails({gazeCalibrated: true}));
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
+
+test("keeps the visible observation scope menu synchronized with the configuration", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await card.getByRole("combobox", {name: "Cadre de l’essai", exact: true}).selectOption("window");
+  await expect(page.getByRole("combobox", {name: "Cadre de la région", exact: true})).toHaveValue("window");
+  await page.getByRole("combobox", {name: "Cadre de la région", exact: true}).selectOption("screen");
+  await expect(card.getByRole("combobox", {name: "Cadre de l’essai", exact: true})).toHaveValue("screen");
+  await page.getByRole("radio", {name: "Écran complet", exact: true}).check();
+  await expect(card.getByRole("combobox", {name: "Cadre de l’essai", exact: true})).toBeDisabled();
+});
+
+test("reports the actual head fallback separately from requested hybrid selection", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", {name: "Regard + tête", exact: true}).check();
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await card.getByRole("button", {name: "Calibrer les yeux et la tête", exact: true}).click();
+  await page.evaluate(() => (window as any).__labFixture.useHeadFallback());
+  await card.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await card.getByRole("button", {name: "Arrêter l’observation"}).click();
+  await expect(card.locator(".signal-used")).toHaveText("Signal utilisé : Tête · Regard indisponible : tête seule utilisée.");
+  await expect(page.getByRole("radio", {name: "Regard + tête", exact: true})).toBeChecked();
+  await expect(page.getByText("âge de la tête : 45 ms", {exact: false})).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
 });
 
 test("reviews and annotates stopped observations without mixing them with Holo success or sending the reference", async ({ page }) => {

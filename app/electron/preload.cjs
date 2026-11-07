@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('companion', {
     return () => ipcRenderer.removeListener('companion:state-updated', listener);
   },
   reportGaze: sample => ipcRenderer.send('companion:gaze', sample),
+  reportHead: sample => ipcRenderer.send('companion:head', sample),
   reportTracker: status => ipcRenderer.send('companion:tracker-status', status),
   finishCalibration: () => ipcRenderer.invoke('companion:finish-calibration'),
   requestCamera: () => ipcRenderer.invoke('companion:request-camera'),

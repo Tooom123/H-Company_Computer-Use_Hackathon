@@ -19,6 +19,8 @@ const defaults: Settings = {
 };
 const selectionLabels = {
   gaze: "Regard",
+  head: "Tête",
+  hybrid: "Regard + tête",
   cursor: "Curseur",
   full: "Écran complet",
 } as const;
@@ -26,13 +28,15 @@ const trackerLabels = {
   off: "Caméra arrêtée",
   calibrating: "Calibration",
   tracking: "Suivi actif",
-  lost: "Regard indisponible",
+  lost: "Signal indisponible",
   error: "Suivi interrompu",
 } as const;
 const number = (value: number | null | undefined) =>
   value == null ? "—" : new Intl.NumberFormat("fr-FR").format(value);
 const milliseconds = (value: number | null | undefined) =>
   value == null ? "—" : `${number(Math.round(value))} ms`;
+const degrees = (value: number | null | undefined) =>
+  value == null ? "—" : `${number(Math.round(value))}°`;
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
@@ -237,6 +241,11 @@ export default function App() {
       await applyVisibleSettings();
       await bridge.startObservation(options);
     });
+  const calibrate = () => void run("tracker-start", async () => {
+    // Calibration follows the selected mode, including a mode write still queued in IPC.
+    await configurationQueue.current;
+    await bridge.startTracker();
+  });
   const capture = () =>
     void run("capture", async () => {
       clearPreparedFrame();
@@ -296,7 +305,19 @@ export default function App() {
   const capturePending = operation === "capture" || live?.busy === "capture";
   const tracker = live?.tracker ?? { state: "off" as const };
   const cameraOn = tracker.state !== "off" && tracker.state !== "error";
-  const gazeNeedsCalibration = settings.selection === "gaze" && tracker.state !== "tracking" && tracker.state !== "lost";
+  const requiresGaze = settings.selection === "gaze" || settings.selection === "hybrid";
+  const requiresHead = settings.selection === "head" || settings.selection === "hybrid";
+  const trackingStarted = tracker.state === "tracking" || tracker.state === "lost";
+  const needsCalibration = (requiresGaze && (!trackingStarted || tracker.gazeCalibrated === false))
+    || (requiresHead && (!trackingStarted || tracker.headCalibrated !== true));
+  const calibrationLabel = settings.selection === "head" ? "Calibrer la tête"
+    : settings.selection === "hybrid" ? "Calibrer les yeux et la tête" : "Activer le regard et calibrer";
+  const headStatus = requiresHead || tracker.headCalibrated
+    ? tracker.headMessage || (tracker.headCalibrated ? "Tête calibrée" : "Tête non calibrée")
+    : undefined;
+  const headAngles = live?.head?.available
+    ? `Orientation approximative : rotation ${degrees(live.head.yaw)} · haut/bas ${degrees(live.head.pitch)} · inclinaison ${degrees(live.head.roll)}`
+    : undefined;
   const sent = Boolean(frame && live?.sent?.frameId === frame.frameId);
   const shownResult = result?.frameId === frame?.frameId ? result : null;
   const isSimulated = Boolean(frame?.simulated || shownResult?.simulated);
@@ -376,12 +397,18 @@ export default function App() {
         bridge={bridge}
         observation={live?.observation}
         disabled={!canCapture}
-        startDisabled={gazeNeedsCalibration}
-        calibrationState={gazeNeedsCalibration ? (tracker.state === "calibrating" ? "running" : "needed") : undefined}
-        onCalibrate={() => void run("tracker-start", () => bridge.startTracker())}
+        startDisabled={needsCalibration}
+        calibrationState={needsCalibration ? (tracker.state === "calibrating" ? "running" : "needed") : undefined}
+        calibrationLabel={calibrationLabel}
+        onCalibrate={calibrate}
         modeLabel={selectionLabels[settings.selection]}
         trackerLabel={trackerLabels[tracker.state]}
-        startHint={gazeNeedsCalibration ? "La calibration est nécessaire après chaque lancement. Terminez les cibles, cliquez sur « Commencer le suivi », puis revenez lancer l’essai. Curseur et Écran complet fonctionnent sans webcam." : undefined}
+        headStatus={headStatus}
+        headAngles={headAngles}
+        regionScope={settings.regionScope ?? "screen"}
+        regionScopeDisabled={busy || !live || settings.selection === "full"}
+        onRegionScopeChange={regionScope => changeSettings({ regionScope })}
+        startHint={needsCalibration ? "La calibration est nécessaire après chaque lancement. Calibrez aussi chaque signal ajouté : yeux, tête, ou les deux. Terminez les cibles, cliquez sur « Commencer le suivi », puis revenez lancer l’essai. Curseur et Écran complet fonctionnent sans webcam." : undefined}
         shortcutAvailable={runtime?.observationShortcutAvailable === true}
         onStart={startObservation}
         onSelect={selectPreparedFrame}
@@ -397,9 +424,9 @@ export default function App() {
               <span className="step-number">01</span>
               <h2>Choisir le contexte</h2>
             </div>
-            <fieldset className="mode-select" disabled={busy || !live}>
+            <fieldset className="mode-select" disabled={busy || !live || tracker.state === "calibrating"}>
               <legend>Méthode de sélection</legend>
-              {(["gaze", "cursor", "full"] as const).map((mode) => (
+              {(["gaze", "head", "hybrid", "cursor", "full"] as const).map((mode) => (
                 <label
                   key={mode}
                   className={settings.selection === mode ? "selected" : ""}
@@ -415,6 +442,8 @@ export default function App() {
                 </label>
               ))}
             </fieldset>
+            {settings.selection === "head" && <p className="field-note">Orientez doucement le visage vers la zone voulue. La tête indique une direction approximative, pas le point exact regardé.</p>}
+            {settings.selection === "hybrid" && <p className="field-note">Essai combiné : 70 % regard, 30 % tête. Si un signal manque, la capture indique celui réellement utilisé.</p>}
             <label className="region-scope-label">Cadre de la région
               <select
                 aria-label="Cadre de la région"
@@ -457,9 +486,7 @@ export default function App() {
                   <button
                     className="text-button"
                     disabled={busy || tracker.state === "calibrating"}
-                    onClick={() =>
-                      void run("tracker-start", () => bridge.startTracker())
-                    }
+                    onClick={calibrate}
                   >
                     Recalibrer
                   </button>
@@ -468,9 +495,7 @@ export default function App() {
                 <button
                   className="button secondary"
                   disabled={busy || !runtime}
-                  onClick={() =>
-                    void run("tracker-start", () => bridge.startTracker())
-                  }
+                  onClick={calibrate}
                 >
                   Activer la caméra et calibrer
                 </button>
@@ -478,10 +503,12 @@ export default function App() {
             </div>
             {tracker.calibrationErrorPx != null && (
               <p className="field-note">
-                Erreur de validation :{" "}
+                Erreur de validation du regard :{" "}
                 {number(Math.round(tracker.calibrationErrorPx))} px d’affichage.
               </p>
             )}
+            {headStatus && <p className="field-note head-status">{headStatus}</p>}
+            {tracker.headCalibrationErrorPx != null && <p className="field-note">Erreur de validation de la tête : {number(Math.round(tracker.headCalibrationErrorPx))} px d’affichage.</p>}
             <div className="control-divider" />
             <div className="field-label">
               Taille de la région <span>pixels source</span>
@@ -720,9 +747,11 @@ export default function App() {
             <p className="coordinates-note">
               Pixels de capture · origine en haut à gauche
               {frame?.gazeAgeMs != null
-                ? ` · âge du signal au choix, avant capture : ${milliseconds(frame.gazeAgeMs)}`
+                ? ` · âge du regard au choix, avant capture : ${milliseconds(frame.gazeAgeMs)}`
                 : ""}
+              {frame?.headAgeMs != null ? ` · âge de la tête : ${milliseconds(frame.headAgeMs)}` : ""}
             </p>
+            {frame?.signalUsed && <p className="coordinates-note signal-used">Signal utilisé : <strong>{selectionLabels[frame.signalUsed]}</strong>{frame.signalReason ? ` · ${frame.signalReason}` : ""}</p>}
             {frame?.requestedRegion && (
               <p className="coordinates-note requested-region">
                 Région demandée pour cette capture : {number(frame.requestedRegion.width)} × {number(frame.requestedRegion.height)} px

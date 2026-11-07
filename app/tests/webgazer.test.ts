@@ -8,6 +8,7 @@ class FakeWebGazer {
   persistent = true;
   dotVisible = true;
   previewVisible = true;
+  positions: number[][] | null = null;
   listener: ((sample: { x: number; y: number } | null, elapsed: number) => void) | undefined;
   begin = vi.fn(async () => this);
   pause = vi.fn(() => this);
@@ -28,6 +29,7 @@ class FakeWebGazer {
     return this;
   }
   getRegression() { return [{ getData: () => this.labels }]; }
+  getTracker() { return { getPositions: () => this.positions }; }
   emit(sample: { x: number; y: number } | null) { this.listener?.(sample, 123); }
 }
 
@@ -82,11 +84,29 @@ describe('WebGazer adapter (simulated camera and engine)', () => {
     const tracker = new WebGazerTracker(onSample);
     await tracker.start();
     engine.emit({ x: 10, y: 30 });
-    expect(onSample).toHaveBeenLastCalledWith({ x: 10, y: 30, emittedAt: expect.any(Number) });
+    expect(onSample).toHaveBeenLastCalledWith({ x: 10, y: 30, emittedAt: expect.any(Number) }, null);
     engine.emit({ x: NaN, y: 30 });
-    expect(onSample).toHaveBeenLastCalledWith(null);
+    expect(onSample).toHaveBeenLastCalledWith(null, null);
     engine.emit(null);
-    expect(onSample).toHaveBeenLastCalledWith(null);
+    expect(onSample).toHaveBeenLastCalledWith(null, null);
+    tracker.dispose();
+  });
+
+  it('uses fresh face landmarks even before gaze calibration and rejects the retained mesh after face loss', async () => {
+    const onSample = vi.fn();
+    const tracker = new WebGazerTracker(onSample);
+    await tracker.start();
+    const points = Array.from({ length: 468 }, () => [0, 0, 0]);
+    points[33] = [100, 100, 0]; points[263] = [200, 100, 0];
+    points[10] = [150, 50, 0]; points[152] = [150, 250, 0];
+    engine.positions = points;
+    engine.emit(null); // No learned eyes yet, but this is a fresh real mesh shape.
+    expect(onSample).toHaveBeenLastCalledWith(null, { yaw: 0, pitch: 0, roll: 0 });
+    engine.emit(null); // Upstream keeps the very same array when no face is found.
+    expect(onSample).toHaveBeenLastCalledWith(null, null);
+    engine.positions = points.map(p => [...p]);
+    engine.emit(null);
+    expect(onSample).toHaveBeenLastCalledWith(null, { yaw: 0, pitch: 0, roll: 0 });
     tracker.dispose();
   });
 

@@ -173,7 +173,7 @@ export function validateSettings(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new TypeError('Settings must be an object');
   }
-  if (!['gaze', 'cursor', 'full'].includes(input.selection)) {
+  if (!['gaze', 'head', 'hybrid', 'cursor', 'full'].includes(input.selection)) {
     throw new RangeError('Unknown selection mode');
   }
   for (const key of ['roiWidth', 'roiHeight']) {

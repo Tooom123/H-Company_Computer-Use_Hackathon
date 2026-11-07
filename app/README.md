@@ -74,7 +74,7 @@ sur les cibles de validation, mais n’ajuste pas encore automatiquement la tail
    La calibration est à refaire après chaque lancement de l’app. Après les neuf cibles et
    les quatre cibles de validation, cliquer **Commencer le suivi**, puis lancer l’observation
    depuis le panneau ; la calibration seule ne lance pas les captures.
-2. Dans **Cadre de la région**, comparer **Écran** puis **Fenêtre regardée**. Le second mode
+2. Dans **Cadre de la région**, directement dans la carte d’essai, comparer **Écran** puis **Fenêtre regardée**. Le second mode
    utilise la fenêtre visible sous le point de regard ou le curseur et borne le crop à son
    rectangle. Sans fenêtre éligible, le panneau indique le retour à la région d’écran.
 3. Choisir 15, 30 ou 60 secondes et cliquer **Observer et masquer le panneau**. Trois secondes
@@ -99,8 +99,48 @@ Le repérage des fenêtres respecte leur ordre devant/derrière au point sélect
 reconstitue pas les parties masquées : le crop contient les pixels réellement visibles,
 y compris une éventuelle fenêtre superposée ailleurs dans le rectangle. La géométrie des
 fenêtres est relevée juste avant la capture, sans atomicité avec les pixels ; évaluer les
-fenêtres stables avant les déplacements rapides. Le suivi explicite de pose de tête et la
-décision Jev ne sont pas encore implémentés.
+fenêtres stables avant les déplacements rapides. La décision Jev n’est pas implémentée.
+
+## Orientation de la tête — expérience locale
+
+Trois modes webcam sont disponibles : **Regard**, **Tête**, **Regard + tête**. Le même
+FaceMesh déjà exécuté par WebGazer fournit les repères du visage : aucun second modèle
+vidéo ni nouveau flux caméra. Le plan approximatif des yeux/front/menton permet de
+calculer une orientation en degrés. Ce n’est ni la matrice de pose du nouveau MediaPipe
+Face Landmarker, ni une mesure précise des angles physiques ou de l’attention.
+
+- **Tête** : sélectionner le mode, puis **Calibrer la tête**. Après activation caméra,
+  orienter légèrement le visage vers chacune des cinq cibles (comme si le nez la
+  désignait), cliquer et maintenir la position. Quatre autres cibles mesurent l’erreur
+  sans entraîner le modèle. Le buste et la distance à l’écran doivent rester stables.
+- **Regard + tête** : neuf cibles yeux + quatre de validation, tête stable ; puis cinq
+  cibles tête + quatre de validation. Les deux erreurs médianes sont affichées séparément.
+  Après **Commencer le suivi**, on peut comparer les trois modes sans recalibration,
+  tant que l’app et le tracker restent ouverts et que la position ne change pas.
+- Les modes tête/combiné exigent une calibration tête. Une calibration regard seule
+  ne débloque pas implicitement ces modes. La synthèse de calibration regard propose
+  aussi **Ajouter la calibration de la tête** avant de commencer le suivi.
+
+Le mapping tête→écran est une régression affine régularisée sur yaw/pitch, avec médianes
+par cible. Une variation inférieure à 3° sur un axe, des mouvements quasiment colinéaires
+ou une mauvaise couverture des cibles font refuser la calibration. Une extrapolation
+trop éloignée du domaine appris rend le signal indisponible. Le roll est affiché comme
+diagnostic, sans servir au mapping de point. Les seuils et le mélange sont des choix
+expérimentaux fixes, pas des paramètres dont l’optimalité a été démontrée.
+
+**Regard + tête** combine 70 % du point regard et 30 % du point tête lorsqu’ils sont tous
+deux valides. En cas de perte de l’un, l’autre sert seul et la capture le signale explicitement.
+Si aucun n’est disponible, repli plein écran. **Tête** seule ne remplace jamais son signal
+par les yeux. Chaque source expire après 1 500 ms depuis la réception ; les anciens
+landmarks conservés par WebGazer après perte du visage sont rejetés, pas redatés.
+
+La revue expose `signalUsed`, `signalReason` et `headAgeMs` en plus du mode demandé.
+Les angles et les données de calibration restent locaux et temporaires. Aucune image
+webcam ni mesh n’est transmis à Holo. Aucun gain de précision n’est encore établi :
+comparer des parcours annotés à taille de région, cadre de fenêtre et tâche identiques.
+
+Références d’implémentation : [FaceMesh dans WebGazer](https://github.com/brownhci/WebGazer/blob/master/src/facemesh.mjs)
+et [coordonnées du modèle TensorFlow](https://github.com/tensorflow/tfjs-models/tree/master/face-landmarks-detection#how-to-run-it).
 
 ## Ce qui est mesuré
 
@@ -140,6 +180,7 @@ mais pas encore les coûts et performances de plusieurs essais Holo.
 | --- | --- |
 | `src/App.tsx` | Panneau, sélection, approbation d’envoi, payload et mesures |
 | `src/Tracker.tsx`, `src/lib/webgazer.ts` | Calibration explicite, suivi local, arrêt des pistes caméra |
+| `src/lib/head-pose.ts`, `electron/attention-selection.mjs` | Orientation approximative, calibration tête et sélection/fusion des signaux |
 | `src/Overlay.tsx` | Rectangle candidate / envoyé, sans interception de clics |
 | `src/ObservationPanel.tsx`, `electron/observation-session.mjs` | Sessions locales bornées, revue et annotations |
 | `electron/main.mjs`, `preload.cjs` | Fenêtres, permissions, IPC borné, orchestration et annulation |
@@ -221,6 +262,10 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
   du panneau. La première image : fenêtre **Google Chrome**, crop **800 × 600**, origine
   **14, 310**, source **1 470 × 956**, préparation **449 ms**. Référence et crop vérifiés
   visuellement ; aucun envoi Holo. Ce contrôle valide le flux technique, pas le suivi du regard.
+- La première calibration humaine du nouveau mode **Tête** a terminé cinq cibles puis
+  quatre cibles de validation : **236 px d’affichage d’erreur médiane**, suivi actif et
+  orientation reçue dans le panneau. Ce résultat isolé ne démontre ni une amélioration
+  par rapport aux essais regard antérieurs ni la présence de la cible dans les crops.
 
 ## Limites et dépendances
 

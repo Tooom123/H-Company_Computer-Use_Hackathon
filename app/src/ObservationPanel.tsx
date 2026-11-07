@@ -8,17 +8,24 @@ type Props = {
   startDisabled?: boolean;
   startHint?: string;
   calibrationState?: "needed" | "running";
+  calibrationLabel: string;
   onCalibrate: () => void;
   modeLabel: string;
   trackerLabel: string;
+  headStatus?: string;
+  headAngles?: string;
+  regionScope: "screen" | "window";
+  regionScopeDisabled: boolean;
+  onRegionScopeChange: (scope: "screen" | "window") => void;
   shortcutAvailable: boolean;
   onStart: (options: { durationSeconds: 15 | 30 | 60; showOverlay: boolean }) => void;
   onSelect: (frame: CaptureFrame) => void;
   onClear: () => void;
 };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
+const signalLabels = { gaze: "Regard", head: "Tête", hybrid: "Regard + tête", cursor: "Curseur", full: "Écran complet" };
 
-export default function ObservationPanel({ bridge, observation, disabled, startDisabled, startHint, calibrationState, onCalibrate, modeLabel, trackerLabel, shortcutAvailable, onStart, onSelect, onClear }: Props) {
+export default function ObservationPanel({ bridge, observation, disabled, startDisabled, startHint, calibrationState, calibrationLabel, onCalibrate, modeLabel, trackerLabel, headStatus, headAngles, regionScope, regionScopeDisabled, onRegionScopeChange, shortcutAvailable, onStart, onSelect, onClear }: Props) {
   const [durationSeconds, setDurationSeconds] = useState<15 | 30 | 60>(30);
   const [showOverlay, setShowOverlay] = useState(false);
   const [samples, setSamples] = useState<ObservationSample[]>([]);
@@ -114,6 +121,7 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
       <span className="badge neutral">Local · aucun envoi automatique</span>
     </div>
     <p className="field-note" aria-label="Mode et suivi de l’essai">Mode : <strong>{modeLabel}</strong> · {trackerLabel}</p>
+    {headStatus && <p className="field-note head-status" aria-label="Suivi de la tête">{headStatus}{headAngles ? ` · ${headAngles}` : ""}</p>}
     <p className="continuous-intro">Le panneau se masque pendant l’essai. Environ une capture par seconde, puis retour pour vérifier la zone retenue.</p>
     <div className="continuous-controls">
       <label className="continuous-duration">Durée de l’essai
@@ -121,9 +129,14 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
           <option value={15}>15 secondes</option><option value={30}>30 secondes</option><option value={60}>60 secondes</option>
         </select>
       </label>
+      <label className="continuous-duration">Cadre de la région
+        <select aria-label="Cadre de l’essai" value={regionScope} disabled={regionScopeDisabled || active} onChange={event => onRegionScopeChange(event.target.value as "screen" | "window")}>
+          <option value="screen">Écran</option><option value="window">Fenêtre regardée</option>
+        </select>
+      </label>
       <label className="continuous-overlay"><input type="checkbox" checked={showOverlay} disabled={disabled || active} onChange={event => setShowOverlay(event.target.checked)} /> Montrer le contour pendant l’essai</label>
       {active ? <button className="button secondary" disabled={observation?.status === "stopping"} onClick={() => void bridge.stopObservation().catch(cause => setError(errorText(cause)))}>{observation?.status === "stopping" ? "Arrêt en cours…" : "Arrêter l’observation"}</button>
-        : calibrationState ? <button className="button primary" disabled={disabled || calibrationState === "running" || reviewBusy} onClick={onCalibrate}>{calibrationState === "running" ? "Calibration en cours…" : "Activer le regard et calibrer"}</button>
+        : calibrationState ? <button className="button primary" disabled={disabled || calibrationState === "running" || reviewBusy} onClick={onCalibrate}>{calibrationState === "running" ? "Calibration en cours…" : calibrationLabel}</button>
           : <button className="button primary" disabled={disabled || startDisabled || reviewBusy || !shortcutAvailable} onMouseDown={event => event.preventDefault()} onClick={() => onStart({ durationSeconds, showOverlay })}>Observer et masquer le panneau</button>}
     </div>
     {startHint && !active && <p className="field-note">{startHint}</p>}
@@ -154,6 +167,7 @@ export default function ObservationPanel({ bridge, observation, disabled, startD
           <figure><figcaption>Région retenue · {selected.detail.width} × {selected.detail.height}</figcaption><img src={selected.detail.dataUrl} alt="Région retenue pendant l’essai" /></figure>
         </div>
         <p className="review-context">{selected.selectedWindow ? `Fenêtre : ${selected.selectedWindow.appName}` : "Région de l’écran"} · {new Date(selected.capturedAt).toLocaleTimeString("fr-FR")}{selected.fallbackReason ? ` · Repli : ${selected.fallbackReason}` : ""}</p>
+        {selected.signalUsed && <p className="review-context signal-used">Signal utilisé : <strong>{signalLabels[selected.signalUsed]}</strong>{selected.signalReason ? ` · ${selected.signalReason}` : ""}</p>}
         {selected.windowFallbackReason && <p className="warning-text">{selected.windowFallbackReason}</p>}
         <div className="review-annotation" aria-label="Présence de la cible dans cette capture">
           <span>La cible regardée est-elle dans la région ?</span>

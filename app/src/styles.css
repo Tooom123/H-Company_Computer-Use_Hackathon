@@ -308,7 +308,7 @@ h2 {
   position: relative;
 }
 .mode-select label {
-  flex: 1;
+  flex: 1 1 29%;
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 8px 5px;
@@ -936,6 +936,8 @@ textarea {
   font-size: 12px;
   margin-top: 8px;
 }
+.head-status { color: var(--green-dark); }
+.signal-used strong { color: var(--ink); }
 .continuous-controls,
 .review-toolbar,
 .review-navigation,

@@ -10,6 +10,7 @@ import { boundedRect, screenPointToCapture, captureRectToDisplay, validateSettin
 import { windowIdsFromMediaSources } from './window-ids.mjs';
 import { requestCameraAccess } from './camera-permission.mjs';
 import { ObservationSession, validateObservationOptions } from './observation-session.mjs';
+import { acceptGazeSample, acceptHeadSample, calibratedForSelection, headDiagnostics, selectAttention } from './attention-selection.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -19,7 +20,6 @@ const origin = devURL || 'hcompanion://localhost';
 const binary = path.join(root, 'out/capture');
 const model = process.env.HCS_MODEL || 'holo4-27b';
 const models = [...new Set([model, 'holo4-27b', 'holo4-35b-a3b', 'holo3-1-35b-a3b'])];
-const MAX_GAZE_AGE_MS = 1500;
 protocol.registerSchemesAsPrivileged([{ scheme: 'hcompanion', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 
 let panel;
@@ -28,6 +28,7 @@ let tracker;
 let display;
 let frame = null;
 let gaze = null;
+let head = null;
 let operation = null;
 let shuttingDown = false;
 let displayGeneration = 0;
@@ -37,7 +38,8 @@ let observationShortcutAvailable = false;
 const RECOVERY_SHORTCUT = 'CommandOrControl+Shift+Space';
 const cameraRequests = new WeakMap();
 const state = {
-  tracker: { state: 'off' }, candidate: null, sent: null, observed: null, busy: null,
+  tracker: { state: 'off', gazeCalibrated: false, headCalibrated: false },
+  head: headDiagnostics(null, performance.now()), candidate: null, sent: null, observed: null, busy: null,
   settings: { selection: 'gaze', roiWidth: 800, roiHeight: 600, includeGlobal: true, overlay: true },
 };
 const observation = new ObservationSession({
@@ -106,9 +108,11 @@ function makeWindow(options, hash) {
   return window;
 }
 function resetTracker() {
-  gaze = null;
+  gaze = null; head = null;
+  state.head = headDiagnostics(null, performance.now());
   calibrationInteractive = false;
-  state.tracker = { state: 'off', calibrationErrorPx: state.tracker.calibrationErrorPx };
+  state.tracker = { state: 'off', gazeCalibrated: false, headCalibrated: false,
+    calibrationErrorPx: state.tracker.calibrationErrorPx, headCalibrationErrorPx: state.tracker.headCalibrationErrorPx };
   if (tracker && !tracker.isDestroyed()) tracker.close();
   tracker = undefined;
   setOverlayVisibility();
@@ -119,25 +123,22 @@ function setOverlayVisibility() {
   const wanted = observation.active ? observationOverlay : state.settings.overlay;
   if (wanted && !calibrationInteractive) overlay.showInactive(); else overlay.hide();
 }
-function currentSelection(settings = state.settings, snapshot = gaze) {
-  if (settings.selection === 'full') return { point: null, fallbackReason: null, gazeAgeMs: null };
-  if (settings.selection === 'cursor') {
-    const point = screen.getCursorScreenPoint();
-    const b = display.bounds;
-    const valid = point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height;
-    return { point: valid ? point : null, fallbackReason: valid ? null : 'Curseur hors de l’écran principal', gazeAgeMs: null };
-  }
-  const age = snapshot ? performance.now() - snapshot.receivedAt : null;
-  const valid = snapshot && age <= MAX_GAZE_AGE_MS && state.tracker.state === 'tracking';
-  return {
-    point: valid ? { x: display.bounds.x + snapshot.x, y: display.bounds.y + snapshot.y } : null,
-    fallbackReason: valid ? null : 'Regard indisponible, non calibré ou trop ancien : plein écran', gazeAgeMs: age,
-  };
+function currentSelection(settings = state.settings) {
+  return selectAttention({ mode: settings.selection, bounds: display.bounds, tracker: state.tracker,
+    gaze, head, cursor: settings.selection === 'cursor' ? screen.getCursorScreenPoint() : null, now: performance.now() });
 }
 function updateCandidate() {
   if (!display) return;
-  if (state.tracker.state === 'tracking' && (!gaze || performance.now() - gaze.receivedAt > MAX_GAZE_AGE_MS)) {
-    state.tracker = { ...state.tracker, state: 'lost', message: 'Suivi interrompu ; repli plein écran.' };
+  const now = performance.now();
+  state.head = headDiagnostics(head, now);
+  if (['tracking', 'lost'].includes(state.tracker.state)) {
+    // The tracker remains alive if either calibrated signal is fresh. Selection
+    // still applies the requested mode, with an explicit per-frame fallback.
+    const available = Boolean(selectAttention({ mode: 'hybrid', bounds: display.bounds,
+      tracker: state.tracker, gaze, head, now }).point);
+    const nextState = available ? 'tracking' : 'lost';
+    if (nextState !== state.tracker.state) state.tracker = { ...state.tracker, state: nextState,
+      message: available ? 'Suivi actif' : 'Signaux indisponibles ; repli plein écran.' };
   }
   const source = frame
     ? { width: frame.sourceWidth, height: frame.sourceHeight }
@@ -179,13 +180,16 @@ ipcMain.handle('companion:start-tracker', event => {
   resetTracker();
   calibrationInteractive = true;
   setOverlayVisibility();
-  state.tracker = { state: 'calibrating', message: 'Autorisez la caméra puis calibrez le regard.' };
+  state.tracker = { state: 'calibrating', gazeCalibrated: false, headCalibrated: false,
+    message: 'Autorisez la caméra puis calibrez le signal choisi.' };
   tracker = makeWindow({ ...display.bounds, title: 'H-Companion · Calibration', frame: false, transparent: true, resizable: false, movable: false, hasShadow: false, alwaysOnTop: false }, '#tracker');
   const openedTracker = tracker;
   openedTracker.on('closed', () => {
     if (tracker !== openedTracker) return;
-    tracker = undefined; gaze = null; calibrationInteractive = false;
-    state.tracker = { state: 'off', calibrationErrorPx: state.tracker.calibrationErrorPx };
+    tracker = undefined; gaze = null; head = null; calibrationInteractive = false;
+    state.head = headDiagnostics(null, performance.now());
+    state.tracker = { state: 'off', gazeCalibrated: false, headCalibrated: false,
+      calibrationErrorPx: state.tracker.calibrationErrorPx, headCalibrationErrorPx: state.tracker.headCalibrationErrorPx };
     setOverlayVisibility(); broadcast();
   });
   broadcast();
@@ -218,21 +222,24 @@ ipcMain.handle('companion:request-camera', event => {
 });
 ipcMain.on('companion:gaze', (event, sample) => {
   try { authorize(event, tracker); } catch { return; }
-  if (!sample || !Number.isFinite(sample.x) || !Number.isFinite(sample.y) || sample.x < 0 || sample.y < 0 || sample.x >= display.bounds.width || sample.y >= display.bounds.height) {
-    gaze = null;
-    return;
-  }
   // Receipt clock, NOT a camera-frame capture timestamp. The upstream callback
   // does not expose a reliable camera timestamp; never call this tracker latency.
-  gaze = { x: sample.x, y: sample.y, receivedAt: performance.now() };
-  if (state.tracker.state === 'lost') state.tracker = { ...state.tracker, state: 'tracking', message: 'Suivi actif' };
+  gaze = acceptGazeSample(sample, display.bounds, performance.now());
+});
+ipcMain.on('companion:head', (event, sample) => {
+  try { authorize(event, tracker); } catch { return; }
+  head = acceptHeadSample(sample, display.bounds, performance.now());
 });
 ipcMain.on('companion:tracker-status', (event, status) => {
   try { authorize(event, tracker); } catch { return; }
   if (!status || !['off', 'calibrating', 'tracking', 'lost', 'error'].includes(status.state)) return;
   state.tracker = {
     state: status.state, message: typeof status.message === 'string' ? status.message.slice(0, 400) : undefined,
-    calibrationErrorPx: Number.isFinite(status.calibrationErrorPx) ? status.calibrationErrorPx : undefined,
+    calibrationErrorPx: Number.isFinite(status.calibrationErrorPx) && status.calibrationErrorPx >= 0 ? status.calibrationErrorPx : undefined,
+    gazeCalibrated: typeof status.gazeCalibrated === 'boolean' ? status.gazeCalibrated : undefined,
+    headCalibrated: status.headCalibrated === true,
+    headCalibrationErrorPx: Number.isFinite(status.headCalibrationErrorPx) && status.headCalibrationErrorPx >= 0 ? status.headCalibrationErrorPx : undefined,
+    headMessage: typeof status.headMessage === 'string' ? status.headMessage.slice(0, 400) : undefined,
   };
   broadcast();
 });
@@ -259,7 +266,10 @@ ipcMain.handle('companion:observation-start', (event, input) => {
   authorize(event);
   const options = validateObservationOptions(input);
   if (state.busy || observation.active || calibrationInteractive) throw new Error('Terminez l’opération ou la calibration en cours.');
-  if (state.settings.selection === 'gaze' && !['tracking', 'lost'].includes(state.tracker.state)) throw new Error('Activez et calibrez le regard avant cette observation, ou choisissez Curseur.');
+  if (!calibratedForSelection(state.settings.selection, state.tracker)) {
+    const label = state.settings.selection === 'head' ? 'la tête' : state.settings.selection === 'hybrid' ? 'le regard et la tête' : 'le regard';
+    throw new Error(`Activez et calibrez ${label} avant cette observation, ou choisissez Curseur.`);
+  }
   if (process.platform !== 'darwin' || !existsSync(binary)) throw new Error('Capture macOS indisponible.');
   if (!observationShortcutAvailable) throw new Error('Le raccourci ⌘⇧Espace est déjà utilisé. Libérez-le puis relancez l’app pour pouvoir revenir au panneau.');
   observationOverlay = options.showOverlay;

@@ -125,4 +125,10 @@ describe('renderer settings boundary', () => {
     expect(validateSettings({ ...valid, regionScope: 'window' })).toEqual({ ...valid, regionScope: 'window' });
     expect(validateSettings({ ...valid, regionScope: 'screen' })).toEqual({ ...valid, regionScope: 'screen' });
   });
+
+  it('accepts the head and hybrid experimental selection modes', () => {
+    for (const selection of ['head', 'hybrid']) {
+      expect(validateSettings({ ...valid, selection })).toEqual({ ...valid, selection });
+    }
+  });
 });

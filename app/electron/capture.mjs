@@ -48,6 +48,9 @@ export async function captureObservation({ binary, display, settings, selection,
       ...(plan.windowFallbackReason ? { windowFallbackReason: plan.windowFallbackReason } : {}),
       ...(localReference ? { reference: localReference } : {}),
       detail, global, preparationMs: performance.now() - start, gazeAgeMs: plan.gazeAgeMs,
+      headAgeMs: selection.headAgeMs ?? null,
+      signalUsed: selection.signalUsed ?? (plan.fallbackReason ? 'full' : settings.selection),
+      ...(selection.signalReason ? { signalReason: selection.signalReason } : {}),
       simulated: false, captureMethod: 'ScreenCaptureKit · fenêtres H-Companion exclues',
     };
   } catch (error) {

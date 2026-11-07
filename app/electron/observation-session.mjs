@@ -90,6 +90,7 @@ export class ObservationSession {
       sourceWidth: f.sourceWidth, sourceHeight: f.sourceHeight, preparationMs: f.preparationMs,
       gazeAgeMs: f.gazeAgeMs, fallbackReason: f.fallbackReason, regionDisposition: f.regionDisposition,
       selectedWindow: f.selectedWindow, annotation,
+      signalUsed: f.signalUsed, signalReason: f.signalReason, headAgeMs: f.headAgeMs,
     }));
   }
   select(id) {
