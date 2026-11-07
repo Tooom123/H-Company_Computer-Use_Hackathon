@@ -51,7 +51,8 @@ def _voice_for(ov) -> None:
     """Tie the overlay to the voice: a note is drawn when its sentence starts being heard."""
     sp = _speaker()
     if ov is not None and sp is not None:
-        ov.hold_reveal = sp.holding
+        # Through _SPEECH, not a bound method: the app can switch voices, which replaces the speaker.
+        ov.hold_reveal = lambda: _SPEECH["speaker"] is not None and _SPEECH["speaker"].holding()
 
 
 def _say(*segments: str, interrupt: bool = True) -> None:
@@ -85,6 +86,134 @@ def _prefetch_voice(request: InterventionRequest) -> None:
     sp.prefetch(texts + list(_COMMON_LINES))
 
 
+_CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
+_TEST_SENTENCE = "Hi, I'm your H Companion. Hold Command H and tell me what you need."
+
+
+def _set_autonomy(level: int) -> None:
+    """One place for every source (Magnet click, desktop app): default for next tasks + the running one."""
+    level = max(0, min(2, int(level)))
+    _MAGNET["level"] = level
+    if _MAGNET.get("widget") is not None:
+        _MAGNET["widget"].set_level(level)
+    it = _MAGNET["current"]
+    if it is not None and not it.state.terminal:
+        it.set_autonomy(level)
+
+
+def _control_status() -> dict:
+    it = _MAGNET["current"]
+    cur = None
+    if it is not None:
+        g = it.guidance[-1] if it.guidance else None
+        total = None
+        try:
+            total = len(it._bound.guide_script()) if getattr(it, "_bound", None) else None
+        except Exception:  # noqa: BLE001
+            pass
+        r = it.report
+        cur = {
+            "session_id": it.request.session_id, "procedure_id": it.request.procedure_id, "goal": it.request.goal,
+            "mode": it.request.mode.value, "state": it.state.value, "terminal": it.state.terminal,
+            "takeover": bool(getattr(it, "takeover", False)), "autonomy": it.autonomy,
+            "step": {"index": g.index, "instruction": g.instruction, "kind": g.kind, "total": total} if g else None,
+            "last_action": _LAST_ACTION.get("summary") if getattr(it, "takeover", False) else None,
+            "cost_usd": round(float(getattr(it, "cost_usd", 0.0) or 0.0), 4),
+            "started_at": it.timings.started_at.isoformat() if it.timings.started_at else None,
+            "status": r.status.value if r else None,
+            "verified": bool(r and r.verification and r.verification.satisfied),
+            "blocked_on": (r.escalation.blocked_on if r and r.escalation else None),
+        }
+    sp = _SPEECH["speaker"]
+    ptt = _VOICE.get("ptt")
+    backend = _CONTROL.get("backend")
+    return {
+        "agent": {"command": _CONTROL["command"], "pid": os.getpid(), "since": _CONTROL["since"],
+                  "simulated": bool(getattr(backend, "simulated", False))},
+        "autonomy": _MAGNET["level"],
+        "voice": {"state": _VOICE.get("state"), "last_text": _VOICE.get("last_text"),
+                  "ptt_key": getattr(ptt, "key_name", None)},
+        "speech": {"available": sp is not None, "enabled": bool(sp is not None and not sp.muted),
+                   "voice": os.environ.get("HCS_TTS_VOICE") or "EXAVITQu4vr4xnSDxMaL",
+                   "speed": float(os.environ.get("HCS_TTS_SPEED") or 1.0),
+                   "speaking": bool(sp is not None and sp.speaking)},
+        "current": cur,
+    }
+
+
+def _control_stop() -> bool:
+    _hush()
+    it = _MAGNET["current"]
+    if it is None or it.state.terminal:
+        return False
+    print("\n>> stop requested from the desktop app", flush=True)
+    it.stop(StopCommand(reason="Stop pressed in the desktop app"))
+    return True
+
+
+def _control_voice(opts: dict) -> dict:
+    sp = _SPEECH["speaker"]
+    if "voice" in opts or "speed" in opts:
+        if "voice" in opts:
+            os.environ["HCS_TTS_VOICE"] = opts["voice"]
+        if "speed" in opts:
+            os.environ["HCS_TTS_SPEED"] = f"{opts['speed']:g}"
+        muted = sp.muted if sp is not None else False
+        try:
+            from .speech import make_speaker
+
+            new = make_speaker()
+        except Exception as exc:  # noqa: BLE001
+            print(f"(voice unavailable: {exc})")
+            new = None
+        if new is not None:
+            new.muted = muted
+            _SPEECH["speaker"], old = new, sp
+            if old is not None:
+                old.close()
+            sp = new
+    if "enabled" in opts and sp is not None:
+        sp.muted = not opts["enabled"]
+        if sp.muted:
+            sp.stop()
+    return _control_status()["speech"]
+
+
+def _control_test_voice() -> bool:
+    sp = _SPEECH["speaker"]
+    if sp is None or sp.muted:
+        return False
+    sp.say(_TEST_SENTENCE)
+    return True
+
+
+def _app_presence(present: bool) -> None:
+    """The desktop app holds the autonomy setting while it is open: the on-screen Magnet steps aside."""
+    w = _MAGNET.get("widget")
+    if w is not None:
+        w.hide() if present else w.show()
+    print(f"  [app] desktop app {'connected: Magnet hidden' if present else 'closed: Magnet back on screen'}",
+          flush=True)
+
+
+def _start_control(runs_dir: Path, command: str, backend) -> None:
+    """Serve the desktop app's control point (127.0.0.1). A busy port only means no app, never a failed run."""
+    if _CONTROL["server"] is not None or os.environ.get("HCS_CONTROL", "1").lower() in {"0", "false", "off"}:
+        return
+    from .control import DEFAULT_PORT, ControlServer, Controller
+
+    _CONTROL.update(command=command, backend=backend, since=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    _speaker()  # the app's Voice page can set and test the voice even before the first note is shown
+    ctl = Controller(runs_dir, status=_control_status, set_autonomy=_set_autonomy, stop=_control_stop,
+                     set_voice=_control_voice, test_voice=_control_test_voice, on_app_presence=_app_presence)
+    try:
+        port = int(os.environ.get("HCS_CONTROL_PORT", DEFAULT_PORT))
+        _CONTROL["server"] = ControlServer(ctl, port).start()
+        print(f"  desktop app control point: http://127.0.0.1:{port}", flush=True)
+    except OSError as exc:
+        print(f"(desktop app control point unavailable: {exc})", flush=True)
+
+
 def _new_request_pending() -> bool:
     ptt = _VOICE.get("ptt")
     return ptt is not None and not ptt.transcripts.empty()
@@ -98,13 +227,13 @@ def _ensure_magnet():
         from .overlay import AUTONOMY_LABELS, MagnetWidget
 
         def on_change(level: int) -> None:
-            _MAGNET["level"] = level
             print(f"\n  [magnet] {AUTONOMY_LABELS[level]}", flush=True)
-            it = _MAGNET["current"]
-            if it is not None and not it.state.terminal:
-                it.set_autonomy(level)
+            _set_autonomy(level)
 
         _MAGNET["widget"] = MagnetWidget(_MAGNET["level"], on_change)
+        srv = _CONTROL.get("server")
+        if srv is not None and srv.ctl.app_present:
+            _MAGNET["widget"].hide()  # the desktop app is already open and holds the setting
     except Exception as exc:  # noqa: BLE001
         print(f"(magnet unavailable: {exc})")
     return _MAGNET["widget"]
@@ -161,7 +290,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                                   procedure_id=args.procedure, parameters=params, mode=args.mode)
     # `run` is explicit about the mode: the Magnet follows the flag instead of overriding it.
     _MAGNET["level"] = 2 if args.mode == "act" else min(_MAGNET["level"], 1)
-    return _execute(request, make_backend(args.mock), Path(args.runs_dir), auto_approve=args.yes,
+    backend = make_backend(args.mock)
+    _start_control(Path(args.runs_dir), "run", backend)
+    return _execute(request, backend, Path(args.runs_dir), auto_approve=args.yes,
                     scope_note=args.scope_note, stop_after=args.stop_after, auto_next=args.auto_next,
                     overlay=not args.no_overlay)
 
@@ -322,6 +453,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         if _SPEECH["speaker"] is not None:
             _SPEECH["speaker"].prefetch(list(_COMMON_LINES))
     backend = make_backend(args.mock)
+    _start_control(Path(args.runs_dir), "talk", backend)
     if hasattr(backend, "_desktop_channel"):
         # Open the H desktop channel (and its driver) BEFORE any key listener exists: the driver's keyboard
         # setup and a running listener initialising at the same time abort the process on macOS.
@@ -358,6 +490,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
     try:
         while True:
             text = next_transcript()
+            _VOICE["last_text"] = text
             print(f"\nYou said: \"{text}\"")
             if last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))

@@ -110,6 +110,7 @@ class Speaker:
         self._warned = False
         self._closed = False
         self._busy = False  # the worker is on a job (synthesising or playing one of its segments)
+        self.muted = False  # set from the desktop app: say() is ignored, prefetch still warms the cache
         self.spoken: list[str] = []  # what was actually played (tests, logs)
         self._worker = threading.Thread(target=self._run, name="tts", daemon=True)
         self._worker.start()
@@ -120,7 +121,7 @@ class Speaker:
     def say(self, *segments: str, interrupt: bool = True) -> None:
         """Speak the segments one after the other (e.g. the note, then its "why")."""
         texts = [t for t in (clean(s) for s in segments) if t]
-        if not texts or self._closed:
+        if not texts or self._closed or self.muted:
             return
         with self._lock:
             if interrupt:

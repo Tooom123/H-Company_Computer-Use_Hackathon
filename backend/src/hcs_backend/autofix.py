@@ -23,6 +23,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from .announce import Announcer, fix_lines
 from .escalation import build_escalation
 from .store import StoredCase
 
@@ -209,9 +210,10 @@ def make_provider(settings) -> Provider:
 
 # ----------------------------------------------------------------------------------------------- service
 class AutoFixer:
-    def __init__(self, settings, store, provider: Provider | None = None):
+    def __init__(self, settings, store, provider: Provider | None = None, announcer: Announcer | None = None):
         self.settings = settings
         self.store = store
+        self.announcer = announcer  # Zak's voice: each step of the Devin debug, said aloud
         self.repos = parse_repo_map(settings.fix_repos)
         self._provider = provider
         self._provider_error: str | None = None
@@ -246,6 +248,7 @@ class AutoFixer:
         title = f"H Companion case {case.case_id}: {str(case.report.get('symptom') or case.report.get('goal'))[:80]}"
         tags = ["h-companion", f"case:{case.case_id}", "sandbox" if "sandbox" in repo else "vendor"]
         fix = {"case_id": case.case_id, "provider": provider.name, "simulated": provider.simulated, "repo": repo,
+               "software": case.report.get("software"),
                "branch": branch_for(case.case_id), "trigger": trigger, "status": "requested"}
         try:
             s = provider.create(prompt=build_prompt(case, repo), repo=repo, title=title, tags=tags)
@@ -253,7 +256,12 @@ class AutoFixer:
         except DevinError as e:
             fix.update(status="error", error=str(e))
         self.store.save_fix(fix)
+        self._announce(None, fix)
         return self.store.get_fix(case.case_id)
+
+    def _announce(self, old: dict[str, Any] | None, new: dict[str, Any]) -> None:
+        if self.announcer is not None:
+            self.announcer.say(*fix_lines(old, new))
 
     def refresh(self, case_id: str) -> dict[str, Any] | None:
         fix = self.store.get_fix(case_id)
@@ -265,6 +273,7 @@ class AutoFixer:
             fix["last_error"] = str(e)
             self.store.save_fix(fix)
             return fix
+        old = dict(fix)
         prs = s.get("pull_requests") or []
         fix.update(status=s.get("status", fix["status"]), status_detail=s.get("status_detail"),
                    pr_url=prs[0]["pr_url"] if prs else fix.get("pr_url"),
@@ -281,6 +290,7 @@ class AutoFixer:
         else:
             fix.pop("devin_says", None)
         self.store.save_fix(fix)
+        self._announce(old, fix)
         return fix
 
     def reply(self, case_id: str, message: str) -> dict[str, Any]:

@@ -44,6 +44,17 @@ Also: `pyobjc-framework-avfoundation` has no `sys_platform == 'darwin'` marker, 
 Contracts are out of sync again on `main` (`cbad15f`): `GuidanceStep.shown_at` / `done_s` are in `contract.py`
 but not in `contracts/*.schema.json`; run `scripts/export_contracts.py` and commit the result.
 
+## Desktop app + control point — for Matteo (branch `feature/tom-desktop-app`)
+
+- `desktop/`: Electron app (Home / Activity / Usage & plan / Voice / Vision). See `desktop/README.md`.
+- `agent/src/hcs_agent/control.py`: stdlib HTTP on 127.0.0.1:8768, started by `talk` and `run`
+  (`_start_control` in `cli.py`). Needs header `X-HCS-App: 1` + local Host. `HCS_CONTROL=0` turns it off.
+- Autonomy has one entry point now, `_set_autonomy(level)` in `cli.py` (Magnet clicks and the app both use it).
+- The Magnet hides while the app polls (`MagnetWidget.hide/show`, `contains()` is False when hidden) and comes
+  back 6 s after the app closes.
+- `Speaker.muted` and live voice switching (`_control_voice` replaces the speaker; `hold_reveal` reads
+  `_SPEECH["speaker"]`, not a bound method).
+
 ## For Édouard (Vision Lab, pilot, Odoo)
 
 1. **Gaze halo is wired into the Vision Lab overlay** (`app/src/Overlay.tsx`, `GazeHalo`): main relays accepted

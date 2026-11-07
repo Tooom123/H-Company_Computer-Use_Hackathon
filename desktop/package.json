@@ -1,0 +1,16 @@
+{
+  "name": "h-companion-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "H Companion desktop app: live status, autonomy, voice, usage and plan, vision. Talks to hcs-agent on 127.0.0.1:8768.",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "smoke": "env -u ELECTRON_RUN_AS_NODE electron . --smoke",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "electron": "45.2.3"
+  }
+}

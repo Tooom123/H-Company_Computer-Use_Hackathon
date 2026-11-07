@@ -34,7 +34,10 @@ def create_app(settings: Settings | None = None, store: Store | None = None, fix
     app = FastAPI(title="HCS support backend", version="0.1.0")
     app.state.settings = settings
     app.state.store = store
-    fixer = fixer or AutoFixer(settings, store)
+    if fixer is None:
+        from .announce import make_announcer
+
+        fixer = AutoFixer(settings, store, announcer=make_announcer())
     app.state.fixer = fixer
 
     # Devin sessions take minutes: a background thread refreshes the open ones
