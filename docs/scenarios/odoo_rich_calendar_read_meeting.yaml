@@ -28,14 +28,18 @@ forbidden_actions:
 - Déplacer une carte ou un événement par glisser-déposer ; enregistrer un filtre partagé.
 - Envoyer un message, une invitation, une facture ou un paiement ; soumettre ou approuver une note de frais.
 - Exécuter une commande, un reset, une API de mutation, ou modifier les accès et paramètres.
+- Modifier le fuseau horaire ou les préférences pour obtenir un affichage différent.
 agent_instructions: "Reste uniquement dans l’onglet Odoo déjà ouvert sur https://holo-demo.62.83.79.254.sslip.io\
   \ et dans la société Holo — Déjà Bu Démo · DONNÉES FICTIVES. Si l’origine, la société ou le document est ambigu,\
   \ arrête-toi sans saisir d’identifiant. Les clics de navigation et les filtres temporaires sont autorisés ; toute\
   \ modification métier est interdite. \n\nOuvre Calendrier et va au 7 novembre 2026, même si la date courante est\
   \ différente. Le rendez-vous Dégustation équipe · Démo existe à plusieurs dates : sélectionne celui de ce jour.\
-  \ Ouvre la fiche de consultation, lis début, fin, fuseau affiché ou configuré, lieu et participants. Calcule la\
-  \ durée depuis les horaires visibles. Si le fuseau n’est pas vérifiable, annonce cette limite au lieu de l’inventer.\
-  \ Ne glisse pas l’événement, ne modifie aucun champ et n’invite personne. Laisse sa consultation ouverte."
+  \ Ouvre la fiche de consultation et lis début, fin, lieu et participants. Lis le fuseau uniquement s’il est visible\
+  \ dans une vue de consultation, sans modifier de réglage ni de préférence. Calcule la durée depuis les horaires\
+  \ visibles. Dans la réponse finale, indique les heures affichées dans Odoo avec le fuseau réellement observé ;\
+  \ si aucun fuseau n’est visible, précise explicitement « heures affichées dans Odoo ; fuseau non vérifié ».\
+  \ Ne déduis pas le fuseau de l’heure du Mac, de sa localisation ou de la langue de l’interface. Ne glisse pas\
+  \ l’événement, ne modifie aucun champ et n’invite personne. Laisse sa consultation ouverte."
 postcondition:
   description: La bonne fiche ou liste est accessible et les critères ont été relus dans la seule démo enrichie.
   checks:

@@ -96,7 +96,7 @@ def main():
                      scenarios_path=ROOT / 'docs/scenarios/odoo-scenarios.md', procedures_dir=ROOT / 'docs/scenarios',
                      environment=args.environment, engine_revision=ENGINE_REV, support_revision=SUPPORT_REV)
     (private / 'runtime.json').write_text(json.dumps({'engine_revision': ENGINE_REV, 'support_revision': SUPPORT_REV,
-                                                   'desktop_adapter': 'pilot-bridge-health-v1',
+                                                   'desktop_adapter': getattr(backend, 'adapter_revision', None),
                                                    'simulated': args.mock, 'model': 'holo4-35b-a3b',
                                                    'environment': get_environment(args.environment),
                                                    'transcription_provider': transcriber.provider, 'port': args.port}, indent=2) + '\n')

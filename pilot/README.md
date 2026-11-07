@@ -10,7 +10,10 @@ Le pilote ajoute un contrôle de la liaison bureau avant de réutiliser un canal
 Une liaison arrêtée ou un canal terminé est remplacé ; une erreur réseau de
 contrôle remonte comme un blocage explicite. Cette adaptation ne change pas la
 révision épinglée de Matteo et apparaît dans `runtime.json` sous
-`desktop_adapter=pilot-bridge-health-v1`.
+`desktop_adapter=pilot-bridge-health-v2`. Cette version bloque au niveau du bridge
+les commandes shell, la lecture/écriture de fichiers et le glisser-déposer ; les
+captures, clics, frappes et défilements restent disponibles. Elle n'isole pas les
+applications : le clavier peut toujours agir sur la fenêtre au premier plan.
 
 Les dix scénarios sont disponibles ; leur présence dans l’app ne signifie pas
 qu’ils ont tous été exécutés et évalués. Les demandes et préconditions figurent dans

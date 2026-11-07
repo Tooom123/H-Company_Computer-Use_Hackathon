@@ -1,10 +1,16 @@
-"""Recover only this pilot's expired desktop channel between H sessions."""
+"""Recover this pilot's desktop channel and enforce an input-only command boundary.
+
+The local bridge rejects shell and filesystem commands before driver invocation.
+This is not a sandbox: allowed keyboard/mouse input can still affect whichever
+application has focus. A dedicated browser/desktop is needed for app isolation.
+"""
 from __future__ import annotations
 
 import threading
 
 import httpx
-from hai_agents_local.manager import serving_bridges, stop_bridges
+from hai_agents_local.desktop import PyautoguiDesktopBridge
+from hai_agents_local.manager import ensure_bridges, serving_bridges, stop_bridges
 from hcs_agent.backend import AttemptResult, HBackend, VerifyResult
 from hcs_agent.contract import Category, DeclaredResult
 
@@ -13,8 +19,28 @@ class DesktopConnectionError(RuntimeError):
     """The desktop channel cannot safely be reused or opened."""
 
 
+class RestrictedDesktopBridge(PyautoguiDesktopBridge):
+    """Allow only observation and necessary pointer/keyboard/scroll driver calls.
+
+    These are wire-level driver method names, not model tool names (for example,
+    run_command rather than run_command_desktop). LocalBridge._dispatch checks
+    this allowlist before looking up or invoking any driver attribute. Unknown
+    future methods are denied too. Local lifecycle cleanup still calls close()
+    directly; the agent cannot request it through the command channel.
+    """
+
+    commands = frozenset({
+        'platform', 'screenshot_b64', 'get_screen_size', 'get_mouse_position',
+        'get_accessibility_tree', 'get_observation_snapshot',
+        'get_number_of_pixels_scrolled_per_click',
+        'mouse_move_to', 'click', 'double_click',
+        'write', 'write_at', 'hotkey', 'tap_key', 'press_key', 'release_key',
+        'scroll_by_n_clicks', 'scroll_by_n_pxs', 'scroll_at',
+    })
+
+
 class PilotHBackend(HBackend):
-    adapter_revision = 'pilot-bridge-health-v1'
+    adapter_revision = 'pilot-bridge-health-v2'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -60,9 +86,21 @@ class PilotHBackend(HBackend):
                     raise DesktopConnectionError('Impossible de confirmer l’arrêt de notre ancienne connexion au bureau.') from exc
                 self._desktop_session_id = None
             try:
-                return super()._desktop_channel()
+                return self._open_desktop_channel()
             except Exception as exc:
                 raise DesktopConnectionError('Impossible d’ouvrir la connexion au bureau. Vérifiez H et les permissions macOS, puis réessayez.') from exc
+
+    def _open_desktop_channel(self) -> str:
+        """Create our restricted bridge; never fall back to the permissive SDK bridge."""
+        wrapper = self._client._client_wrapper
+        bridge = RestrictedDesktopBridge(
+            'user-mac', api_key=wrapper._api_key, base_url=wrapper.get_base_url(),
+            max_width=self.screenshot_max_width,
+        )
+        bridge.preflight()
+        ensure_bridges([bridge])
+        self._desktop_session_id = bridge.session_id
+        return bridge.session_id
 
     @staticmethod
     def _blocked(exc: DesktopConnectionError) -> AttemptResult:
