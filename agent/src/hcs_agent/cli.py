@@ -51,13 +51,21 @@ def cmd_run(args: argparse.Namespace) -> int:
     params = dict(kv.split("=", 1) for kv in args.param or [])
     request = InterventionRequest(software=args.software, role=args.role, goal=args.goal, symptom=args.symptom,
                                   procedure_id=args.procedure, parameters=params, mode=args.mode)
-    backend = make_backend(args.mock)
-    it = Intervention(request, backend, ProcedureRegistry(), _print_event, Path(args.runs_dir))
-    print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'})")
+    return _execute(request, make_backend(args.mock), Path(args.runs_dir), auto_approve=args.yes,
+                    scope_note=args.scope_note, stop_after=args.stop_after, auto_next=args.auto_next,
+                    overlay=not args.no_overlay)
+
+
+def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_approve: bool = False,
+             scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
+             overlay: bool = True) -> int:
+    """Run one intervention from the terminal: plan, approval, execution, report."""
+    it = Intervention(request, backend, ProcedureRegistry(), _print_event, runs_dir)
+    print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, mode: {request.mode.value})")
     it.start()
     if it.state.terminal:
         return 1
-    if args.yes:
+    if auto_approve:
         print(">> auto-approving (--yes)")
     else:
         print("\nProposed plan:")
@@ -67,18 +75,18 @@ def cmd_run(args: argparse.Namespace) -> int:
             it.approve(ApproveCommand(approved=False))
             it.wait()
             return 2
-    it.approve(ApproveCommand(approved=True, scope_note=args.scope_note))
+    it.approve(ApproveCommand(approved=True, scope_note=scope_note))
 
-    if args.stop_after:
+    if stop_after:
         def _stopper() -> None:
-            time.sleep(args.stop_after)
-            print(f">> requesting stop after {args.stop_after}s")
+            time.sleep(stop_after)
+            print(f">> requesting stop after {stop_after}s")
             it.stop(StopCommand(reason="cli --stop-after"))
         threading.Thread(target=_stopper, daemon=True).start()
 
     try:
-        if args.mode == "guide":
-            _guide_loop(it, auto=args.auto_next, overlay=not args.no_overlay)
+        if request.mode.value == "guide":
+            _guide_loop(it, auto=auto_next, overlay=overlay)
         else:
             it.wait()
     except KeyboardInterrupt:
@@ -92,6 +100,53 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"stop latency: {it.report.timings.stop_latency_s:.2f}s")
         return 0 if it.report.status.value == "resolved" else 3
     return 1
+
+
+def cmd_talk(args: argparse.Namespace) -> int:
+    """Push-to-talk: hold the key, speak, release; the request is routed and run after approval."""
+    from .voice import IntentRouter, PushToTalk, intent_to_request
+
+    registry = ProcedureRegistry()
+    vocab = sorted({v for p in registry.all() for v in (p.software, p.title.split()[0])} | {"Odoo", "CRM", "Acme Demo"})
+    ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "f8"), vocabulary=vocab,
+                     on_state=lambda s: print(f"  [voice] {s}", flush=True))
+    router = IntentRouter(registry)
+    backend = make_backend(args.mock)
+    ptt.start()
+    print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
+          f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
+    try:
+        while True:
+            text = ptt.wait_transcript(timeout=0.5)
+            if text is None:
+                continue
+            print(f"\nYou said: \"{text}\"")
+            try:
+                intent = router.route(text)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  could not understand the request ({exc}); try again.")
+                continue
+            if not intent.procedure_id:
+                print("  I don't have a procedure for that yet. Known: " + ", ".join(p.id for p in registry.all()))
+                continue
+            while intent.missing:
+                name = intent.missing.pop(0)
+                desc = next((p.description for p in registry.get(intent.procedure_id).parameters if p.name == name), name)
+                val = input(f"  {desc}? ").strip()
+                if val:
+                    intent.parameters[name] = val
+            request = intent_to_request(intent)
+            print(f"  -> procedure {request.procedure_id}, mode {request.mode.value}, params {request.parameters}")
+            ptt.stop()
+            code = _execute(request, backend, Path(args.runs_dir), auto_approve=args.yes, overlay=not args.no_overlay)
+            if args.once:
+                return code
+            ptt.start()
+            print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
+    except KeyboardInterrupt:
+        print("\nbye")
+        ptt.stop()
+        return 0
 
 
 def _guide_loop(it: Intervention, auto: bool, overlay: bool) -> None:
@@ -203,6 +258,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--mock", action="store_true", help="Use the simulated backend (no H, no desktop control)")
     run.add_argument("--runs-dir", default="runs")
     run.set_defaults(fn=cmd_run)
+
+    talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
+    talk.add_argument("--key", help="pynput key name (default: HCS_PTT_KEY or f8)")
+    talk.add_argument("-y", "--yes", action="store_true", help="Approve the plan without prompting")
+    talk.add_argument("--once", action="store_true", help="Exit after the first request")
+    talk.add_argument("--mock", action="store_true")
+    talk.add_argument("--no-overlay", action="store_true")
+    talk.add_argument("--runs-dir", default="runs")
+    talk.set_defaults(fn=cmd_talk)
 
     sub.add_parser("cleanup", help="Close orphaned H sessions/channels that hold concurrency slots").set_defaults(fn=cmd_cleanup)
 
