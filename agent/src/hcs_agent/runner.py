@@ -268,46 +268,52 @@ class Intervention:
         self._finish(status=CaseStatus.escalated, last_attempt=last_attempt, verify=verify)
 
     def _scripted_guide(self, bound: BoundProcedure) -> AttemptResult | None:
-        """Guide from the procedure script: Holo only locates each control. None = fall back to the H agent."""
+        """Guide from the procedure script: Holo only locates each control. None = fall back to the H agent.
+
+        A step is considered done only when the screen says so (the next control appears, or the current one
+        disappears), never because the user clicked somewhere.
+        """
         script = bound.guide_script()
         context = f"This is {bound.request.software} ({bound.procedure.title}) in a browser on macOS."
         done_steps: list[str] = []
         i = 0
+        pre_loc = None  # location of script[i] found while verifying the previous step
+        misses = 0
         while i < len(script):
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             step = script[i]
             t_step = time.time()
             if step.action == "info":
-                # Explanation only: ground the annotations, nothing to click.
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
                                   pointer=None, kind="info", annotations=self._ground_annotations(step, context))
-                self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action",
-                                   summary=f"step {gs.index} (info) shown after {time.time() - t_step:.1f}s"))
-                reply = self._on_guidance(gs)
-                if reply is None:
+                self._trace(f"step {gs.index} (info) shown after {time.time() - t_step:.1f}s")
+                if self._on_guidance(gs) is None:
                     return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
                 done_steps.append(step.instruction)
                 i += 1
                 continue
-            loc = self._locate_with_retries(step.element, context, tries=1 if step.optional else 3)
+
+            loc = pre_loc if pre_loc and pre_loc.found else self._locate_with_retries(
+                step.element, context, tries=1 if step.optional else 3)
+            pre_loc = None
             if loc is None or not loc.found:
                 if step.optional:
                     i += 1
                     continue
                 nxt = script[i + 1] if i + 1 < len(script) else None
-                if nxt and (n := self.backend.locate(nxt.element, context)) and n.found:
-                    i += 1  # the user is already past this step
+                if nxt and nxt.element and (n := self.backend.locate(nxt.element, context)) and n.found:
+                    i += 1  # already past this step
+                    pre_loc = n
                     continue
-                # Not on screen: keep guiding with words (no circle) rather than switching to the slow agent.
+                hint = " (je ne le vois pas encore)" if misses == 0 else " — je ne le vois toujours pas ; vérifie l'écran"
                 gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=step.why,
-                                  kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
+                                  kind=step.action, instruction=step.instruction + hint)
             else:
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, kind=step.action, last=False,
                                   annotations=self._ground_annotations(step, context))
-            self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action",
-                               summary=f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}"))
+            self._trace(f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}")
             reply = self._on_guidance(gs)
             if reply is None:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -315,12 +321,40 @@ class Intervention:
             if not did:
                 self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="h_agent")
                 return None
-            done_steps.append(step.instruction)
-            i += 1
+
+            # Verify progress on screen before moving on.
+            nxt = script[i + 1] if i + 1 < len(script) else None
+            if nxt is None:
+                done_steps.append(step.instruction)
+                i += 1
+                continue
+            if nxt.element:
+                n = self._locate_with_retries(nxt.element, context, tries=3)
+                if n and n.found:
+                    done_steps.append(step.instruction)
+                    i += 1
+                    pre_loc = n
+                    misses = 0
+                    continue
+            else:  # next is an info step: progress = current control gone
+                n = None
+            still = self.backend.locate(step.element, context) if step.element else None
+            if still is None or not still.found:
+                done_steps.append(step.instruction)
+                i += 1
+                misses = 0
+                continue
+            misses += 1
+            self._trace(f"no progress after step {i + 1} (miss {misses}); showing it again")
+            pre_loc = still
+
         self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
+
+    def _trace(self, summary: str) -> None:
+        self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))
 
     def _ground_annotations(self, step, context: str) -> list[Annotation]:
         """Locate every extra mark of a step at once (threads), dropping the ones not on screen."""
