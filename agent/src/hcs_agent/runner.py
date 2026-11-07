@@ -223,7 +223,12 @@ class Intervention:
             self._emit("attempt_started", f"Attempt {attempt}/{max_attempts}", attempt=attempt)
             task = bound.task_message(self.scope_note, previous_failure)
             on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
-            if guide:
+            if guide and bound.guide_script():
+                last_attempt = self._scripted_guide(bound)
+                if last_attempt is None:  # script could not follow the screen: hand over to the H agent
+                    last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
+                                                             self._stop, on_lookup)
+            elif guide:
                 last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
                                                          self._stop, on_lookup)
             else:
@@ -259,6 +264,53 @@ class Intervention:
         self._set_state(State.escalated, "The goal could not be verified. Handing over to support.")
         self._emit("needs_human", self._bound.decision_expected)
         self._finish(status=CaseStatus.escalated, last_attempt=last_attempt, verify=verify)
+
+    def _scripted_guide(self, bound: BoundProcedure) -> AttemptResult | None:
+        """Guide from the procedure script: Holo only locates each control. None = fall back to the H agent."""
+        script = bound.guide_script()
+        context = f"This is {bound.request.software} ({bound.procedure.title}) in a browser on macOS."
+        done_steps: list[str] = []
+        i = 0
+        while i < len(script):
+            if self._stop.is_set():
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            step = script[i]
+            loc = self.backend.locate(step.element, context)
+            self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="observation",
+                               summary=f"locate: {step.element} -> {'found' if loc and loc.found else 'not found'}",
+                               detail={"latency_s": round(loc.latency_s, 2) if loc else None}))
+            if loc is None or not loc.found:
+                if step.optional:
+                    i += 1
+                    continue
+                nxt = script[i + 1] if i + 1 < len(script) else None
+                if nxt and (n := self.backend.locate(nxt.element, context)) and n.found:
+                    i += 1  # the user is already past this step
+                    continue
+                if done_steps:
+                    # Mid-script and the screen does not match: let the H agent take over from here.
+                    self._emit("needs_human", f"Script lost at step {i + 1}: {step.element} not visible.",
+                               fallback="h_agent")
+                    return None
+                gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=step.why,
+                                  instruction=f"Affiche {bound.request.software} : je ne vois pas {step.element}")
+            else:
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
+                                  why=step.why, pointer=loc.screen_xy, last=False)
+            reply = self._on_guidance(gs)
+            if reply is None:
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            did, note = reply
+            if not did:
+                self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="h_agent")
+                return None
+            if loc is not None and loc.found:
+                done_steps.append(step.instruction)
+                i += 1
+        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
+                                       why="", pointer=None, last=True))
+        return AttemptResult(None, "completed", DeclaredResult(
+            outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
 
     def _on_guidance(self, step: GuidanceStep) -> tuple[bool, str | None] | None:
         """Backend callback in guide mode: publish the step, wait for the user's `next()` or a stop."""

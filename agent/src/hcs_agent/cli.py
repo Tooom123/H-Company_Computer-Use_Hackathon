@@ -197,7 +197,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
 class _ScreenWatcher:
     """Detects that the user acted: the screen differs from when the step was shown, then holds still."""
 
-    def __init__(self, min_dwell_s: float = 1.0, settle_s: float = 0.8, threshold: float = 6.0) -> None:
+    def __init__(self, min_dwell_s: float = 1.0, settle_s: float = 0.8, threshold: float = 12.0) -> None:
         self.min_dwell_s, self.settle_s, self.threshold = min_dwell_s, settle_s, threshold
         self._base = None
         self._armed_at = 0.0
@@ -246,8 +246,13 @@ class _ScreenWatcher:
         if now - self._armed_at < self.min_dwell_s:
             self._last = frame
             return False
-        diff_base = float(np.abs(frame - self._base).mean())
-        diff_last = float(np.abs(frame - self._last).mean())
+        # Block-wise: a small dialog or card changing anywhere must count, not just the screen average.
+        def block_diff(a, b) -> float:
+            d = np.abs(a - b).reshape(6, 10, 8, 12).mean(axis=(1, 3))  # 96x60 -> 6x8 blocks
+            return float(d.max())
+
+        diff_base = block_diff(frame, self._base)
+        diff_last = block_diff(frame, self._last)
         self._last = frame
         if diff_base > self.threshold:
             if diff_last < self.threshold / 3:

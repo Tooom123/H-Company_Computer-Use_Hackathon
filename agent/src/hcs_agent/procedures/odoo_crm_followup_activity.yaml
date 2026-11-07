@@ -68,6 +68,30 @@ agent_instructions: |
   dialog, login prompt), do NOT try workarounds outside this procedure: stop and report it as blocked
   with a precise description of what you saw on screen.
 
+guide_steps:
+  - instruction: "Ouvre l'application CRM"
+    element: "the CRM app icon or menu entry"
+    why: "Les relances se planifient depuis la fiche de l'opportunité."
+    optional: true
+  - instruction: "Clique sur la carte « {opportunity} »"
+    element: "the pipeline card titled {opportunity}"
+    why: "Ça ouvre la fiche de l'opportunité."
+  - instruction: "Clique sur Activity"
+    element: "the Activity button (clock icon) in the chatter area of the opportunity form"
+    why: "Une activité est un rappel daté, assigné à quelqu'un : c'est la relance."
+  - instruction: "Choisis le type To Do"
+    element: "the Activity Type field of the Schedule Activity dialog"
+    why: "To Do = tâche simple, sans appel ni e-mail automatique."
+  - instruction: "Mets la date {due_date}"
+    element: "the Due Date field of the Schedule Activity dialog"
+    why: "C'est la date à laquelle Odoo te rappellera la relance."
+  - instruction: "Écris « {activity_title} » en résumé"
+    element: "the Summary text field of the Schedule Activity dialog"
+    why: "Le résumé apparaît dans ta liste d'activités."
+  - instruction: "Clique sur Schedule"
+    element: "the Schedule button at the bottom of the Schedule Activity dialog"
+    why: "Ça planifie l'activité ; Mark as Done la fermerait tout de suite."
+
 postcondition:
   description: >-
     After reopening the opportunity "{opportunity}", an activity with summary "{activity_title}",

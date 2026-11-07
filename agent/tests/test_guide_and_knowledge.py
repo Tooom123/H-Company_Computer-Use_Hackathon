@@ -38,10 +38,12 @@ def test_guide_mode_waits_for_user_between_steps(tmp_path):
     r = it.report
     assert r.mode is Mode.guide
     assert r.status is CaseStatus.resolved
-    assert len(r.guidance) == 3 and r.guidance[-1].last
-    assert [g.index for g in r.guidance] == [1, 2, 3]
+    # scripted guide: 7 steps minus the optional "open CRM" (not visible in the mock) + the closing note
+    assert len(r.guidance) == 7 and r.guidance[-1].last
+    assert [g.index for g in r.guidance] == list(range(1, 8))
+    assert all(g.pointer for g in r.guidance[:-1])  # every real step was grounded
     guidance_events = [e for e in events if e.type == "guidance"]
-    assert len(guidance_events) == 3
+    assert len(guidance_events) == 7
     assert any(e.type == "state_changed" and e.state is State.awaiting_user for e in events)
     assert r.verification.satisfied is True
     assert not any(k.purpose == "explain" for k in r.knowledge)

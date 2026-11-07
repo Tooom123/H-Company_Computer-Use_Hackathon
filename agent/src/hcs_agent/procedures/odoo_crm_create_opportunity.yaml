@@ -49,6 +49,22 @@ agent_instructions: |
   4. Click "Add" to save the card. Confirm the card "{opportunity}" is visible in the "New" column.
   If something prevents a step (login prompt, error dialog), stop and report it as blocked with the exact message.
 
+# Scripted guide: the service knows the app. Holo only locates each control on the user's screen.
+guide_steps:
+  - instruction: "Ouvre l'application CRM"
+    element: "the CRM app icon or menu entry"
+    why: "C'est l'application où vivent tes opportunités commerciales."
+    optional: true
+  - instruction: "Clique sur New"
+    element: "the purple New button at the top-left of the pipeline, next to Generate"
+    why: "Ça ouvre une petite carte pour créer une opportunité directement dans la colonne New."
+  - instruction: "Tape « {opportunity} » dans le champ Opportunity"
+    element: "the Opportunity title text field inside the quick-create card in the New column"
+    why: "C'est le nom que ton équipe verra dans le pipeline."
+  - instruction: "Clique sur Add"
+    element: "the purple Add button at the bottom of the quick-create card"
+    why: "Ça enregistre la carte ; elle reste modifiable ensuite."
+
 postcondition:
   description: >-
     The CRM pipeline shows a card titled "{opportunity}" in the "New" column.

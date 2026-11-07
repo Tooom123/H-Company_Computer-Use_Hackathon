@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from hai_agents.polling import AnswerValidationError
 
 from .contract import Category, DeclaredResult, GuidanceStep, Step
+from .grounding import Located
 from .knowledge import DocAnswer, Knowledge, NoKnowledge
 from .procedures import BoundProcedure
 
@@ -158,6 +159,8 @@ class Backend(Protocol):
                      stop_event: threading.Event, on_lookup: LookupCallback | None = None) -> AttemptResult: ...
 
     def verify(self, bound: BoundProcedure, on_step: StepCallback, stop_event: threading.Event) -> VerifyResult: ...
+
+    def locate(self, description: str, context: str = "") -> "Located | None": ...
 
     def screenshot(self, path: Path) -> Path | None: ...
 
@@ -458,6 +461,16 @@ class HBackend:
         observed = {k: bool(answer.checks.get(k, False)) for k in checks}
         return VerifyResult(sid, status, observed, answer.observed, cost_usd=_total_cost(events))
 
+    def locate(self, description: str, context: str = "") -> Located | None:
+        if not hasattr(self, "_grounder"):
+            from .grounding import Grounder
+
+            self._grounder = Grounder()
+        try:
+            return self._grounder.locate(description, context)
+        except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
+            return Located(False, None, f"grounding error: {exc}")
+
     def screenshot(self, path: Path) -> Path | None:
         try:
             from hai_drivers.desktop.local import LocalDesktopDriver
@@ -686,6 +699,13 @@ class MockBackend:
         return VerifyResult("sim_verify_" + bound.request.session_id, "simulated", checks,
                             "[simulated] " + ("all checks visible" if satisfied else "expected element not found"),
                             cost_usd=0.0)
+
+    def locate(self, description: str, context: str = "") -> Located | None:
+        time.sleep(self.step_delay_s)
+        self._located = getattr(self, "_located", 0) + 1
+        if "CRM app" in description:
+            return Located(False, None, "[simulated] pipeline already displayed")
+        return Located(True, (400 + 60 * self._located, 300 + 40 * self._located), "", 0.01)
 
     def screenshot(self, path: Path) -> Path | None:
         return None

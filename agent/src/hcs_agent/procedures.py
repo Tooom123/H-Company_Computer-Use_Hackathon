@@ -35,6 +35,15 @@ class Postcondition(BaseModel):
     verification_instructions: str
 
 
+class GuideStepSpec(BaseModel):
+    """One scripted step of the guide: what to say, which control to point at, why it matters."""
+
+    instruction: str
+    element: str = Field(description="Visual description of the control, for grounding on the screenshot.")
+    why: str = ""
+    optional: bool = Field(default=False, description="Skip silently when the control is not on screen.")
+
+
 class EscalationRule(BaseModel):
     when: list[str]
     decision_expected: str
@@ -58,6 +67,7 @@ class Procedure(BaseModel):
     allowed_actions: list[str]
     forbidden_actions: list[str]
     agent_instructions: str
+    guide_steps: list[GuideStepSpec] = Field(default_factory=list)
     postcondition: Postcondition
     escalation: EscalationRule
 
@@ -140,6 +150,10 @@ class BoundProcedure(BaseModel):
     @property
     def guide(self) -> bool:
         return self.request.mode is Mode.guide
+
+    def guide_script(self) -> list[GuideStepSpec]:
+        return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element), why=self._r(x.why),
+                              optional=x.optional) for x in self.procedure.guide_steps]
 
     @property
     def guide_instructions(self) -> str:
