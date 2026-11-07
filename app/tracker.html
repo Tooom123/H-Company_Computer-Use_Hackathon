@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- MediaPipe's local WASM glue requires new Function. This exception is
+         confined to the tracker window, whose privileged IPC is restricted. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws://localhost:5173; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'" />
+    <title>H-Companion · Calibration</title>
+  </head>
+  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+</html>

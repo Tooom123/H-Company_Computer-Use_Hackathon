@@ -1,13 +1,64 @@
 # hcs-backend (Tom)
 
-Receives `InterventionReport`s (see `contracts/InterventionReport.schema.json`), stores cases, builds the
-escalation file for support, groups similar difficulties and serves an authenticated dashboard.
-
-Expected inputs from the agent: `POST /cases` with an `InterventionReport`; optional `POST /events` with
-`AgentEvent`s for live follow-up. Every record keeps `simulated` and `demo_data` flags.
+Receives `InterventionReport`s from the agent, stores cases, builds the escalation file for support, groups
+similar difficulties and serves an authenticated dashboard. Reports are validated against
+`contracts/*.schema.json` (no duplicated models) and stored verbatim in SQLite (`runs/`, git-ignored).
 
 ```bash
-uv sync --all-packages                   # at repo root
-uv run --package hcs-backend hcs-backend
+uv sync --all-packages                         # at repo root
+cp backend/.env.example backend/.env           # set HCS_INGEST_TOKEN and HCS_DASHBOARD_PASSWORD
+.venv/bin/hcs-backend seed-demo --reset        # 4 demo cases, flagged demo_data + simulated
+.venv/bin/hcs-backend serve                    # http://127.0.0.1:8766/dashboard
+.venv/bin/hcs-backend reset-demo               # remove demo cases only
 uv run pytest backend
+```
+
+## API
+
+| Auth | Method | Path | Purpose |
+| --- | --- | --- | --- |
+| — | GET | `/health` | liveness |
+| Bearer `HCS_INGEST_TOKEN` | POST | `/cases` | `InterventionReport` → `{case_id, created, group_id, needs_escalation}`. Same `case_id` again replaces the case (e.g. after feedback). Optional header `X-HCS-User`: pseudonymous user ref for "distinct users". |
+| Bearer | POST | `/events` | `AgentEvent`, stored per session for live follow-up |
+| Basic (support) | GET | `/cases`, `/cases/{id}` | stored cases with their group |
+| Basic | GET | `/cases/{id}/escalation` · `.md` | escalation file, JSON or Markdown |
+| Basic | GET | `/groups`, `/groups/{id}` | difficulty groups with source cases |
+| Basic | GET | `/sessions/{id}/events` | events of a session |
+| Basic | GET | `/dashboard`, `/dashboard/groups/{id}`, `/dashboard/cases/{id}` | HTML dashboard |
+
+Invalid payloads get a 422 listing the schema errors.
+
+## Rules implemented (from the PRD)
+
+- **Grouping**: same software and same category, then Jaccard ≥ 0.3 on keywords of the blocker, suspected
+  cause and symptom (goal if none) plus the procedure id. Two similar cases share a group, a different one
+  stays distinct, every group lists its source cases.
+- **Escalation file**: decision expected, blocked on, attempts, suspected cause (labelled hypothesis),
+  steps attempted. User-declared, agent-declared and observed facts stay in separate sections.
+- **Consent**: a screenshot is shown to support only if the evidence is `shareable_with_support` and the
+  user's feedback has `allow_screenshots_to_support`; withheld screenshots are counted, not shown.
+- **Flags**: `simulated` and `demo_data` are displayed on every case and group.
+- **Access**: no unauthenticated read of cases; the agent and support use separate secrets.
+
+## Auto-fix with Devin (Cognition)
+
+When a case is a **suspected product defect** on a software whose repository is on the allowlist, the backend
+asks Devin to reproduce it with a failing test, fix it and open a pull request on `feature/hcs-fix-<case_id>`.
+The session and PR links appear on the case page ("Fix with Devin"), next to a **Send to Devin** button for
+manual requests.
+
+| Variable | Meaning |
+| --- | --- |
+| `HCS_FIX_REPOS` | allowlist `Software name=owner/repo; ...` (nothing else is ever targeted) |
+| `HCS_FIX_AUTO` | `1` = automatic on `suspected_product_defect` cases |
+| `DEVIN_API_KEY`, `DEVIN_ORG_ID` | Devin API v3 (`cog_...` service user); without them a simulated Devin runs |
+| `HCS_FIX_MAX_ACU` | ACU cap per session (default 5) |
+
+API (support auth): `POST /cases/{id}/fix`, `GET /cases/{id}/fix` (refreshes from Devin), `GET /fixes`.
+Sandbox: [Tooom123/hcs-sandbox-fake-crm](https://github.com/Tooom123/hcs-sandbox-fake-crm) (private, planted
+date bug) with demo case `demo-005`:
+
+```bash
+.venv/bin/hcs-backend seed-demo --reset
+.venv/bin/hcs-backend fix demo-005          # follows the Devin session until the PR (simulated without a key)
 ```

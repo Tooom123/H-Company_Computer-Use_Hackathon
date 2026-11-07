@@ -1,0 +1,815 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// Browser-only fixtures. No camera permission, screen capture or H API is used.
+async function installFixture(page: Page, keyConfigured = true) {
+  await page.addInitScript(
+    ({ keyConfigured }) => {
+      type FixtureWindow = Window & {
+        __labFixture: {
+          complete: (outcome: "completed" | "failed") => void;
+          moveCandidate: () => void;
+          failCapture: () => void;
+          requestFrame: string | null;
+          requestModel: string | null;
+          requests: Array<{ frameId: string; model: string; detailDataUrl?: string; globalDataUrl?: string }>;
+          deferConfigurations: () => void;
+          releaseConfiguration: () => void;
+          failConfigurations: () => void;
+          useFullSizeCapture: () => void;
+          configurationCalls: Array<Record<string, unknown>>;
+          captureSettings: Array<Record<string, unknown>>;
+          observationOptions: Record<string, unknown> | null;
+          finishObservation: () => void;
+          keepObservationImages: (count: number) => void;
+          selectedObservations: string[];
+          annotationCalls: Array<{ frameId: string; label: string }>;
+          trackerStartCalls: number;
+          deferCalibration: () => void;
+          setTrackerState: (state: "tracking" | "error") => void;
+          setTrackerDetails: (details: Record<string, unknown>) => void;
+          useHeadFallback: () => void;
+        };
+      };
+      const fixtureWindow = window as unknown as FixtureWindow;
+      let state = {
+        tracker: { state: "off" },
+        candidate: { x: 100, y: 150, width: 400, height: 300 },
+        sent: null,
+        busy: null,
+        settings: {
+          selection: "gaze",
+          roiWidth: 800,
+          roiHeight: 600,
+          includeGlobal: true,
+          overlay: true,
+        },
+        observation: { status: "idle", sampleCount: 0, startedAt: null, durationSeconds: 30, intervalMs: 1000 },
+      } as any;
+      let latestFrame: any = null;
+      let counter = 0;
+      let rejectCapture = false;
+      let configurationDeferred = false;
+      let configurationRejected = false;
+      let fullSizeCapture = false;
+      let calibrationDeferred = false;
+      let headFallback = false;
+      const configurationResolvers: Array<() => void> = [];
+      let resolveInference: ((value: any) => void) | null = null;
+      let observationFrames: any[] = [];
+      let observationRetentionLimit: number | null = null;
+      const listeners = new Set<(value: any) => void>();
+      const emit = () =>
+        listeners.forEach((listener) => listener(structuredClone(state)));
+      const makeImage = (width: number, height: number) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#f0f3f7";
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = "#223c43";
+        context.fillRect(0, 0, width, 56);
+        context.fillStyle = "#ffffff";
+        context.font = "20px sans-serif";
+        context.fillText(
+          "Logiciel de démonstration · Données simulées",
+          20,
+          35,
+        );
+        context.fillStyle = "#ffffff";
+        context.fillRect(20, 80, width - 40, Math.max(70, height - 105));
+        context.fillStyle = "#334b50";
+        context.font = "18px sans-serif";
+        context.fillText("Opportunité : Acme Démo", 42, 120);
+        context.fillStyle = "#14795f";
+        context.fillRect(42, 150, Math.min(190, width - 80), 38);
+        context.fillStyle = "#ffffff";
+        context.font = "14px sans-serif";
+        context.fillText("Planifier une activité", 55, 175);
+        return {
+          dataUrl: canvas.toDataURL("image/png"),
+          width,
+          height,
+          sha256: "a".repeat(64),
+        };
+      };
+      const complete = (status: "completed" | "failed" | "cancelled") => {
+        if (!resolveInference) throw new Error("No fixture request is pending");
+        state.busy = null;
+        emit();
+        resolveInference({
+          frameId: fixtureWindow.__labFixture.requestFrame,
+          requestId: "simulated-request",
+          startedAt: "2026-11-07T10:00:00.000Z",
+          latencyMs: status === "completed" ? 1245 : 100,
+          usage: {
+            inputTokens: status === "completed" ? 1024 : null,
+            outputTokens: status === "completed" ? 40 : null,
+            totalTokens: status === "completed" ? 1064 : null,
+            cachedInputTokens: status === "completed" ? 128 : null,
+          },
+          text:
+            status === "completed"
+              ? "Réponse de fixture. Aucune requête Holo réelle."
+              : "",
+          model: fixtureWindow.__labFixture.requestModel ?? "holo4-27b",
+          status,
+          error:
+            status === "failed" ? "Service de fixture indisponible" : undefined,
+          simulated: true,
+        });
+        resolveInference = null;
+      };
+      fixtureWindow.__labFixture = {
+        complete,
+        moveCandidate: () => {
+          state.candidate = { x: 250, y: 220, width: 400, height: 300 };
+          emit();
+        },
+        failCapture: () => {
+          rejectCapture = true;
+          latestFrame = null;
+        },
+        requestFrame: null,
+        requestModel: null,
+        requests: [],
+        deferConfigurations: () => { configurationDeferred = true; },
+        releaseConfiguration: () => { configurationResolvers.shift()?.(); },
+        failConfigurations: () => { configurationRejected = true; },
+        useFullSizeCapture: () => { fullSizeCapture = true; },
+        configurationCalls: [],
+        captureSettings: [],
+        observationOptions: null,
+        selectedObservations: [],
+        annotationCalls: [],
+        trackerStartCalls: 0,
+        deferCalibration: () => { calibrationDeferred = true; },
+        setTrackerState: next => { state.tracker = { state: next }; emit(); },
+        setTrackerDetails: details => { state.tracker = { ...state.tracker, ...details }; emit(); },
+        useHeadFallback: () => { headFallback = true; },
+        keepObservationImages: count => { observationRetentionLimit = count; },
+        finishObservation: () => {
+          observationFrames = [1, 2].map(index => ({
+            frameId: `observed-fixture-${index}`,
+            capturedAt: `2026-11-07T10:00:0${index}.000Z`,
+            sourceWidth: 2880, sourceHeight: 1800,
+            cropRect: { x: index * 100, y: 200, width: state.settings.roiWidth, height: state.settings.roiHeight },
+            requestedRegion: { width: state.settings.roiWidth, height: state.settings.roiHeight },
+            regionDisposition: "crop", screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
+            selection: state.settings.selection, fallbackReason: null,
+            headRegionPolicy: state.settings.selection === "head" ? state.settings.headRegionPolicy ?? "point" : undefined,
+            headZone: state.settings.headRegionPolicy === "zones" ? "center" : undefined,
+            signalUsed: headFallback ? "head" : state.settings.selection,
+            signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
+            headAgeMs: headFallback ? 45 : null,
+            headDiagnostic: headFallback ? { reason: "valid", message: "Projection de tête valide", rawPoint: { x: 480.4, y: 320.3 } } : undefined,
+            selectedWindow: { id: 7, appName: "Odoo · fixture", bounds: { x: 0, y: 0, width: 1200, height: 800 } },
+            reference: makeImage(960, 600), detail: makeImage(state.settings.roiWidth, state.settings.roiHeight),
+            global: state.settings.includeGlobal ? makeImage(480, 300) : null,
+            preparationMs: 34, gazeAgeMs: 22, simulated: true, captureMethod: "explicit-browser-fixture", annotation: null,
+          }));
+          if (fixtureWindow.__labFixture.observationOptions?.benchmark) {
+            const seed = Number(fixtureWindow.__labFixture.observationOptions.seed);
+            const first = observationFrames[0];
+            const score = {
+              target: { id: "fixture-target-0", index: 0, seed: String(seed), x: 100, y: 150, radius: 12, zone: "edge" },
+              targetPixels: { x: 200, y: 300, radiusX: 24, radiusY: 24 }, mode: state.settings.selection, signalUsed: state.settings.selection,
+              scorable: true, reason: null, centerContained: true, fullContained: true,
+              areaFraction: 0.1, fullFrame: false, fullFallback: false,
+              presentedAt: 100, selectionAt: 1000, captureCompletedAt: 1200, settleMs: 800,
+            };
+            const zero = { total: 0, scored: 0, unscored: 0, centerHits: 0, fullHits: 0, croppedScored: 0, croppedFullHits: 0, fullFrames: 0, fullFallbacks: 0, meanAreaFraction: null };
+            const total = { total: 3, scored: 2, unscored: 1, centerHits: 2, fullHits: 2, croppedScored: 1, croppedFullHits: 1, fullFrames: 1, fullFallbacks: 1, meanAreaFraction: 0.55 };
+            observationFrames = [
+              { ...first, calibrationProfile: "wide", benchmark: score },
+              { ...first, frameId: "observed-fixture-2", cropRect: {x: 0, y: 0, width: 2880, height: 1800}, detail: makeImage(2880, 1800), global: null,
+                regionDisposition: "full-fallback", fallbackReason: "Signal absent : plein écran", signalUsed: "full", calibrationProfile: "wide",
+                benchmark: { ...score, areaFraction: 1, fullFrame: true, fullFallback: true, signalUsed: "full" } },
+              { ...first, frameId: "observed-fixture-3", calibrationProfile: "wide",
+                benchmark: { ...score, scorable: false, reason: "transition", centerContained: null, fullContained: null, selectionAt: 300 } },
+            ];
+            state.observation.benchmark = { seed };
+            state.observation.benchmarkSummary = { ...total, byMode: {[state.settings.selection]: total}, bySignal: {}, edge: total, interior: zero,
+              fallbackReasons: { 'Signal absent : plein écran': 1 } };
+            state.observation.capturedCount = observationFrames.length;
+            if (observationRetentionLimit !== null) observationFrames = observationRetentionLimit > 0 ? observationFrames.slice(-observationRetentionLimit) : [];
+            state.observation.discardedImageCount = state.observation.capturedCount - observationFrames.length;
+          }
+          state.observation = { ...state.observation, status: "stopped", sampleCount: observationFrames.length, stopReason: "duration" };
+          emit();
+        },
+      };
+      // Match main's frequent state broadcasts, including while an IPC write is pending.
+      window.setInterval(emit, 100);
+      window.companion = {
+        getStatus: async () => ({
+          platform: "fixture",
+          model: "holo4-27b",
+          models: ["holo4-27b", "holo4-35b-a3b", "holo3-1-35b-a3b"],
+          apiKeyConfigured: keyConfigured,
+          captureAvailable: true,
+          observationShortcutAvailable: true,
+          display: {
+            id: 1,
+            bounds: { x: 0, y: 0, width: 1440, height: 900 },
+            scaleFactor: 2,
+          },
+        }),
+        getState: async () => structuredClone(state),
+        configure: async (settings) => {
+          fixtureWindow.__labFixture.configurationCalls.push(structuredClone(settings));
+          if (configurationDeferred) await new Promise<void>(resolve => configurationResolvers.push(resolve));
+          if (configurationRejected) throw new Error("Réglage de fixture refusé");
+          state.settings = settings;
+          emit();
+        },
+        startTracker: async () => {
+          fixtureWindow.__labFixture.trackerStartCalls += 1;
+          state.tracker = { state: calibrationDeferred ? "calibrating" : "tracking",
+            gazeCalibrated: state.settings.selection !== "head", headCalibrated: ["head", "hybrid"].includes(state.settings.selection) };
+          emit();
+        },
+        stopTracker: async () => {
+          state.tracker = { state: "off" };
+          emit();
+        },
+        capture: async () => {
+          fixtureWindow.__labFixture.captureSettings.push(structuredClone(state.settings));
+          if (rejectCapture) throw new Error("Capture de fixture refusée");
+          latestFrame = {
+            frameId: `simulated-frame-${++counter}`,
+            capturedAt: "2026-11-07T10:00:00.000Z",
+            sourceWidth: 2880,
+            sourceHeight: 1800,
+            cropRect: { x: 200, y: 300, width: state.settings.roiWidth, height: state.settings.roiHeight },
+            requestedRegion: { width: state.settings.roiWidth, height: state.settings.roiHeight },
+            regionDisposition: "crop",
+            screenBounds: { x: 0, y: 0, width: 1440, height: 900 },
+            selection: state.settings.selection,
+            headRegionPolicy: state.settings.selection === "head" ? state.settings.headRegionPolicy ?? "point" : undefined,
+            headZone: state.settings.headRegionPolicy === "zones" ? "center" : undefined,
+            signalUsed: headFallback ? "head" : state.settings.selection,
+            signalReason: headFallback ? "Regard indisponible : tête seule utilisée." : undefined,
+            headAgeMs: headFallback ? 45 : null,
+            fallbackReason: null,
+            detail: makeImage(state.settings.roiWidth, state.settings.roiHeight),
+            global: state.settings.includeGlobal ? makeImage(480, 300) : null,
+            preparationMs: 34,
+            gazeAgeMs: 22,
+            simulated: true,
+            captureMethod: "explicit-browser-fixture",
+          };
+          if (fullSizeCapture) Object.assign(latestFrame, {
+            sourceWidth: 1470, sourceHeight: 956,
+            requestedRegion: {width: 1600, height: 1200},
+            regionDisposition: "full-size",
+            cropRect: {x: 0, y: 0, width: 1470, height: 956},
+            detail: makeImage(1470, 956), global: null,
+          });
+          return structuredClone(latestFrame);
+        },
+        analyze: async (input) => {
+          fixtureWindow.__labFixture.requestFrame = input.frameId;
+          fixtureWindow.__labFixture.requestModel = input.model ?? "holo4-27b";
+          fixtureWindow.__labFixture.requests.push({
+            frameId: input.frameId,
+            model: input.model ?? "holo4-27b",
+            detailDataUrl: latestFrame?.detail.dataUrl,
+            globalDataUrl: latestFrame?.global?.dataUrl,
+          });
+          state.sent = {
+            frameId: input.frameId,
+            rect: { x: 100, y: 150, width: 400, height: 300 },
+          };
+          state.busy = "inference";
+          emit();
+          return new Promise((resolve) => {
+            resolveInference = resolve;
+          });
+        },
+        cancel: async () => {
+          complete("cancelled");
+        },
+        onState: (callback) => {
+          listeners.add(callback);
+          return () => {
+            listeners.delete(callback);
+          };
+        },
+        reportGaze: () => {},
+        reportHead: () => {},
+        reportTargetPresented: () => {},
+        reportTracker: () => {},
+        finishCalibration: async () => {},
+        requestCamera: async () => {},
+        startObservation: async (options) => {
+          fixtureWindow.__labFixture.observationOptions = { ...options, settings: structuredClone(state.settings) };
+          observationFrames = [];
+          latestFrame = null;
+          state.observation = { ...state.observation, status: "running", sampleCount: 0, startedAt: "2026-11-07T10:00:00.000Z", durationSeconds: options.durationSeconds, benchmark: options.benchmark ? {seed: options.seed} : undefined, benchmarkSummary: undefined, capturedCount: 0, discardedImageCount: 0 };
+          emit();
+        },
+        stopObservation: async () => { fixtureWindow.__labFixture.finishObservation(); },
+        listObservations: async () => structuredClone(observationFrames),
+        selectObservation: async (frameId) => {
+          const selected = observationFrames.find(frame => frame.frameId === frameId);
+          if (!selected) throw new Error("Capture de fixture introuvable");
+          latestFrame = selected;
+          fixtureWindow.__labFixture.selectedObservations.push(frameId);
+          return structuredClone(selected);
+        },
+        annotateObservation: async (input) => {
+          fixtureWindow.__labFixture.annotationCalls.push(input);
+          observationFrames = observationFrames.map(frame => frame.frameId === input.frameId ? {...frame, annotation: input.label} : frame);
+        },
+        clearObservations: async () => {
+          observationFrames = [];
+          latestFrame = null;
+          state.observation = { ...state.observation, status: "idle", sampleCount: 0, benchmark: undefined, benchmarkSummary: undefined, capturedCount: 0, discardedImageCount: 0 };
+          emit();
+        },
+      };
+    },
+    { keyConfigured },
+  );
+}
+
+async function finishFixture(page: Page, outcome: "completed" | "failed") {
+  await page.evaluate(
+    (outcome) => (window as any).__labFixture.complete(outcome),
+    outcome,
+  );
+}
+
+test("scores a seeded target session separately from full-screen fallback and keeps review markers out of the payload", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("checkbox", {name: "Montrer le contour pendant l’essai"}).check();
+  await page.getByRole("checkbox", {name: "Cible rouge — score automatique"}).check();
+  await expect(page.getByRole("checkbox", {name: "Montrer le contour pendant l’essai"})).not.toBeChecked();
+  await expect(page.getByRole("checkbox", {name: "Montrer le contour pendant l’essai"})).toBeDisabled();
+  await page.getByRole("spinbutton", {name: "Numéro du parcours"}).fill("42");
+  await page.getByRole("combobox", {name: "Durée de l’essai"}).selectOption("15");
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toMatchObject({benchmark: true, seed: 42, durationSeconds: 15, showOverlay: false});
+  await page.getByRole("button", {name: "Arrêter l’observation"}).click();
+  const score = page.getByRole("region", {name: "Score automatique de la cible"});
+  await expect(score).toContainText("Score automatique · parcours 42");
+  await expect(score).toContainText("2 / 2 (100 %)");
+  await expect(score).toContainText("1 / 1 (100 %)");
+  await expect(score).toContainText("dont 1 repli(s)");
+  await expect(page.getByLabel("Causes des replis plein écran")).toContainText("1 capture(s) : Signal absent : plein écran");
+  await expect(score).toContainText("55 %");
+  await expect(score).toContainText("1 capture(s) exclue(s)");
+  await expect(score).toContainText("Bords étendus");
+  await expect(page.getByRole("img", {name: "Position connue de la cible rouge — annotation locale"})).toHaveCount(2);
+  await expect(page.getByRole("button", {name: "Cible présente", exact: true})).toHaveCount(0);
+  const exactImage = await page.getByRole("img", {name: "Région retenue pendant l’essai"}).getAttribute("src");
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+  await page.getByRole("button", {name: "Envoyer à Holo"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.requests[0].detailDataUrl)).toBe(exactImage);
+  await finishFixture(page, "completed");
+  await page.getByRole("button", {name: "Capture suivante"}).click();
+  await expect(page.getByText("Signal absent : plein écran", {exact: false}).first()).toBeVisible();
+  await page.getByRole("button", {name: "Capture suivante"}).click();
+  await expect(page.getByLabel("Résultat automatique de cette capture")).toContainText("Capture exclue du score");
+  await expect(page.getByLabel("Résultat automatique de cette capture")).toContainText("Délai de stabilisation");
+  expect(await page.evaluate(() => (window as any).__labFixture.annotationCalls)).toHaveLength(0);
+});
+
+test("rejects invalid target sequence numbers before starting a session", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("checkbox", {name: "Cible rouge — score automatique"}).check();
+  await page.getByRole("spinbutton", {name: "Numéro du parcours"}).fill("-1");
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await expect(page.getByRole("alert")).toContainText("numéro de parcours entier");
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
+
+for (const retained of [0, 1]) test(`keeps all benchmark metrics visible when only ${retained} review image remains`, async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.evaluate(count => (window as any).__labFixture.keepObservationImages(count), retained);
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("checkbox", {name: "Cible rouge — score automatique"}).check();
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await page.getByRole("button", {name: "Arrêter l’observation"}).click();
+  await expect(page.getByRole("status").filter({hasText: "Durée écoulée"})).toContainText(`3 captures analysées / ${retained} images conservées`);
+  await expect(page.getByLabel("Rétention des images")).toContainText(`${3 - retained} image(s) retirée(s)`);
+  const score = page.getByRole("region", {name: "Score automatique de la cible"});
+  await expect(score).toContainText("Score calculé sur les 3 captures du parcours");
+  await expect(score).toContainText("2 / 2 (100 %)");
+  await expect(page.getByLabel("Taux de repli plein écran")).toHaveText("Repli plein écran : 1 / 3 (33 %) de toutes les captures analysées.");
+  await expect(page.getByRole("img", {name: "Région retenue pendant l’essai"})).toHaveCount(retained);
+  if (retained) {
+    await expect(page.getByRole("heading", {name: "Revoir les images conservées"})).toBeVisible();
+    await expect(page.getByRole("button", {name: "Capture suivante"})).toBeDisabled();
+    expect(await page.evaluate(() => (window as any).__labFixture.selectedObservations)).toEqual(["observed-fixture-3"]);
+  }
+  await page.getByRole("button", {name: "Effacer cet essai local"}).click();
+  await expect(score).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+});
+
+test("starts a local hidden-panel observation with applied dimensions and locks competing actions", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", {name: "Activer le regard et calibrer"})).toBeEnabled();
+  await expect(page.getByRole("button", {name: "Observer et masquer le panneau"})).toHaveCount(0);
+  await page.getByRole("radio", {name: "Curseur", exact: true}).check();
+  await page.getByRole("combobox", {name: "Cadre de la région"}).selectOption("window");
+  await page.getByRole("spinbutton", {name: "Largeur de la région"}).fill("896");
+  await page.getByRole("spinbutton", {name: "Hauteur de la région"}).fill("704");
+  await page.getByRole("combobox", {name: "Durée de l’essai"}).selectOption("15");
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await expect(page.getByRole("button", {name: "Arrêter l’observation"})).toBeEnabled();
+  await expect(page.getByRole("button", {name: "Capturer dans 3 s"})).toBeDisabled();
+  await expect(page.getByRole("button", {name: "Envoyer à Holo"})).toBeDisabled();
+  await expect(page.getByRole("combobox", {name: "Cadre de la région"})).toBeDisabled();
+  const start = await page.evaluate(() => (window as any).__labFixture.observationOptions);
+  expect(start).toMatchObject({durationSeconds: 15, showOverlay: false, settings: {selection: "cursor", roiWidth: 896, roiHeight: 704, regionScope: "window"}});
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+  expect(await page.evaluate(() => (window as any).__labFixture.trackerStartCalls)).toBe(0);
+});
+
+test("offers gaze calibration in the observation card and waits for an explicit observation start", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await expect(card.getByLabel("Mode et suivi de l’essai")).toHaveText("Mode : Regard · Caméra arrêtée");
+  await expect(card.getByText("La calibration est nécessaire après chaque lancement.", {exact: false})).toBeVisible();
+  await page.evaluate(() => (window as any).__labFixture.deferCalibration());
+  await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
+  await expect(card.getByRole("button", {name: "Calibration en cours…"})).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.trackerStartCalls)).toBe(1);
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+  await page.evaluate(() => (window as any).__labFixture.setTrackerState("tracking"));
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+  await card.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toMatchObject({settings: {selection: "gaze"}});
+});
+
+test("offers a calibration retry in the observation card after a tracker error", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.evaluate(() => (window as any).__labFixture.setTrackerState("error"));
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await expect(card.getByRole("button", {name: "Activer le regard et calibrer"})).toBeEnabled();
+  await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
+
+test("requires the selected head and gaze calibrations independently", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await card.getByRole("button", {name: "Activer le regard et calibrer"}).click();
+  await page.getByRole("radio", {name: "Tête", exact: true}).check();
+  await expect(card.getByRole("button", {name: "Calibrer la tête", exact: true})).toBeEnabled();
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toHaveCount(0);
+  await page.evaluate(() => (window as any).__labFixture.setTrackerDetails({state: "tracking", gazeCalibrated: false, headCalibrated: true, headMessage: "Tête calibrée · fixture"}));
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  await expect(card.getByLabel("Suivi de la tête")).toContainText("Tête calibrée · fixture");
+  await page.getByRole("radio", {name: "Regard + tête", exact: true}).check();
+  await expect(card.getByRole("button", {name: "Calibrer les yeux et la tête", exact: true})).toBeEnabled();
+  await page.evaluate(() => (window as any).__labFixture.setTrackerDetails({gazeCalibrated: true}));
+  await expect(card.getByRole("button", {name: "Observer et masquer le panneau"})).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__labFixture.observationOptions)).toBeNull();
+});
+
+test("keeps the visible observation scope menu synchronized with the configuration", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await card.getByRole("combobox", {name: "Cadre de l’essai", exact: true}).selectOption("window");
+  await expect(page.getByRole("combobox", {name: "Cadre de la région", exact: true})).toHaveValue("window");
+  await page.getByRole("combobox", {name: "Cadre de la région", exact: true}).selectOption("screen");
+  await expect(card.getByRole("combobox", {name: "Cadre de l’essai", exact: true})).toHaveValue("screen");
+  await page.getByRole("radio", {name: "Écran complet", exact: true}).check();
+  await expect(card.getByRole("combobox", {name: "Cadre de l’essai", exact: true})).toBeDisabled();
+});
+
+test("reports the actual head fallback separately from requested hybrid selection", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", {name: "Regard + tête", exact: true}).check();
+  const card = page.getByRole("region", {name: "Essai continu local"});
+  await card.getByRole("button", {name: "Calibrer les yeux et la tête", exact: true}).click();
+  await page.evaluate(() => (window as any).__labFixture.useHeadFallback());
+  await card.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await card.getByRole("button", {name: "Arrêter l’observation"}).click();
+  await expect(card.locator(".signal-used")).toHaveText("Signal utilisé : Tête · Regard indisponible : tête seule utilisée.");
+  await expect(card.getByLabel("Diagnostic tête de l’image revue")).toHaveText("Diagnostic tête : Projection de tête valide · projection avant bornage : (480, 320) px logiques");
+  await expect(page.getByRole("radio", {name: "Regard + tête", exact: true})).toBeChecked();
+  await expect(page.getByText("âge de la tête : 45 ms", {exact: false})).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+});
+
+test("reviews and annotates stopped observations without mixing them with Holo success or sending the reference", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("button", {name: "Activer la caméra et calibrer"}).click();
+  await page.getByRole("button", {name: "Observer et masquer le panneau"}).click();
+  await page.getByRole("button", {name: "Arrêter l’observation"}).click();
+  const review = page.getByRole("region", {name: "Essai continu local"});
+  await expect(review.getByRole("img", {name: "Bureau de référence de l’essai"})).toBeVisible();
+  await page.getByRole("button", {name: "Arrêter la caméra"}).click();
+  await expect(review.locator(".review-count")).toHaveText("Capture 1 / 2");
+  await expect(review.locator(".review-summary")).toContainText("0 / 0 captures jugées");
+  await review.getByRole("button", {name: "Impossible à juger"}).click();
+  await expect(review.locator(".review-summary")).toContainText("0 / 0 captures jugées · 1 incertaine(s) · 1 non annotée(s)");
+  await review.getByRole("button", {name: "Capture suivante"}).click();
+  await expect(review.locator(".review-count")).toHaveText("Capture 2 / 2");
+  await review.getByRole("button", {name: "Cible présente", exact: true}).click();
+  await expect(review.locator(".review-summary")).toContainText("1 / 1 captures jugées (100 %) · 1 incertaine(s)");
+  expect(await page.evaluate(() => (window as any).__labFixture.annotationCalls)).toEqual([
+    {frameId: "observed-fixture-1", label: "uncertain"}, {frameId: "observed-fixture-2", label: "present"},
+  ]);
+  expect(await page.evaluate(() => (window as any).__labFixture.requests)).toHaveLength(0);
+  await page.getByRole("button", {name: "Envoyer à Holo"}).click();
+  expect(await page.evaluate(() => (window as any).__labFixture.requestFrame)).toBe("observed-fixture-2");
+  const request = await page.evaluate(() => (window as any).__labFixture.requests[0]);
+  expect(Object.keys(request).sort()).toEqual(["detailDataUrl", "frameId", "globalDataUrl", "model"]);
+  await finishFixture(page, "completed");
+  await review.getByRole("button", {name: "Effacer cet essai local"}).click();
+  await expect(review.getByRole("img")).toHaveCount(0);
+  await expect(page.getByRole("button", {name: "Envoyer à Holo"})).toBeDisabled();
+});
+
+test("captures the latest two dimensions after deferred setting writes and stale broadcasts", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await page.evaluate(() => (window as any).__labFixture.deferConfigurations());
+  const width = page.getByRole("spinbutton", { name: "Largeur de la région" });
+  const height = page.getByRole("spinbutton", { name: "Hauteur de la région" });
+  await width.fill("896");
+  await height.fill("704");
+  await height.press("Tab");
+  // This one click must queue the capture behind both pending writes, not be dropped.
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(0);
+  await expect(page.locator(".applied-region")).toContainText("800 × 600 px");
+  await page.waitForTimeout(250);
+  await expect(width).toHaveValue("896");
+  await expect(height).toHaveValue("704");
+  expect(await page.evaluate(() => (window as any).__labFixture.captureSettings.length)).toBe(1);
+
+  // The first capture used one configure; now width, height and the capture flush are serial.
+  for (const callCount of [2, 3, 4]) {
+    await expect.poll(() => page.evaluate(() => (window as any).__labFixture.configurationCalls.length)).toBe(callCount);
+    await page.evaluate(() => (window as any).__labFixture.releaseConfiguration());
+  }
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await expect(page.locator(".applied-region")).toContainText("896 × 704 px");
+  await expect(page.locator(".requested-region")).toContainText("896 × 704 px");
+  const captured = await page.evaluate(() => (window as any).__labFixture.captureSettings);
+  expect(captured).toHaveLength(2);
+  expect(captured[1]).toMatchObject({roiWidth: 896, roiHeight: 704});
+});
+
+test("discards the old observation and prevents capture when settings cannot be persisted", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await expect(page.locator(".applied-region")).toContainText("800 × 600 px");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await page.evaluate(() => (window as any).__labFixture.failConfigurations());
+  await page.getByRole("spinbutton", { name: "Largeur de la région" }).fill("960");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("alert")).toContainText("Réglage de fixture refusé");
+  await expect(page.getByRole("img")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__labFixture.captureSettings.length)).toBe(1);
+});
+
+test("distinguishes an oversized region from a tracking fallback", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.evaluate(() => (window as any).__labFixture.useFullSizeCapture());
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByText("La région demandée couvre tout l’écran", {exact: true})).toBeVisible();
+  await expect(page.getByText("Repli plein écran", {exact: true})).toHaveCount(0);
+  await expect(page.locator(".requested-region")).toContainText("1 600 × 1 200 px");
+  await expect(page.locator(".requested-region")).toContainText("surface conservée : 100 %");
+  await expect(page.getByRole("img")).toHaveCount(1);
+});
+
+test("blocks sending without an API key and shows no fabricated usage", async ({
+  page,
+}) => {
+  await installFixture(page, false);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(
+    page.getByRole("img", { name: "Région détaillée", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Envoyer à Holo" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Préparée · locale", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".metric-card strong")).toHaveText([
+    "—",
+    "—",
+    "—",
+    "—",
+  ]);
+  await expect(page.getByText("SIMULÉ", { exact: true })).toBeVisible();
+});
+
+test("keeps the payload fixed as the candidate moves and displays measured usage after response", async ({
+  page,
+}, testInfo) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  const crop = page.getByRole("img", { name: "Région détaillée", exact: true });
+  const exactPayload = await crop.getAttribute("src");
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  await expect(page.getByText("Envoyée à Holo", { exact: true })).toBeVisible();
+  await expect(page.locator(".metric-card strong")).toHaveText([
+    "—",
+    "—",
+    "—",
+    "—",
+  ]);
+  await page.evaluate(() => (window as any).__labFixture.moveCandidate());
+  await expect(crop).toHaveAttribute("src", exactPayload!);
+  await expect(
+    page.getByRole("button", { name: "Capturer dans 3 s" }),
+  ).toBeDisabled();
+  await finishFixture(page, "completed");
+  await expect(page.locator(".metric-card strong")).toHaveText([
+    "1 024",
+    "40",
+    "1 064",
+    "1 245 ms",
+  ]);
+  await expect(
+    page.getByText("Réponse de fixture. Aucune requête Holo réelle."),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => (window as any).__labFixture.requestFrame),
+  ).toBe("simulated-frame-1");
+  await page.screenshot({
+    path: testInfo.outputPath("dashboard-fixture.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(
+    page.getByText("Préparée · locale", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".metric-card strong")).toHaveText([
+    "—",
+    "—",
+    "—",
+    "—",
+  ]);
+  await expect(
+    page.getByText("Réponse de fixture. Aucune requête Holo réelle."),
+  ).toHaveCount(0);
+});
+
+test("retains unknown usage for failed and cancelled requests", async ({
+  page,
+}) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  await finishFixture(page, "failed");
+  await expect(page.getByRole("alert")).toContainText(
+    "Service de fixture indisponible",
+  );
+  await expect(page.locator(".metric-card strong")).toHaveText([
+    "—",
+    "—",
+    "—",
+    "100 ms",
+  ]);
+  await expect(page.getByText(/Usage inconnu/)).toBeVisible();
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  await page.getByRole("button", { name: "Annuler", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Requête annulée" }),
+  ).toBeVisible();
+  await expect(page.locator(".metric-card strong")).toHaveText([
+    "—",
+    "—",
+    "—",
+    "100 ms",
+  ]);
+});
+
+test("replays the same image with the selected model and labels prior measurements", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  const model = page.getByRole("combobox", { name: "Modèle Holo" });
+  await expect(model).toHaveValue("holo4-27b");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  const crop = page.getByRole("img", { name: "Région détaillée", exact: true });
+  const original = await crop.getAttribute("src");
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  await expect(model).toBeDisabled();
+  await finishFixture(page, "completed");
+  await expect(page.locator(".measured-model")).toContainText("Modèle mesuré : holo4-27b");
+
+  await model.selectOption("holo3-1-35b-a3b");
+  await expect(crop).toHaveAttribute("src", original!);
+  await expect(page.locator(".measured-model")).toContainText("holo4-27b");
+  await expect(page.locator(".measured-model")).toContainText("Ces mesures précèdent le changement de modèle.");
+  await expect(page.locator(".response-model")).toContainText("holo4-27b");
+  await page.getByRole("button", { name: "Envoyer à Holo" }).click();
+  const requests = await page.evaluate(() => (window as any).__labFixture.requests);
+  expect(requests.map((request: { model: string }) => request.model)).toEqual(["holo4-27b", "holo3-1-35b-a3b"]);
+  expect(requests[1].frameId).toBe(requests[0].frameId);
+  expect(requests[1].detailDataUrl).toBe(requests[0].detailDataUrl);
+  expect(requests[1].globalDataUrl).toBe(requests[0].globalDataUrl);
+  await finishFixture(page, "completed");
+  await expect(page.locator(".measured-model")).toContainText("Modèle mesuré : holo3-1-35b-a3b");
+  await expect(page.locator(".response-model")).toContainText("holo3-1-35b-a3b");
+  await expect(page.getByText("Ces mesures précèdent le changement de modèle.")).toHaveCount(0);
+});
+
+test("invalidates the previous image when a subsequent capture fails", async ({
+  page,
+}) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("img")).toHaveCount(2);
+  await page.evaluate(() => (window as any).__labFixture.failCapture());
+  await page.getByRole("button", { name: "Capturer dans 3 s" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Capture de fixture refusée",
+  );
+  await expect(page.getByRole("img")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Envoyer à Holo" }),
+  ).toBeDisabled();
+});
+
+test("shows the desktop requirement without an injected bridge", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Ouvrez H-Companion dans Electron." }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Envoyer à Holo" }),
+  ).toHaveCount(0);
+});
+
+test("overlay preserves the sent rectangle when the candidate moves", async ({
+  page,
+}) => {
+  await installFixture(page);
+  await page.goto("/#overlay");
+  const candidate = page.locator(".screen-zone-candidate");
+  const sent = page.locator(".screen-zone-sent");
+  await expect(candidate).toHaveCSS("left", "100px");
+  await page.evaluate(() => {
+    void window.companion.analyze({
+      frameId: "simulated-overlay-frame",
+      prompt: "Fixture",
+    });
+  });
+  await expect(sent).toHaveCSS("left", "100px");
+  await page.evaluate(() => (window as any).__labFixture.moveCandidate());
+  await expect(candidate).toHaveCSS("left", "250px");
+  await expect(sent).toHaveCSS("left", "100px");
+  await expect(sent).toContainText("simulated-overlay-frame");
+  await expect(page.locator("body")).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  await expect(page.locator(".screen-overlay")).toHaveCSS(
+    "pointer-events",
+    "none",
+  );
+});
+
+
+test("persists the experimental head policy and labels the immutable capture", async ({ page }) => {
+  await installFixture(page);
+  await page.goto("/");
+  await page.getByRole("radio", { name: "Tête", exact: true }).check();
+  const policy = page.getByRole("combobox", { name: "Politique de zone tête" });
+  await expect(policy).toHaveValue("point");
+  await policy.selectOption("zones");
+  await expect(page.getByText(/Une fenêtre maximisée peut couvrir tout l’écran/)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__labFixture.configurationCalls.at(-1).headRegionPolicy)).toBe("zones");
+  await page.getByRole("button", { name: /Capturer dans 3 s/ }).click();
+  await expect(page.getByText("Politique tête de cette capture : 5 zones stables · center.", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__labFixture.captureSettings.at(-1).headRegionPolicy)).toBe("zones");
+  await policy.selectOption("point");
+  await expect(policy).toHaveValue("point");
+});

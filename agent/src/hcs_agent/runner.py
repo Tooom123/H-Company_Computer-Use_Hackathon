@@ -1,0 +1,615 @@
+"""Intervention runner: the state machine that turns a request into a verified result or an escalation.
+
+Flow: created -> (preflight) -> awaiting_approval -> running -> verifying -> resolved | escalated
+                                                   \\-> stopping -> stopped (at any time)
+
+Guarantees enforced here, not in the prompt:
+- nothing is sent to H before `approve(approved=True)`;
+- `stop()` blocks any new H command locally, asks H to cancel, and measures the delay;
+- the agent's declared outcome never decides the case status; the observed verification does;
+- the attempt cap comes from the procedure; past it, the case is escalated with a decision for support.
+"""
+
+from __future__ import annotations
+
+import os
+import platform
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable
+
+from .backend import AttemptResult, Backend, PreflightError, VerifyResult
+from .contract import (
+    AgentEvent,
+    Annotation,
+    ApproveCommand,
+    CaseStatus,
+    Category,
+    DeclaredResult,
+    DocSource,
+    Escalation,
+    Evidence,
+    FeedbackCommand,
+    GuidanceStep,
+    InterventionReport,
+    InterventionRequest,
+    KnowledgeNote,
+    NextCommand,
+    ProposedPlan,
+    State,
+    Step,
+    StopCommand,
+    Timings,
+    Verification,
+)
+from .knowledge import DocAnswer, blocker_query, explain_query
+from .procedures import BoundProcedure, ProcedureRegistry
+from .support import SupportUplink, shared_uplink
+
+EventSink = Callable[[AgentEvent], None]
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Intervention:
+    """One help request, from creation to report. Thread-safe for approve/stop from another thread."""
+
+    def __init__(
+        self,
+        request: InterventionRequest,
+        backend: Backend,
+        registry: ProcedureRegistry,
+        sink: EventSink,
+        runs_dir: Path = Path("runs"),
+        uplink: SupportUplink | None | bool = True,
+    ) -> None:
+        self.request = request
+        self.backend = backend
+        self.sink = sink
+        # support backend uplink: True = from the environment (off unless HCS_BACKEND_URL is set)
+        self.uplink = shared_uplink() if uplink is True else (uplink or None)
+        self.runs_dir = runs_dir / request.session_id
+        self.state = State.created
+        self.plan: ProposedPlan | None = None
+        self.scope_note: str | None = None
+        self.steps: list[Step] = []
+        self.evidence: list[Evidence] = []
+        self.h_session_ids: list[str] = []
+        self.declared = DeclaredResult()
+        self.verification: Verification | None = None
+        self.feedback: FeedbackCommand | None = None
+        self.report: InterventionReport | None = None
+        self.timings = Timings(started_at=_now())
+        self.cost_usd = 0.0
+        self.attempts = 0
+        self.takeover = False
+        self.guidance: list[GuidanceStep] = []
+        self.knowledge: list[KnowledgeNote] = []
+        self.error: str | None = None
+        self._user_event = threading.Event()
+        self._user_reply: tuple[bool, str | None] | None = None
+        self._bound: BoundProcedure | None = None
+        self._stop = threading.Event()
+        self._approval = threading.Event()
+        self._approved: bool | None = None
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        try:
+            self._bound = registry.for_request(request).bound(request)
+        except (KeyError, ValueError) as exc:
+            self.error = str(exc)
+
+    # ------------------------------------------------------------------ events
+
+    def _emit(self, type_: str, message: str | None = None, **data) -> None:
+        event = AgentEvent(session_id=self.request.session_id, type=type_, state=self.state,
+                           message=message, data=data, simulated=self.backend.simulated)
+        self.sink(event)
+        if self.uplink:
+            self.uplink.send_event(event)
+
+    def _set_state(self, state: State, message: str | None = None) -> None:
+        with self._lock:
+            if self.state.terminal:
+                return
+            self.state = state
+        self._emit("state_changed", message)
+
+    def _on_step(self, step: Step) -> None:
+        step.index = len(self.steps)
+        self.steps.append(step)
+        self._emit("step", step.summary, step=step.model_dump(mode="json"))
+
+    # ------------------------------------------------------------------ commands
+
+    def start(self) -> None:
+        """Preflight the machine and propose the plan. Does not contact H."""
+        if self.error or self._bound is None:
+            self._set_state(State.failed, self.error)
+            self._finish()
+            return
+        try:
+            self.backend.preflight()
+        except PreflightError as exc:
+            self._set_state(State.preflight_failed, str(exc))
+            self.error = str(exc)
+            self._finish()
+            return
+        self.plan = self._bound.plan()
+        if os.environ.get("HCS_GROUND_PLAN", "").lower() in {"1", "true", "yes"}:
+            self._ground_plan()
+        self._set_state(State.awaiting_approval, "Waiting for the user to approve the proposed scope.")
+        self._emit("plan_proposed", self.plan.explanation, plan=self.plan.model_dump(),
+                   preconditions=self._bound.preconditions)
+        self._thread = threading.Thread(target=self._run, name=f"intervention-{self.request.session_id}", daemon=True)
+        self._thread.start()
+
+    def _ground_plan(self) -> None:
+        """Opt-in: attach a sourced web summary (Linkup) to the plan before approval."""
+        assert self._bound is not None and self.plan is not None
+        req = self.request
+        ans = self.backend.knowledge.ask(
+            explain_query(req.software, req.software_version or self._bound.procedure.software_version,
+                          self._bound.objective, req.role), software=req.software)
+        if ans is None:
+            return
+        self.plan.documentation = ans.answer
+        self.plan.sources = [DocSource(**s.model_dump()) for s in ans.sources]
+        self._note("explain", ans)
+
+    def _note(self, purpose: str, ans: DocAnswer) -> None:
+        note = KnowledgeNote(purpose=purpose, query=ans.query, answer=ans.answer,
+                             sources=[DocSource(**s.model_dump()) for s in ans.sources], simulated=ans.simulated)
+        self.knowledge.append(note)
+        self._emit("knowledge", ans.answer[:300], note=note.model_dump())
+
+    def next(self, cmd: NextCommand) -> None:
+        """Guide mode: the user reports on the step they were asked to do."""
+        if self.state is not State.awaiting_user:
+            raise RuntimeError(f"Cannot continue in state {self.state.value}")
+        self._user_reply = (cmd.done, cmd.note)
+        self._user_event.set()
+
+    def approve(self, cmd: ApproveCommand) -> None:
+        if self.state is not State.awaiting_approval:
+            raise RuntimeError(f"Cannot approve in state {self.state.value}")
+        self._approved = cmd.approved
+        self.scope_note = cmd.scope_note
+        self.timings.approved_at = _now()
+        self._approval.set()
+
+    def stop(self, cmd: StopCommand | None = None) -> None:
+        """Local gate first (no new command leaves this process), then H cancel through the backend."""
+        if self.state.terminal:
+            return
+        self.timings.stop_requested_at = _now()
+        self._set_state(State.stopping, (cmd.reason if cmd else None) or "Stop requested by the user.")
+        self._stop.set()
+        self._approval.set()  # unblock a pending approval wait
+        self._user_event.set()  # unblock a pending guide step
+
+    def add_feedback(self, fb: FeedbackCommand) -> None:
+        self.feedback = fb
+        if self.report is not None:
+            self.report.feedback = fb
+            for ev in self.report.evidence:
+                if ev.kind == "screenshot":
+                    ev.shareable_with_support = fb.allow_screenshots_to_support
+            self._save_report()
+
+    def wait(self, timeout: float | None = None) -> None:
+        if self._thread:
+            self._thread.join(timeout)
+
+    # ------------------------------------------------------------------ main loop
+
+    def _run(self) -> None:
+        assert self._bound is not None
+        bound, proc = self._bound, self._bound.procedure
+        self._approval.wait()
+        if self._stop.is_set():
+            return self._finish_stopped()
+        if not self._approved:
+            self._set_state(State.stopped, "The user declined the proposed scope.")
+            return self._finish(status=CaseStatus.abandoned)
+
+        previous_failure: str | None = None
+        last_attempt: AttemptResult | None = None
+        verify: VerifyResult | None = None
+        guide = bound.guide
+        max_attempts = 1 if guide else proc.max_attempts
+        self._set_state(State.running, "Guiding you step by step." if guide
+                        else "Intervention approved. Working in the software now.")
+        self._snapshot("before", "Screen before the intervention")
+
+        for attempt in range(1, max_attempts + 1):
+            if self._stop.is_set():
+                return self._finish_stopped()
+            self.attempts = attempt
+            self._emit("attempt_started", f"Attempt {attempt}/{max_attempts}", attempt=attempt)
+            task = bound.task_message(self.scope_note, previous_failure)
+            on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
+            if guide and bound.guide_script():
+                last_attempt = self._scripted_guide(bound)
+                if last_attempt is None:
+                    # The user is stuck: take the controls, finish the task and narrate each action.
+                    self.takeover = True
+                    self._emit("state_changed", "Je prends la main pour finir la tâche.", takeover=True)
+                    task = bound.task_message(self.scope_note, "The user started this task by hand and got stuck; "
+                                              "continue from the current screen state. Before each action, say in "
+                                              "one short French sentence what you do and why.")
+                    last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
+            elif guide:
+                last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
+                                                         self._stop, on_lookup)
+            else:
+                last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
+            self._record_attempt(last_attempt)
+            self._emit("attempt_finished", last_attempt.declared.summary or last_attempt.status,
+                       attempt=attempt, h_status=last_attempt.status, declared=last_attempt.declared.model_dump())
+            if self._stop.is_set():
+                return self._finish_stopped()
+            if last_attempt.declared.outcome == "blocked":
+                break  # escalation rule: a recognised limit is not retried
+
+            self._set_state(State.verifying, "Checking the result in the software.")
+            verify = self.backend.verify(bound, self._on_step, self._stop)
+            self._record_verify(verify)
+            if self._stop.is_set():
+                return self._finish_stopped()
+            if verify.checks and all(verify.checks.values()):
+                self._snapshot("after", "Screen after verification")
+                self._set_state(State.resolved, "Result verified in the software.")
+                return self._finish(status=CaseStatus.resolved)
+            failed = [k for k, v in verify.checks.items() if not v] or ["verification unavailable"]
+            previous_failure = f"checks not satisfied: {', '.join(failed)}. Observed: {verify.observed}"
+            self._set_state(State.running, f"Not verified after attempt {attempt}.")
+
+        self._snapshot("after", "Screen at escalation")
+        if self.declared.blocker:
+            ans = self.backend.knowledge.ask(
+                blocker_query(self.request.software, self.request.software_version or proc.software_version,
+                              self.declared.blocker), software=self.request.software)
+            if ans:
+                self._note("blocker", ans)
+        self._set_state(State.escalated, "The goal could not be verified. Handing over to support.")
+        self._emit("needs_human", self._bound.decision_expected)
+        self._finish(status=CaseStatus.escalated, last_attempt=last_attempt, verify=verify)
+
+    def _scripted_guide(self, bound: BoundProcedure) -> AttemptResult | None:
+        """Guide from the procedure script: Holo only locates each control. None = fall back to the H agent.
+
+        A step is considered done only when the screen says so (the next control appears, or the current one
+        disappears), never because the user clicked somewhere.
+        """
+        script = bound.guide_script()
+        context = f"This is {bound.request.software} ({bound.procedure.title}) in a browser on macOS."
+        done_steps: list[str] = []
+        i = 0
+        pre_loc = None  # location of script[i] found while verifying the previous step
+        misses = 0
+        if not self._ensure_screen(bound):
+            return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+        while i < len(script):
+            if self._stop.is_set():
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            step = script[i]
+            t_step = time.time()
+            if step.action == "info":
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
+                                  pointer=None, kind="info", annotations=self._ground_annotations(step, context))
+                self._trace(f"step {gs.index} (info) shown after {time.time() - t_step:.1f}s")
+                if self._on_guidance(gs) is None:
+                    return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                done_steps.append(step.instruction)
+                i += 1
+                continue
+
+            loc = pre_loc if pre_loc and pre_loc.found else self._locate_with_retries(
+                step.element, context, tries=1 if step.optional else 3)
+            pre_loc = None
+            if loc is None or not loc.found:
+                if step.optional:
+                    i += 1
+                    continue
+                nxt = script[i + 1] if i + 1 < len(script) else None
+                if nxt and nxt.element and (n := self.backend.locate(nxt.element, context)) and n.found:
+                    i += 1  # already past this step
+                    pre_loc = n
+                    continue
+                misses += 1
+                if misses >= 2:
+                    # Lost: stop explaining, take over (the caller runs the narrated agent).
+                    self._emit("needs_human", f"Script lost at step {i + 1}: {step.element} not visible.",
+                               fallback="takeover")
+                    return None
+                why = step.why
+                doc = self.backend.knowledge.ask(f"In {bound.request.software}, where is: {step.element}?",
+                                                 software=bound.request.software, depth="fast")
+                if doc and doc.answer:
+                    why = (doc.answer.strip().split("\n")[0])[:160]
+                    self._note("agent_lookup", doc)
+                gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=why,
+                                  kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
+            else:
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
+                                  why=step.why, pointer=loc.screen_xy, kind=step.action, last=False,
+                                  annotations=self._ground_annotations(step, context))
+            self._trace(f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}")
+            reply = self._on_guidance(gs)
+            if reply is None:
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            did, note = reply
+            if not did:
+                self._emit("needs_human", f"User could not do step {i + 1}: {note}", fallback="takeover")
+                return None
+
+            # Verify progress on screen before moving on.
+            nxt = script[i + 1] if i + 1 < len(script) else None
+            if nxt is None:
+                done_steps.append(step.instruction)
+                i += 1
+                continue
+            if nxt.element:
+                n = self._locate_with_retries(nxt.element, context, tries=3)
+                if n and n.found:
+                    done_steps.append(step.instruction)
+                    i += 1
+                    pre_loc = n
+                    misses = 0
+                    continue
+            else:  # next is an info step: progress = current control gone
+                n = None
+            still = self.backend.locate(step.element, context) if step.element else None
+            if still is None or not still.found:
+                done_steps.append(step.instruction)
+                i += 1
+                misses = 0
+                continue
+            misses += 1
+            self._trace(f"no progress after step {i + 1} (miss {misses}); showing it again")
+            pre_loc = still
+
+        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="C'est fait, je vérifie le résultat",
+                                       why="", pointer=None, kind="info", last=True))
+        return AttemptResult(None, "completed", DeclaredResult(
+            outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
+
+    def _ensure_screen(self, bound: BoundProcedure, attempts: int = 40) -> bool:
+        """Before guiding: wait until the expected screen is displayed, asking the user to show it if needed."""
+        expected = bound.expected_screen
+        check = getattr(self.backend, "screen_matches", None)
+        if not expected or check is None:
+            return True
+        shown = False
+        for _ in range(attempts):
+            if self._stop.is_set():
+                return False
+            ok, visible = check(expected)
+            self._trace(f"screen check: {'ok' if ok else 'not yet'} ({visible[:60]})")
+            if ok:
+                if shown:
+                    self._set_state(State.running, "Screen found.")
+                return True
+            if not shown:
+                gs = GuidanceStep(index=len(self.guidance) + 1, kind="wait", pointer=None,
+                                  instruction=f"Affiche {bound.request.software} (pipeline CRM) à l'écran",
+                                  why=f"Je vois : {visible[:80]}")
+                self.guidance.append(gs)
+                self._set_state(State.awaiting_user, "Show the software first.")
+                self._emit("guidance", gs.instruction, step=gs.model_dump())
+                shown = True
+            time.sleep(1.5)
+        return False
+
+    def _recover(self, bound: BoundProcedure) -> bool:
+        """Guide the user back to the base screen with the procedure's recovery steps."""
+        self._trace("lost: guiding back to the base screen")
+        for step in bound.recovery_script():
+            loc = self.backend.locate(step.element, "This is Odoo in a browser on macOS.") if step.element else None
+            if loc is None or not loc.found:
+                if step.optional:
+                    continue
+            gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
+                              where=step.element or "", pointer=loc.screen_xy if loc and loc.found else None,
+                              kind=step.action)
+            if self._on_guidance(gs) is None:
+                return False
+            check = getattr(self.backend, "screen_matches", None)
+            if check and check(bound.expected_screen)[0]:
+                return True
+        return self._ensure_screen(bound, attempts=10)
+
+    def _trace(self, summary: str) -> None:
+        self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))
+
+    def _ground_annotations(self, step, context: str) -> list[Annotation]:
+        """Locate every extra mark of a step at once (threads), dropping the ones not on screen."""
+        if not step.annotations:
+            return []
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            locs = list(pool.map(lambda a: self.backend.locate(a.element, context), step.annotations))
+        out = []
+        for a, loc in zip(step.annotations, locs):
+            if loc and loc.found:
+                out.append(Annotation(shape=a.shape, text=a.text, pointer=loc.screen_xy, size=a.size))
+        return out
+
+    def _locate_with_retries(self, element: str, context: str, tries: int, pause_s: float = 0.4):
+        """The page may still be updating after the user's action: look again a few times before giving up."""
+        loc = None
+        for attempt in range(tries):
+            if self._stop.is_set():
+                return loc
+            loc = self.backend.locate(element, context)
+            found = bool(loc and loc.found)
+            self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="observation",
+                               summary=f"locate ({attempt + 1}/{tries}): {element} -> {'found' if found else 'not found'}",
+                               detail={"latency_s": round(loc.latency_s, 2) if loc else None}))
+            if found:
+                return loc
+            if attempt + 1 < tries:
+                time.sleep(pause_s)
+        return loc
+
+    def _on_guidance(self, step: GuidanceStep) -> tuple[bool, str | None] | None:
+        """Backend callback in guide mode: publish the step, wait for the user's `next()` or a stop."""
+        self.guidance.append(step)
+        if step.last:
+            self._emit("guidance", step.instruction, step=step.model_dump())
+            return None
+        self._user_event.clear()
+        self._user_reply = None
+        self._set_state(State.awaiting_user, "Your turn: do the step shown, then continue.")
+        self._emit("guidance", step.instruction, step=step.model_dump())
+        self._user_event.wait()
+        if self._stop.is_set():
+            return None
+        self._set_state(State.running, "Looking at the screen for the next step.")
+        return self._user_reply or (True, None)
+
+    # ------------------------------------------------------------------ bookkeeping
+
+    def _record_attempt(self, res: AttemptResult) -> None:
+        if res.guidance and not self.guidance:
+            self.guidance = list(res.guidance)
+        if res.h_session_id:
+            self.h_session_ids.append(res.h_session_id)
+            self.evidence.append(Evidence(ref=res.h_session_id, kind="h_session",
+                                          description="H session trace (steps and screenshots)", url=res.agent_view_url))
+        if res.cost_usd:
+            self.cost_usd += res.cost_usd
+        self.declared = res.declared
+        if res.error:
+            self.error = res.error
+
+    def _record_verify(self, res: VerifyResult) -> None:
+        assert self._bound is not None
+        if res.h_session_id:
+            self.h_session_ids.append(res.h_session_id)
+        if res.cost_usd:
+            self.cost_usd += res.cost_usd
+        self.verification = Verification(
+            performed=res.status not in {"interrupted", "failed"} or bool(res.checks),
+            satisfied=bool(res.checks) and all(res.checks.values()),
+            postcondition=self._bound.postcondition_description,
+            observed=res.observed or (res.error or ""),
+            checks=res.checks,
+            evidence_refs=[res.h_session_id] if res.h_session_id else [],
+        )
+        self._emit("verification", res.observed, checks=res.checks, satisfied=self.verification.satisfied)
+
+    def _snapshot(self, tag: str, description: str) -> None:
+        path = self.backend.screenshot(self.runs_dir / f"{tag}.png")
+        if path:
+            self.evidence.append(Evidence(ref=f"screenshot:{tag}", kind="screenshot", description=description,
+                                          path=str(path)))
+
+    def _finish_stopped(self) -> None:
+        self.timings.stop_effective_at = _now()
+        with self._lock:
+            self.state = State.stopped
+        self._emit("stopped", "Intervention stopped. Changes already made are not reverted.",
+                   stop_latency_s=self.timings.stop_latency_s)
+        self._finish(status=CaseStatus.abandoned)
+
+    def _finish(self, status: CaseStatus | None = None, last_attempt: AttemptResult | None = None,
+                verify: VerifyResult | None = None) -> None:
+        self.timings.finished_at = _now()
+        self.report = self._build_report(status, last_attempt, verify)
+        self._save_report()
+        self._emit("finished", f"Case {self.report.case_id}: {self.report.status.value}",
+                   report=self.report.model_dump(mode="json"))
+
+    # ------------------------------------------------------------------ report
+
+    def _build_report(self, status: CaseStatus | None, last_attempt: AttemptResult | None,
+                      verify: VerifyResult | None) -> InterventionReport:
+        bound = self._bound
+        proc = bound.procedure if bound else None
+        verification = self.verification or Verification(
+            postcondition=bound.postcondition_description if bound else "", performed=False)
+        status = status or (CaseStatus.abandoned if self.state in {State.stopped, State.preflight_failed, State.failed}
+                            else CaseStatus.escalated)
+        category, cause = self._classify(status, verification)
+        needs_human = status is CaseStatus.escalated or self.state in {State.preflight_failed, State.failed}
+        escalation = None
+        if needs_human:
+            escalation = Escalation(
+                blocked_on=self.declared.blocker or self.error or verification.observed or "goal not verified",
+                attempts=self.attempts,
+                decision_expected=(bound.decision_expected if bound and status is CaseStatus.escalated
+                                   else "Check the environment or permissions on the user's machine."),
+                suggested_next_step=self._suggest(category),
+            )
+        return InterventionReport(
+            session_id=self.request.session_id,
+            software=self.request.software,
+            software_version=self.request.software_version or (proc.software_version if proc else None),
+            os=f"{platform.system()} {platform.mac_ver()[0] or platform.release()}",
+            role=self.request.role,
+            session_type=self.request.session_type,
+            goal=self.request.goal,
+            symptom=self.request.symptom,
+            mode=self.request.mode,
+            procedure_id=proc.id if proc else self.request.procedure_id,
+            approved_scope=self.plan if self._approved else None,
+            guidance=self.guidance,
+            knowledge=self.knowledge,
+            scope_note=self.scope_note,
+            steps=self.steps,
+            declared=self.declared,
+            verification=verification,
+            status=status,
+            category=category,
+            suspected_cause=cause,
+            needs_human=needs_human,
+            escalation=escalation,
+            evidence=self.evidence,
+            feedback=self.feedback,
+            h_session_ids=self.h_session_ids,
+            timings=self.timings,
+            cost_usd=self.cost_usd,
+            simulated=self.backend.simulated,
+        )
+
+    def _classify(self, status: CaseStatus, verification: Verification) -> tuple[Category, str | None]:
+        """Category for grouping. Rule-based and conservative; `unknown` beats a guess."""
+        if self.state is State.preflight_failed:
+            return Category.environment, "The assistant could not drive the machine (macOS permissions)."
+        if status is CaseStatus.resolved:
+            return Category.usage, None
+        if self.declared.outcome == "blocked":
+            cat = self.declared.blocker_category or (self._bound.procedure.escalation.default_category
+                                                     if self._bound else Category.unknown)
+            return cat, self.declared.blocker
+        if self.error:
+            return Category.agent_failure, self.error
+        if self.declared.outcome == "done" and verification.performed and verification.satisfied is False:
+            return Category.unknown, "The agent declared success but the expected result was not observed."
+        if status is CaseStatus.abandoned:
+            return Category.unknown, None
+        return (self._bound.procedure.escalation.default_category if self._bound else Category.unknown), None
+
+    @staticmethod
+    def _suggest(category: Category) -> str | None:
+        return {
+            Category.permissions: "Grant or confirm the user's access rights, then let the user retry.",
+            Category.environment: "Check macOS Screen Recording / Accessibility grants for the assistant.",
+            Category.data: "Check that the record exists with the expected name.",
+            Category.agent_failure: "Review the H session trace; retry once the agent issue is understood.",
+        }.get(category)
+
+    def _save_report(self) -> None:
+        if self.report is None:
+            return
+        self.runs_dir.mkdir(parents=True, exist_ok=True)
+        (self.runs_dir / "report.json").write_text(self.report.model_dump_json(indent=2), encoding="utf-8")
+        if self.uplink:  # also sent to the support dashboard (re-sent when feedback is added)
+            self.uplink.send_report(self.report)

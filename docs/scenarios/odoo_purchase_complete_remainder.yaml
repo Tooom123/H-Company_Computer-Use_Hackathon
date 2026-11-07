@@ -1,0 +1,63 @@
+# Requires the independently verified partial state from the same workflow.
+id: odoo_purchase_complete_remainder
+software: odoo
+software_version: "20.0"
+session_type: support
+title: Terminer la réception du reliquat existant
+reversible: false
+max_attempts: 1
+max_steps_per_attempt: 35
+max_time_s_per_attempt: 360
+parameters:
+  - name: run_reference
+    description: Référence du même passage, déjà au stade partial vérifié par l’opérateur.
+    required: true
+preconditions:
+  - La société HACKATHON — Boutique Démo — DONNÉES FICTIVES est visible et le compte holo-demo est connecté.
+  - L’opérateur a vérifié le stade partial de {run_reference}, avec stock Gingembre 14 et une seule commande.
+  - La première réception est terminée pour 4 unités et un reliquat existant de 2 est ouvert.
+objective: >-
+  Terminer la réception du reliquat existant de 2 Holo Gingembre 33 cl
+  de la commande {run_reference}, sans créer de nouveau document métier.
+planned_changes:
+  - Valider uniquement les 2 unités du reliquat existant de la commande désignée.
+allowed_actions:
+  - Retrouver la commande {run_reference} et ouvrir ses réceptions liées.
+  - Valider le reliquat existant de 2 unités puis lire le stock physique.
+forbidden_actions:
+  - Créer une commande, une réception indépendante, une facture ou un ajustement de stock.
+  - Modifier la commande initiale, les prix, les produits, les droits ou une autre société.
+  - Envoyer un message, saisir des identifiants, quitter l’onglet Odoo ou lancer un reset.
+agent_instructions: |
+  Dans la société de démonstration Odoo {software_version}, retrouve {run_reference}.
+  Vérifie qu’une première réception de 4 est terminée et qu’un reliquat de 2 est ouvert.
+  Ouvre ce reliquat lié à la même commande, vérifie le produit HACK-GING-033 et les 2 unités.
+  Si tout correspond, valide cette réception, puis relis le stock physique de Gingembre.
+  Si le reliquat est déjà terminé, n’en crée pas un autre : rapporte l’état observé.
+  Si la référence est absente, dupliquée, ou si les quantités ne correspondent pas,
+  arrête-toi et demande à l’opérateur de relire l’état. Ne répare rien par une création.
+  Après un délai ou une réponse incertaine, relis l’état avant de réessayer une validation.
+postcondition:
+  description: >-
+    La commande unique {run_reference} est entièrement réceptionnée en 4 puis 2 unités ;
+    le stock physique de Gingembre est 16 et les autres produits sont inchangés.
+  checks:
+    - key: unique_order
+      prompt: Une seule commande porte {run_reference}, avec 6 HACK-GING-033 à 4 EUR pour 24 EUR.
+    - key: linked_receipts_done
+      prompt: Exactement deux réceptions liées sont terminées, pour 4 et 2 unités, sans reliquat ouvert.
+    - key: ginger_stock
+      prompt: Le stock physique de Gingembre vaut 16 unités.
+    - key: other_stocks
+      prompt: Les stocks physiques Pomme et Hibiscus sont toujours 8 et 6.
+  verification_instructions: |
+    Vérifie en lecture seule la référence {run_reference}, les réceptions liées et les stocks.
+    Ne valide aucun document. Une quantité attendue n’est pas une preuve ; relis-la.
+    Si une preuve est absente ou illisible, retourne false et précise le manque.
+    Le contrôle ORM done de l’opérateur reste indépendant de cette vérification visuelle.
+escalation:
+  when:
+    - Le reliquat ou la commande ne peut pas être identifié sans ambiguïté.
+    - La postcondition n’est pas vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit contrôler les liens entre commande et réceptions avant toute nouvelle action.
+  default_category: unknown

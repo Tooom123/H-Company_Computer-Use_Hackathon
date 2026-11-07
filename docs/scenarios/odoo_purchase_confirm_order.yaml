@@ -1,0 +1,66 @@
+# Candidate Odoo 20 procedure; static validation is not a real H run.
+id: odoo_purchase_confirm_order
+software: odoo
+software_version: '20.0'
+session_type: support
+title: Confirmer le brouillon sans réceptionner
+reversible: false
+max_attempts: 1
+max_steps_per_attempt: 30
+max_time_s_per_attempt: 300
+parameters:
+- name: run_reference
+  description: Référence exacte du passage réservé par l’opérateur.
+  required: true
+preconditions:
+- Odoo 20 est ouvert et connecté avec holo-demo sur la société HACKATHON — Boutique Démo — DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a vérifié l’état initial de cette étape.
+- Un unique brouillon {run_reference} a été relu après l’étape de préparation ; stock Gingembre 10.
+objective: Confirmer le brouillon unique {run_reference}, sans réceptionner de produit, puis lire et expliquer le
+  stock physique actuel de Gingembre.
+planned_changes:
+- Confirmer uniquement le brouillon existant ; la réception générée reste en attente.
+allowed_actions:
+- Consulter la demande de prix et ses lignes.
+- Confirmer le brouillon désigné et lire sa réception liée.
+- Ouvrir Inventaire pour lire le stock physique.
+forbidden_actions:
+- Quitter l’onglet Odoo, saisir des identifiants, agir dans une autre société ou lancer un reset.
+- Envoyer un message, créer une facture ou un paiement, modifier un prix catalogue ou les droits.
+- Créer une nouvelle commande ou modifier le fournisseur, les lignes, les quantités ou les prix.
+- Saisir des quantités reçues, valider une réception ou effectuer un ajustement de stock.
+agent_instructions: 'Dans Achats, retrouve {run_reference} dans les demandes de prix et commandes.
+
+  Vérifie qu’il s’agit d’un seul brouillon de Fournisseur Holo Démo contenant 6 HACK-GING-033 à 4 EUR.
+
+  Si la référence est absente ou dupliquée, ou si la ligne diffère, arrête-toi sans créer ni corriger de document.
+
+  Confirme uniquement ce brouillon. S’il est déjà confirmé, n’effectue pas une deuxième création : rapporte l’état
+  observé.
+
+  Ne valide aucune réception. Ouvre ensuite la fiche de Gingembre pour lire son stock physique.
+
+  Explique la différence entre une commande confirmée et une réception physique à partir des écrans observés.'
+postcondition:
+  description: Les observations suivantes sont vérifiées dans la seule base de démonstration.
+  checks:
+  - key: unique_confirmed_order
+    prompt: Une seule commande porte {run_reference}, confirmée, chez Fournisseur Holo Démo.
+  - key: unchanged_line
+    prompt: Elle conserve 6 HACK-GING-033 à 4 EUR et un total de 24 EUR.
+  - key: receipt_pending
+    prompt: La réception liée existe et reste non terminée ; aucune unité n’est déjà réceptionnée.
+  - key: stock_physical
+    prompt: Le stock physique de Gingembre est toujours 10 unités.
+  verification_instructions: 'Relis la commande, sa réception liée et le stock physique. N’achève aucune réception.
+    Le contrôle confirmed de l’opérateur constitue la vérification métier indépendante.
+
+    Ne modifie ni ne valide aucun document. Une attente n’est pas une preuve : lis chaque valeur. Une preuve absente
+    ou illisible produit false.'
+escalation:
+  when:
+  - Un document, une valeur, la société ou la permission nécessaire ne peut pas être identifié sans ambiguïté.
+  - La postcondition reste non vérifiée après cet unique essai.
+  decision_expected: L’opérateur doit relire l’état de la démonstration avant toute reprise ; aucune correction
+    hors du périmètre approuvé.
+  default_category: unknown
