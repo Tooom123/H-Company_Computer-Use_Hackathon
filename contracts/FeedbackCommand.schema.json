@@ -1,0 +1,36 @@
+{
+  "description": "Free-form user feedback. Never inferred by the agent.",
+  "properties": {
+    "useful": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Useful"
+    },
+    "comment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Comment"
+    },
+    "allow_screenshots_to_support": {
+      "default": false,
+      "title": "Allow Screenshots To Support",
+      "type": "boolean"
+    }
+  },
+  "title": "FeedbackCommand",
+  "type": "object"
+}

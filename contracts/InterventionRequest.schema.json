@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "SessionType": {
+      "enum": [
+        "onboarding",
+        "configuration",
+        "support",
+        "discovery",
+        "feedback"
+      ],
+      "title": "SessionType",
+      "type": "string"
+    }
+  },
+  "description": "A help request, as sent by the user app.",
+  "properties": {
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "software": {
+      "description": "Target software, e.g. 'odoo'.",
+      "title": "Software",
+      "type": "string"
+    },
+    "software_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Software Version"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Role declared by the user.",
+      "title": "Role"
+    },
+    "goal": {
+      "description": "Goal or problem described by the user.",
+      "title": "Goal",
+      "type": "string"
+    },
+    "symptom": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Symptom"
+    },
+    "procedure_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Procedure to use; otherwise picked by software.",
+      "title": "Procedure Id"
+    },
+    "parameters": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Values injected into the procedure.",
+      "title": "Parameters",
+      "type": "object"
+    },
+    "session_type": {
+      "$ref": "#/$defs/SessionType",
+      "default": "support"
+    },
+    "user_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Id"
+    },
+    "client_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Client Id"
+    }
+  },
+  "required": [
+    "software",
+    "goal"
+  ],
+  "title": "InterventionRequest",
+  "type": "object"
+}

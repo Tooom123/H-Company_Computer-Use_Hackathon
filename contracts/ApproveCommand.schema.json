@@ -1,0 +1,25 @@
+{
+  "description": "The user approves (or declines) the proposed scope.",
+  "properties": {
+    "approved": {
+      "default": true,
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "scope_note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Extra constraint or precision added by the user.",
+      "title": "Scope Note"
+    }
+  },
+  "title": "ApproveCommand",
+  "type": "object"
+}

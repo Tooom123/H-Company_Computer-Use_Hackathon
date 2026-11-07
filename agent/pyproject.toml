@@ -1,0 +1,29 @@
+[project]
+name = "hcs-agent"
+version = "0.1.0"
+description = "H desktop agent for the customer-success assistant: approval, stop, verified results, support report"
+readme = "README.md"
+authors = [
+    { name = "Matteo ATKINSON", email = "matteoatkinson@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162.1",
+    "hai-agents[cli,desktop]>=1.4.3",
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+hcs-agent = "hcs_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+]

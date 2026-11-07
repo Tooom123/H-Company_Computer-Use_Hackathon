@@ -1,0 +1,86 @@
+{
+  "$defs": {
+    "State": {
+      "description": "Intervention state machine.",
+      "enum": [
+        "created",
+        "preflight_failed",
+        "awaiting_approval",
+        "running",
+        "verifying",
+        "stopping",
+        "stopped",
+        "resolved",
+        "escalated",
+        "failed"
+      ],
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "description": "Event emitted by the agent towards the app and the backend.",
+  "properties": {
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "state_changed",
+        "plan_proposed",
+        "step",
+        "attempt_started",
+        "attempt_finished",
+        "verification",
+        "needs_human",
+        "stopped",
+        "finished",
+        "error"
+      ],
+      "title": "Type",
+      "type": "string"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/State"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    },
+    "simulated": {
+      "default": false,
+      "description": "True when produced by the mock backend, never by H.",
+      "title": "Simulated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "session_id",
+    "type",
+    "state"
+  ],
+  "title": "AgentEvent",
+  "type": "object"
+}

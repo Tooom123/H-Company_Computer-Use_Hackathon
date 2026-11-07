@@ -1,0 +1,670 @@
+{
+  "$defs": {
+    "CaseStatus": {
+      "enum": [
+        "resolved",
+        "workaround",
+        "escalated",
+        "abandoned"
+      ],
+      "title": "CaseStatus",
+      "type": "string"
+    },
+    "Category": {
+      "enum": [
+        "usage",
+        "configuration",
+        "permissions",
+        "data",
+        "suspected_product_defect",
+        "environment",
+        "agent_failure",
+        "unknown"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "DeclaredResult": {
+      "description": "What the H agent claims it did. Not proof.",
+      "properties": {
+        "outcome": {
+          "default": "not_run",
+          "enum": [
+            "done",
+            "blocked",
+            "unclear",
+            "not_run"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        },
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "blocker_category": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Category"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "steps_taken": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps Taken",
+          "type": "array"
+        }
+      },
+      "title": "DeclaredResult",
+      "type": "object"
+    },
+    "Escalation": {
+      "description": "Case file handed to support when the goal was not reached.",
+      "properties": {
+        "blocked_on": {
+          "title": "Blocked On",
+          "type": "string"
+        },
+        "attempts": {
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "decision_expected": {
+          "title": "Decision Expected",
+          "type": "string"
+        },
+        "suggested_next_step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggested Next Step"
+        }
+      },
+      "required": [
+        "blocked_on",
+        "attempts",
+        "decision_expected"
+      ],
+      "title": "Escalation",
+      "type": "object"
+    },
+    "Evidence": {
+      "properties": {
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "screenshot",
+            "h_session",
+            "text"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "shareable_with_support": {
+          "default": false,
+          "title": "Shareable With Support",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "description"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "FeedbackCommand": {
+      "description": "Free-form user feedback. Never inferred by the agent.",
+      "properties": {
+        "useful": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Useful"
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
+        "allow_screenshots_to_support": {
+          "default": false,
+          "title": "Allow Screenshots To Support",
+          "type": "boolean"
+        }
+      },
+      "title": "FeedbackCommand",
+      "type": "object"
+    },
+    "ProposedPlan": {
+      "description": "What the agent proposes to do. Must be approved before any action.",
+      "properties": {
+        "objective": {
+          "title": "Objective",
+          "type": "string"
+        },
+        "planned_changes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Planned Changes",
+          "type": "array"
+        },
+        "allowed_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Actions",
+          "type": "array"
+        },
+        "forbidden_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Actions",
+          "type": "array"
+        },
+        "reversible": {
+          "title": "Reversible",
+          "type": "boolean"
+        },
+        "max_attempts": {
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "explanation": {
+          "description": "Explanation adapted to the declared role.",
+          "title": "Explanation",
+          "type": "string"
+        },
+        "observes": {
+          "default": "Screenshots of the main display are sent to H during the intervention.",
+          "title": "Observes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "objective",
+        "planned_changes",
+        "allowed_actions",
+        "forbidden_actions",
+        "reversible",
+        "max_attempts",
+        "explanation"
+      ],
+      "title": "ProposedPlan",
+      "type": "object"
+    },
+    "SessionType": {
+      "enum": [
+        "onboarding",
+        "configuration",
+        "support",
+        "discovery",
+        "feedback"
+      ],
+      "title": "SessionType",
+      "type": "string"
+    },
+    "Step": {
+      "properties": {
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "attempt": {
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "observation",
+            "action",
+            "message",
+            "error",
+            "answer"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "detail": {
+          "additionalProperties": true,
+          "title": "Detail",
+          "type": "object"
+        }
+      },
+      "required": [
+        "index",
+        "attempt",
+        "timestamp",
+        "kind",
+        "summary"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "Timings": {
+      "properties": {
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "approved_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved At"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "stop_requested_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Requested At"
+        },
+        "stop_effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Effective At"
+        }
+      },
+      "title": "Timings",
+      "type": "object"
+    },
+    "Verification": {
+      "description": "Postcondition observed after the intervention, independent from the agent's claim.",
+      "properties": {
+        "performed": {
+          "default": false,
+          "title": "Performed",
+          "type": "boolean"
+        },
+        "satisfied": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Satisfied"
+        },
+        "postcondition": {
+          "title": "Postcondition",
+          "type": "string"
+        },
+        "observed": {
+          "default": "",
+          "title": "Observed",
+          "type": "string"
+        },
+        "checks": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Checks",
+          "type": "object"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "user_confirmed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Confirmed"
+        }
+      },
+      "required": [
+        "postcondition"
+      ],
+      "title": "Verification",
+      "type": "object"
+    }
+  },
+  "description": "Structured report of one intervention, readable by support and groupable by the dashboard.",
+  "properties": {
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "software": {
+      "title": "Software",
+      "type": "string"
+    },
+    "software_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Software Version"
+    },
+    "os": {
+      "title": "Os",
+      "type": "string"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Role"
+    },
+    "session_type": {
+      "$ref": "#/$defs/SessionType"
+    },
+    "goal": {
+      "title": "Goal",
+      "type": "string"
+    },
+    "symptom": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Symptom"
+    },
+    "procedure_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Procedure Id"
+    },
+    "approved_scope": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProposedPlan"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scope_note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Note"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "declared": {
+      "$ref": "#/$defs/DeclaredResult"
+    },
+    "verification": {
+      "$ref": "#/$defs/Verification"
+    },
+    "status": {
+      "$ref": "#/$defs/CaseStatus"
+    },
+    "category": {
+      "$ref": "#/$defs/Category"
+    },
+    "suspected_cause": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Suspected Cause"
+    },
+    "needs_human": {
+      "title": "Needs Human",
+      "type": "boolean"
+    },
+    "escalation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Escalation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "feedback": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FeedbackCommand"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "h_session_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "H Session Ids",
+      "type": "array"
+    },
+    "timings": {
+      "$ref": "#/$defs/Timings"
+    },
+    "cost_usd": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost Usd"
+    },
+    "simulated": {
+      "default": false,
+      "title": "Simulated",
+      "type": "boolean"
+    },
+    "demo_data": {
+      "default": true,
+      "title": "Demo Data",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "session_id",
+    "software",
+    "software_version",
+    "os",
+    "role",
+    "session_type",
+    "goal",
+    "symptom",
+    "procedure_id",
+    "approved_scope",
+    "steps",
+    "declared",
+    "verification",
+    "status",
+    "category",
+    "suspected_cause",
+    "needs_human",
+    "escalation",
+    "evidence",
+    "feedback",
+    "h_session_ids",
+    "timings"
+  ],
+  "title": "InterventionReport",
+  "type": "object"
+}

@@ -1,0 +1,59 @@
+{
+  "description": "What the agent proposes to do. Must be approved before any action.",
+  "properties": {
+    "objective": {
+      "title": "Objective",
+      "type": "string"
+    },
+    "planned_changes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Planned Changes",
+      "type": "array"
+    },
+    "allowed_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Actions",
+      "type": "array"
+    },
+    "forbidden_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Forbidden Actions",
+      "type": "array"
+    },
+    "reversible": {
+      "title": "Reversible",
+      "type": "boolean"
+    },
+    "max_attempts": {
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "explanation": {
+      "description": "Explanation adapted to the declared role.",
+      "title": "Explanation",
+      "type": "string"
+    },
+    "observes": {
+      "default": "Screenshots of the main display are sent to H during the intervention.",
+      "title": "Observes",
+      "type": "string"
+    }
+  },
+  "required": [
+    "objective",
+    "planned_changes",
+    "allowed_actions",
+    "forbidden_actions",
+    "reversible",
+    "max_attempts",
+    "explanation"
+  ],
+  "title": "ProposedPlan",
+  "type": "object"
+}

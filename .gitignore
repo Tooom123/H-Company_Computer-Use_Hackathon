@@ -1,0 +1,25 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Electron
+node_modules/
+out/
+.vite/
+
+# Secrets and local state
+.env
+.env.*
+!.env.example
+runs/
+*.log
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
