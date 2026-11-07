@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean; rich?: boolean; restored?: 'resolved' | 'escalated' } = {}) {
+async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean; rich?: boolean; restored?: 'resolved' | 'escalated'; quarantineStatus?: string } = {}) {
   await page.addInitScript(({ failFeedback, options }) => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     // This mock represents durable backend state, independent of a renderer reload.
@@ -16,7 +16,9 @@ async function mockPilot(page: Page, failFeedback = false, options: { longPlan?:
         declared: { outcome: 'done', summary: 'Informations retrouvées.' },
         verification: { satisfied: true, observed: 'Critères écran contrôlés par le moteur.' },
         pilot: { scenario_id: scenarios[0].id, export_status: 'complete',
-          agent_review: { reviewer_type: 'ai', task_success_agent: 'partial', scope_compliance_agent: 'failure' } } };
+          agent_review: { reviewer_type: 'ai', task_success_agent: 'partial', scope_compliance_agent: 'failure',
+            rationale: ['PRIVATE_REVIEW_DETAILS_MUST_NOT_RENDER'] },
+          ...(options.quarantineStatus !== undefined ? { quarantine: { status: options.quarantineStatus, reason: 'PRIVATE_QUARANTINE_DETAILS_MUST_NOT_RENDER' } } : {}) } };
       localStorage.setItem('hcompanion.voice-pilot.v1', JSON.stringify({ session: 'restored-episode', scenario: scenarios[0].id }));
       persist();
     }
@@ -212,12 +214,26 @@ test('retries a stopped restored episode without labels or automatic approval, b
   expect((await calls()).filter(call => call.method === 'POST' && call.path.endsWith('/feedback'))).toEqual([]);
 });
 
-for (const state of ['resolved', 'escalated'] as const) {
-  test(`keeps an AI review separate and retries a restored ${state} episode without losing a human draft`, async ({ page }) => {
-    await mockPilot(page, false, { rich: true, restored: state });
+for (const { state, quarantineStatus } of [
+  { state: 'resolved', quarantineStatus: undefined },
+  { state: 'escalated', quarantineStatus: 'quarantined' },
+  { state: 'escalated', quarantineStatus: 'quarantined_pending_privacy_review' },
+  { state: 'escalated', quarantineStatus: '' },
+] as const) {
+  test(`keeps an AI review separate and retries a restored ${state} episode (${quarantineStatus === undefined ? 'no quarantine' : quarantineStatus || 'empty quarantine status'}) without losing a human draft`, async ({ page }) => {
+    const hasQuarantine = quarantineStatus !== undefined;
+    await mockPilot(page, false, { rich: true, restored: state, quarantineStatus });
     await page.goto('/#voice');
     await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Verdict IA : Réussite partielle');
     await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Périmètre du parcours : Non respecté');
+    const quarantine = page.getByRole('alert', { name: 'Trace en quarantaine' });
+    if (hasQuarantine) {
+      await expect(quarantine).toHaveText('Trace en quarantaine — exclue de l’entraînement ; capture hors périmètre à revoir.');
+    } else {
+      await expect(quarantine).toHaveCount(0);
+    }
+    await expect(page.getByText('PRIVATE_QUARANTINE_DETAILS_MUST_NOT_RENDER', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('PRIVATE_REVIEW_DETAILS_MUST_NOT_RENDER', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Critères écran contrôlés par le moteur.', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('unknown');
     await expect(page.getByLabel('L’aide était-elle utile ?')).toHaveValue('unknown');
@@ -230,6 +246,7 @@ for (const state of ['resolved', 'escalated'] as const) {
     await page.evaluate(() => (window as unknown as { __vpSetReview: (verdict: string) => void }).__vpSetReview('success'));
     await expect(page.getByRole('region', { name: 'Revue IA' }).getByText('Verdict IA : Réussite', { exact: true })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Périmètre du parcours : Non respecté');
+    if (hasQuarantine) await expect(quarantine).toBeVisible();
     await expect(page.getByLabel('Votre retour · transcription à relire')).toHaveValue(comment);
     await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('partial');
     await expect(page.getByLabel('L’aide était-elle utile ?')).toHaveValue('unknown');
@@ -241,11 +258,13 @@ for (const state of ['resolved', 'escalated'] as const) {
     await page.getByRole('button', { name: 'Conserver cet essai et retenter' }).click();
     await expect(page.getByRole('button', { name: 'R01 Lire le prix et le stock' })).toHaveAttribute('aria-current', 'step');
     await expect(page.getByLabel('Votre demande · transcription à relire')).toHaveValue('');
+    await expect(quarantine).toHaveCount(0);
     const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('hcompanion.voice-pilot.feedback-draft.v1:restored-episode') || '{}'));
     expect(draft).toMatchObject({ comment, outcome: 'partial', useful: 'unknown', allowTraining: false });
     const oldEpisode = await page.evaluate(() => JSON.parse(localStorage.getItem('vp-test-backend') || '{}'));
     expect(oldEpisode.state).toBe(state);
     expect(oldEpisode.pilot.feedback).toBeUndefined();
+    if (hasQuarantine) expect(oldEpisode.pilot.quarantine.status).toBe(quarantineStatus);
     const writes = () => page.evaluate(() => (window as unknown as { __vpCalls: { method: string; path: string; body?: unknown }[] }).__vpCalls.filter(call => call.method !== 'GET'));
     expect(await writes()).toEqual([]);
 

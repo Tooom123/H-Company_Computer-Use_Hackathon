@@ -19,6 +19,7 @@ def summarize(root):
             continue
         report = load(directory / 'report.json')
         review = load(directory / 'agent-review.json')
+        quarantine = load(directory / 'quarantine.json')
         human = load(directory / 'labels.json')
         timing = report.get('timings', {})
         duration = None
@@ -41,6 +42,7 @@ def summarize(root):
             'agent_verdict': review.get('task_success_agent', 'pending'),
             'scope_compliance_agent': review.get('scope_compliance_agent', 'unknown'),
             'agent_review_rationale': review.get('rationale', []),
+            'quarantine_status': quarantine.get('status'),
             'human_verdict': human.get('task_success_user') if human.get('user_confirmed') else None,
             'human_useful': human.get('useful') if human.get('user_confirmed') else None,
             'duration_s': round(duration, 3) if duration is not None else None,

@@ -270,6 +270,9 @@ export default function VoicePilot() {
         {snapshot && <section className="vp-card">
           <div className="vp-card-heading"><span className="vp-number">2</span><h2>{stateLabel(snapshot.state)}</h2>{snapshot.simulated && <span className="vp-tag vp-tag-warning">SIMULÉ</span>}</div>
           <p className="vp-goal-summary">{snapshot.request?.goal || goal}</p>
+          {snapshot.pilot?.quarantine && <div className="vp-alert vp-error" role="alert" aria-label="Trace en quarantaine">
+            <strong>Trace en quarantaine — exclue de l’entraînement ; capture hors périmètre à revoir.</strong>
+          </div>}
           {snapshot.state === 'awaiting_approval' && <>
             <h3>{snapshot.plan?.objective || 'Plan proposé'}</h3>
             <div className="vp-scope"><div><h4>Actions prévues</h4><ul>{snapshot.plan?.allowed_actions?.map(action => <li key={action}>{action}</li>)}</ul></div><div><h4>Actions interdites</h4><ul>{snapshot.plan?.forbidden_actions?.map(action => <li key={action}>{action}</li>)}</ul></div></div>

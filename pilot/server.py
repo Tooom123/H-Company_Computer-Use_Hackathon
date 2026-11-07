@@ -230,7 +230,7 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
                 # cannot leave the exported copy older than the local episode.
                 archive = root / 'archives' / sid
                 if archive.is_dir():
-                    for filename in ('report.json', 'labels.json', 'request.json', 'procedure.json'):
+                    for filename in ('report.json', 'labels.json', 'request.json', 'procedure.json', 'agent-review.json', 'quarantine.json'):
                         source = directory / filename
                         if source.exists():
                             target = archive / filename
@@ -361,6 +361,10 @@ def create_app(*, private_root: Path, token: str, backend=None, transcriber=None
             result['pilot']['feedback'] = read_json(directory / 'labels.json')
         if (directory / 'agent-review.json').exists():
             result['pilot']['agent_review'] = read_json(directory / 'agent-review.json')
+        if (directory / 'quarantine.json').exists():
+            quarantine = read_json(directory / 'quarantine.json')
+            result['pilot']['quarantine'] = {'status': quarantine.get('status', 'quarantined'),
+                'reason': 'Capture hors périmètre à revoir ; trace exclue de l’entraînement.'}
         return result
 
     @app.get('/pilot/status')

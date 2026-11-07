@@ -54,6 +54,7 @@ cette limite avec le résultat et compléter par revue des actions et lectures c
 | `report.json`, `verification` | Vérificateur H : postconditions qu’il a pu observer dans ses vues |
 | `agent-review.json`, `task_success_agent` | Relecteur IA : demande, réponse finale, actions, images et preuves indépendantes disponibles |
 | `labels.json`, `task_success_user` / `useful` | Utilisateur : son appréciation explicite, recueillie séparément |
+| `quarantine.json` | Exclusion de la trace ou revue de confidentialité encore nécessaire ; aucun effacement distant implicite |
 
 Ne pas transformer une revue IA en feedback humain. Ne pas écraser le verdict
 initial de H lorsqu’une seconde revue trouve un faux négatif. L’utilité pour
@@ -88,6 +89,12 @@ brutes restent privées ; seuls les résultats agrégés et les changements de
 procédure vont dans Git. `human_review_required=true` et `ready_for_sft=false`
 restent en place. La sélection pour l’entraînement exige une revue et une
 conversion supplémentaires, même lorsqu’un label de tâche est positif.
+
+Les retests du 7 novembre utilisent la garde de bridge v2 (commandes shell et
+fichiers bloqués). Après constat d'un premier plan hors Odoo, la série est arrêtée.
+La v3 ajoute le contrôle Chrome actif avant les observations et actions ; ses
+tests sont hors ligne, sans nouvelle exécution H pour la valider. Ne pas
+réétiqueter les anciennes traces v1/v2 comme des traces protégées par v3.
 
 ## Itérer sans effacer les échecs
 

@@ -17,6 +17,7 @@ export type AgentReview = {
   reviewer_type: 'ai'; task_success_agent: 'success' | 'partial' | 'failure' | 'unknown';
   scope_compliance_agent?: 'success' | 'partial' | 'failure' | 'unknown';
 };
+export type TraceQuarantine = { status: string; reason: string };
 export type PilotSnapshot = {
   session_id: string; state: string; simulated: boolean; plan?: PilotPlan;
   restored_read_only?: boolean;
@@ -25,7 +26,7 @@ export type PilotSnapshot = {
   verification?: { performed?: boolean; satisfied?: boolean | null; observed?: string; checks?: Record<string, boolean> };
   steps?: { kind?: string; message?: string; description?: string }[];
   error?: string | null; report_ready?: boolean; report?: { timings?: { approved_at?: string; finished_at?: string }; feedback?: unknown };
-  pilot?: { scenario_id?: string; workflow_id?: string; run_reference?: string; feedback?: unknown; export_status?: unknown; agent_review?: AgentReview };
+  pilot?: { scenario_id?: string; workflow_id?: string; run_reference?: string; feedback?: unknown; export_status?: unknown; agent_review?: AgentReview; quarantine?: TraceQuarantine };
 };
 export interface VoicePilotAPI {
   request<T = unknown>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T>;

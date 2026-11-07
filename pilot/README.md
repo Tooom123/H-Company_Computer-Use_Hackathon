@@ -10,10 +10,12 @@ Le pilote ajoute un contrôle de la liaison bureau avant de réutiliser un canal
 Une liaison arrêtée ou un canal terminé est remplacé ; une erreur réseau de
 contrôle remonte comme un blocage explicite. Cette adaptation ne change pas la
 révision épinglée de Matteo et apparaît dans `runtime.json` sous
-`desktop_adapter=pilot-bridge-health-v2`. Cette version bloque au niveau du bridge
+`desktop_adapter=pilot-bridge-health-v3`. Cette version bloque au niveau du bridge
 les commandes shell, la lecture/écriture de fichiers et le glisser-déposer ; les
-captures, clics, frappes et défilements restent disponibles. Elle n'isole pas les
-applications : le clavier peut toujours agir sur la fenêtre au premier plan.
+captures, clics, frappes et défilements exigent désormais Google Chrome actif sur
+macOS. Une identité d'application absente ou illisible bloque l'appel. Cela ne
+vérifie pas l'origine de l'onglet et ne masque pas les fenêtres en arrière-plan :
+un environnement isolé reste nécessaire pour les lots autonomes.
 
 Les dix scénarios sont disponibles ; leur présence dans l’app ne signifie pas
 qu’ils ont tous été exécutés et évalués. Les demandes et préconditions figurent dans

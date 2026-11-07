@@ -81,8 +81,13 @@ def test_agent_review_does_not_become_user_feedback(tmp_path):
         review = {'reviewer_type': 'ai', 'task_success_agent': 'partial',
                   'human_review_required': True, 'ready_for_sft': False}
         (directory / 'agent-review.json').write_text(json.dumps(review))
+        (directory / 'quarantine.json').write_text(json.dumps({'status': 'quarantined',
+            'reason': 'Private incident details not intended for the UI', 'private_provenance': 'hidden'}))
         snap = client.get('/pilot/episodes/' + sid, headers=AUTH).json()
         assert snap['pilot']['agent_review'] == review
+        assert snap['pilot']['quarantine']['status'] == 'quarantined'
+        assert 'private_provenance' not in snap['pilot']['quarantine']
+        assert 'Private incident details' not in snap['pilot']['quarantine']['reason']
         assert not snap['pilot'].get('feedback')
         assert not (directory / 'labels.json').exists()
         assert snap['state'] == 'awaiting_approval'
