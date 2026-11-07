@@ -46,3 +46,54 @@ it('keeps a valid crop without an overview when the option is disabled', () => {
     regionDisposition: 'crop', includeGlobal: false,
   });
 });
+
+const windowSettings = { ...settings, regionScope: 'window' };
+const front = { id: 12, appName: 'Odoo dialog', bounds: { x: 500, y: 300, width: 400, height: 300 } };
+const behind = { id: 7, appName: 'Browser', bounds: { x: 100, y: 100, width: 1200, height: 800 } };
+
+it('chooses the first visible window at the fixation and keeps a small window whole', () => {
+  expect(plan({ settings: windowSettings, windows: [front, behind] })).toMatchObject({
+    selectedWindow: front, cropRect: { x: 500, y: 300, width: 400, height: 300 }, regionDisposition: 'crop',
+  });
+  expect(plan({ settings: windowSettings, windows: [behind, front] }).selectedWindow?.id).toBe(behind.id);
+});
+
+it('translates a crop at a window edge without leaking beyond the window', () => {
+  const window = { id: 2, appName: 'Browser', bounds: { x: 100, y: 100, width: 1000, height: 800 } };
+  expect(plan({ settings: windowSettings, windows: [window], selection: { ...selection, point: { x: 1090, y: 880 } } }).cropRect)
+    .toEqual({ x: 204, y: 196, width: 896, height: 704 });
+});
+
+it('maps window bounds using actual image scale and nonzero desktop origins', () => {
+  const window = { id: 3, appName: 'Browser', bounds: { x: -1300, y: 220, width: 500, height: 400 } };
+  expect(plan({ settings: windowSettings, windows: [window],
+    source: { width: 2880, height: 1800 }, screenBounds: { x: -1440, y: 120, width: 1440, height: 900 },
+    selection: { ...selection, point: { x: -900, y: 500 } },
+  }).cropRect).toEqual({ x: 384, y: 296, width: 896, height: 704 });
+});
+
+it('clips a partially offscreen window to the visible desktop image', () => {
+  const window = { id: 4, appName: 'Browser', bounds: { x: -100, y: -80, width: 500, height: 400 } };
+  expect(plan({ settings: windowSettings, windows: [window],
+    selection: { ...selection, point: { x: 200, y: 100 } },
+  })).toMatchObject({ selectedWindow: window, cropRect: { x: 0, y: 0, width: 400, height: 320 } });
+});
+
+it('reports missing window metadata while retaining a valid screen crop', () => {
+  const invalid = { id: 5, appName: 'Invalid', bounds: { x: NaN, y: 0, width: 1000, height: 1000 } };
+  expect(plan({ settings: windowSettings, windows: [invalid] })).toMatchObject({
+    cropRect: { x: 287, y: 126, width: 896, height: 704 }, fallbackReason: null, regionDisposition: 'crop',
+    windowFallbackReason: 'Aucune fenêtre visible sous la position : région limitée à l’écran.',
+  });
+  expect(plan({ settings: windowSettings, windows: [] }).selectedWindow).toBeUndefined();
+});
+
+it('ignores window metadata for screen scope, explicit full screen and lost gaze', () => {
+  expect(plan({ windows: [front] }).cropRect).toEqual({ x: 287, y: 126, width: 896, height: 704 });
+  const full = plan({ settings: { ...windowSettings, selection: 'full' }, windows: [front] });
+  expect(full.regionDisposition).toBe('full-requested');
+  expect(full.selectedWindow).toBeUndefined();
+  const lost = plan({ settings: windowSettings, windows: [front], selection: { point: null, gazeAgeMs: null, fallbackReason: 'Perdu' } });
+  expect(lost.regionDisposition).toBe('full-fallback');
+  expect(lost.selectedWindow).toBeUndefined();
+});

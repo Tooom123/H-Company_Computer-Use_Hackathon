@@ -1,7 +1,9 @@
 // Electron BrowserWindow.getMediaSourceId() exposes the CGWindowID on macOS:
 // window:<native-id>:<web-contents-id>. Do not confuse it with an NSView pointer.
 export function windowIdsFromMediaSources(sources) {
-  if (!Array.isArray(sources) || sources.length === 0) throw new Error('Aucune fenêtre H-Companion à exclure.');
+  if (!Array.isArray(sources)) throw new Error('Liste des fenêtres H-Companion invalide.');
+  // The panel and both overlays can legitimately all be hidden during observation.
+  // An empty visible-window list needs no explicit native exclusion.
   return [...new Set(sources.map(source => {
     const match = typeof source === 'string' && /^window:(\d+):\d+$/.exec(source);
     const id = match ? Number(match[1]) : NaN;

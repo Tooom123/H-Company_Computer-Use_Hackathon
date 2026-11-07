@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import ObservationPanel from "./ObservationPanel";
 import type {
   CaptureFrame,
   EncodedImage,
@@ -14,6 +15,7 @@ const defaults: Settings = {
   roiHeight: 600,
   includeGlobal: true,
   overlay: true,
+  regionScope: "screen",
 };
 const selectionLabels = {
   gaze: "Regard",
@@ -214,24 +216,37 @@ export default function App() {
       setError(errorText(reason));
     }
   };
+  const applyVisibleSettings = () => persistSettings({
+    ...settingsRef.current,
+    roiWidth: settingsRef.current.selection === "full" ? settingsRef.current.roiWidth : parseDimension(widthInput.current?.value ?? widthDraft),
+    roiHeight: settingsRef.current.selection === "full" ? settingsRef.current.roiHeight : parseDimension(heightInput.current?.value ?? heightDraft),
+  });
+  const clearPreparedFrame = () => {
+    frameRef.current = null;
+    setFrame(null);
+    setResult(null);
+  };
+  const selectPreparedFrame = (next: CaptureFrame) => {
+    frameRef.current = next.frameId;
+    setFrame(next);
+    setResult(null);
+  };
+  const startObservation = (options: { durationSeconds: 15 | 30 | 60; showOverlay: boolean }) =>
+    void run("observation-start", async () => {
+      clearPreparedFrame();
+      await applyVisibleSettings();
+      await bridge.startObservation(options);
+    });
   const capture = () =>
     void run("capture", async () => {
-      frameRef.current = null;
-      setFrame(null);
-      setResult(null);
+      clearPreparedFrame();
       // A click on Capture also blurs the last edited input. Wait for every
       // queued write and explicitly apply both visible values before capture.
       // Reading the elements also handles native accessibility value edits.
-      await persistSettings({
-        ...settingsRef.current,
-        roiWidth: settingsRef.current.selection === "full" ? settingsRef.current.roiWidth : parseDimension(widthInput.current?.value ?? widthDraft),
-        roiHeight: settingsRef.current.selection === "full" ? settingsRef.current.roiHeight : parseDimension(heightInput.current?.value ?? heightDraft),
-      });
+      await applyVisibleSettings();
       const next = await bridge.capture();
       if (!mounted.current) return;
-      frameRef.current = next.frameId;
-      setFrame(next);
-      setResult(null);
+      selectPreparedFrame(next);
     });
   const analyze = () => {
     if (!frame || !prompt.trim()) return;
@@ -274,12 +289,14 @@ export default function App() {
       </main>
     );
 
-  const busy = Boolean(operation || live?.busy);
+  const observationActive = live?.observation?.status === "running" || live?.observation?.status === "stopping";
+  const busy = Boolean(operation || live?.busy || observationActive);
   const inferencePending =
     operation === "inference" || live?.busy === "inference";
   const capturePending = operation === "capture" || live?.busy === "capture";
   const tracker = live?.tracker ?? { state: "off" as const };
   const cameraOn = tracker.state !== "off" && tracker.state !== "error";
+  const gazeNeedsCalibration = settings.selection === "gaze" && tracker.state !== "tracking" && tracker.state !== "lost";
   const sent = Boolean(frame && live?.sent?.frameId === frame.frameId);
   const shownResult = result?.frameId === frame?.frameId ? result : null;
   const isSimulated = Boolean(frame?.simulated || shownResult?.simulated);
@@ -355,6 +372,17 @@ export default function App() {
           </button>
         </div>
       )}
+      <ObservationPanel
+        bridge={bridge}
+        observation={live?.observation}
+        disabled={!canCapture}
+        startDisabled={gazeNeedsCalibration}
+        startHint={gazeNeedsCalibration ? "Calibrez le regard avant cet essai, ou choisissez Curseur / Écran complet pour tester sans webcam." : undefined}
+        shortcutAvailable={runtime?.observationShortcutAvailable === true}
+        onStart={startObservation}
+        onSelect={selectPreparedFrame}
+        onClear={clearPreparedFrame}
+      />
       <div className="workspace-grid">
         <aside
           className="controls-column"
@@ -383,6 +411,17 @@ export default function App() {
                 </label>
               ))}
             </fieldset>
+            <label className="region-scope-label">Cadre de la région
+              <select
+                aria-label="Cadre de la région"
+                value={settings.regionScope ?? "screen"}
+                disabled={busy || !live || settings.selection === "full"}
+                onChange={event => changeSettings({ regionScope: event.target.value as "screen" | "window" })}
+              >
+                <option value="screen">Écran</option>
+                <option value="window">Fenêtre regardée</option>
+              </select>
+            </label>
             <div className="tracker-status">
               <span
                 className={`status-light ${tracker.state}`}
@@ -553,7 +592,7 @@ export default function App() {
               <span aria-hidden="true">◈</span>
               <span>
                 Regardez la zone du logiciel pendant les 3 secondes. Les
-                fenêtres H-Companion sont exclues de la capture.
+                fenêtres H-Companion se masquent pendant la capture.
               </span>
             </div>
           </section>
@@ -686,6 +725,8 @@ export default function App() {
                 {` · surface conservée : ${Math.round(100 * frame.cropRect.width * frame.cropRect.height / (frame.sourceWidth * frame.sourceHeight))} %`}
               </p>
             )}
+            {frame?.selectedWindow && <p className="coordinates-note">Fenêtre retenue : {frame.selectedWindow.appName}</p>}
+            {frame?.windowFallbackReason && <p className="field-note warning-text">{frame.windowFallbackReason}</p>}
           </section>
           <section
             className="metrics-section"

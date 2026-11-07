@@ -15,7 +15,7 @@ function encode(image) {
   return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, width, height, sha256: createHash('sha256').update(png).digest('hex') };
 }
 
-export async function captureObservation({ binary, display, settings, selection, signal, excludeWindowIds }) {
+export async function captureObservation({ binary, display, settings, selection, signal, excludeWindowIds, reference = false }) {
   const start = performance.now();
   const directory = await mkdtemp(path.join(tmpdir(), 'hcompanion-'));
   const output = path.join(directory, 'screen.png');
@@ -31,17 +31,22 @@ export async function captureObservation({ binary, display, settings, selection,
     if (image.isEmpty() || source.width !== metadata.width || source.height !== metadata.height) {
       throw new Error('Dimensions de capture incohérentes : observation rejetée.');
     }
-    const plan = planObservationRegion({ source, screenBounds: display.bounds, settings, selection });
+    const plan = planObservationRegion({ source, screenBounds: display.bounds, settings, selection, windows: metadata.windows });
     const { cropRect } = plan;
     // PNG comes from a byte buffer with scaleFactor 1; crop uses real pixels.
     const detail = encode(image.crop(cropRect));
     const global = plan.includeGlobal ? encode(image.resize({ width: Math.min(640, source.width), quality: 'best' })) : null;
+    // This overview is for local review only. buildRequest() only sends detail/global.
+    const localReference = reference ? encode(image.resize({ width: Math.min(1024, source.width), quality: 'best' })) : undefined;
     return {
       frameId: randomUUID(), capturedAt: metadata.captureCompletedAt, preparedAt: new Date().toISOString(),
       captureInterval: { startedAt: metadata.captureStartedAt, completedAt: metadata.captureCompletedAt },
       sourceWidth: source.width, sourceHeight: source.height,
       cropRect, screenBounds: { ...display.bounds }, selection: settings.selection, fallbackReason: plan.fallbackReason,
       requestedRegion: plan.requestedRegion, regionDisposition: plan.regionDisposition,
+      ...(plan.selectedWindow ? { selectedWindow: plan.selectedWindow } : {}),
+      ...(plan.windowFallbackReason ? { windowFallbackReason: plan.windowFallbackReason } : {}),
+      ...(localReference ? { reference: localReference } : {}),
       detail, global, preparationMs: performance.now() - start, gazeAgeMs: plan.gazeAgeMs,
       simulated: false, captureMethod: 'ScreenCaptureKit · fenêtres H-Companion exclues',
     };

@@ -98,6 +98,32 @@ export function screenPointToCapture(position, screenBounds, source) {
 }
 
 /**
+ * Clip a desktop DIP rectangle to this display, then map inward to image pixels.
+ * Returns null when the visible intersection contains no complete source pixel.
+ * @param {Rect} rect
+ * @param {Rect} screenBounds
+ * @param {Size} source
+ * @returns {Rect | null}
+ */
+export function screenRectToCapture(rect, screenBounds, source) {
+  screenRect(rect);
+  screenRect(screenBounds);
+  imageSize(source);
+  const left = Math.max(rect.x, screenBounds.x);
+  const top = Math.max(rect.y, screenBounds.y);
+  const right = Math.min(rect.x + rect.width, screenBounds.x + screenBounds.width);
+  const bottom = Math.min(rect.y + rect.height, screenBounds.y + screenBounds.height);
+  if (right <= left || bottom <= top) return null;
+  const start = screenPointToCapture({ x: left, y: top }, screenBounds, source);
+  const end = screenPointToCapture({ x: right, y: bottom }, screenBounds, source);
+  const x = Math.max(0, Math.ceil(start.x));
+  const y = Math.max(0, Math.ceil(start.y));
+  const width = Math.min(source.width, Math.floor(end.x)) - x;
+  const height = Math.min(source.height, Math.floor(end.y)) - y;
+  return width > 0 && height > 0 ? { x, y, width, height } : null;
+}
+
+/**
  * Map a source-pixel rectangle into an overlay covering this display.
  * The output origin is local to the display, intentionally excluding bounds.x/y.
  * @param {Rect} rect
@@ -158,11 +184,15 @@ export function validateSettings(input) {
   for (const key of ['includeGlobal', 'overlay']) {
     if (typeof input[key] !== 'boolean') throw new TypeError(`${key} must be boolean`);
   }
+  if (input.regionScope !== undefined && !['screen', 'window'].includes(input.regionScope)) {
+    throw new RangeError('Unknown region scope');
+  }
   return {
     selection: input.selection,
     roiWidth: input.roiWidth,
     roiHeight: input.roiHeight,
     includeGlobal: input.includeGlobal,
     overlay: input.overlay,
+    ...(input.regionScope === undefined ? {} : { regionScope: input.regionScope }),
   };
 }

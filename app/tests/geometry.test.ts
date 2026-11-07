@@ -4,6 +4,7 @@ import {
   captureRectToDisplay,
   normalizedPointToScreen,
   screenPointToCapture,
+  screenRectToCapture,
   validateSettings,
 } from '../electron/geometry.mjs';
 
@@ -52,6 +53,16 @@ describe('capture geometry', () => {
     expect(screenPointToCapture({ x: 0, y: -180 }, bounds, source)).toEqual({ x: -150, y: -200 });
     expect(captureRectToDisplay({ x: 300, y: 400, width: 600, height: 800 }, source, bounds))
       .toEqual({ x: 200, y: 200, width: 400, height: 400 });
+  });
+
+  it('clips desktop windows to a display and maps their bounds to actual source pixels', () => {
+    const bounds = { x: 100, y: -80, width: 1000, height: 800 };
+    const source = { width: 2000, height: 1000 };
+    expect(screenRectToCapture({ x: 50, y: -180, width: 300, height: 400 }, bounds, source))
+      .toEqual({ x: 0, y: 0, width: 500, height: 375 });
+    expect(screenRectToCapture({ x: 1100, y: -80, width: 300, height: 400 }, bounds, source)).toBeNull();
+    expect(screenRectToCapture({ x: 100.25, y: -79.8, width: 3, height: 3 }, bounds, source))
+      .toEqual({ x: 1, y: 1, width: 5, height: 3 });
   });
 
   it('maps normalized extrema to pixels inside the crop, including a single-pixel crop', () => {
@@ -104,8 +115,14 @@ describe('renderer settings boundary', () => {
       { ...valid, roiWidth: '800' }, { ...valid, roiWidth: NaN },
       { ...valid, roiHeight: 8193 }, { ...valid, roiHeight: 63 },
       { ...valid, roiWidth: 800.5 }, { ...valid, includeGlobal: 1 },
-      { ...valid, overlay: 'false' }]) {
+      { ...valid, overlay: 'false' }, { ...valid, regionScope: 'application' }]) {
       expect(() => validateSettings(settings)).toThrow();
     }
+  });
+
+  it('accepts window scope while keeping omitted scope backward compatible', () => {
+    expect(validateSettings(valid)).toEqual(valid);
+    expect(validateSettings({ ...valid, regionScope: 'window' })).toEqual({ ...valid, regionScope: 'window' });
+    expect(validateSettings({ ...valid, regionScope: 'screen' })).toEqual({ ...valid, regionScope: 'screen' });
   });
 });

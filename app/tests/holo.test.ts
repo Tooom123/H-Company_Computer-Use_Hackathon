@@ -22,6 +22,13 @@ describe('Holo payload and measured usage', () => {
     if (!Array.isArray(content)) throw new Error('Expected image content');
     expect(content.filter(item => item.type === 'image_url')).toHaveLength(1);
   });
+  it('never sends the local observation reference image or window metadata', () => {
+    const request = buildRequest({ ...frame, reference: { dataUrl: 'LOCAL_REFERENCE_ONLY' },
+      selectedWindow: { id: 123, appName: 'LOCAL_APP_NAME', bounds: { x: 0, y: 0, width: 1000, height: 800 } },
+    }, 'Aide-moi.', 'test-model');
+    expect(JSON.stringify(request)).not.toContain('LOCAL_REFERENCE_ONLY');
+    expect(JSON.stringify(request)).not.toContain('LOCAL_APP_NAME');
+  });
   it('keeps missing usage unknown and accepts reported zero cache', () => {
     expect(parseUsage(undefined)).toEqual({ inputTokens: null, outputTokens: null, totalTokens: null, cachedInputTokens: null });
     expect(parseUsage({ prompt_tokens: 120, completion_tokens: -2, total_tokens: '123', prompt_tokens_details: { cached_tokens: 0 } })).toEqual({ inputTokens: 120, outputTokens: null, totalTokens: null, cachedInputTokens: 0 });

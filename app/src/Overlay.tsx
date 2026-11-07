@@ -50,10 +50,14 @@ export default function Overlay() {
       document.documentElement.classList.remove("overlay-document");
     };
   }, []);
-  if (!state?.settings.overlay) return null;
+  if (!state) return null;
+  const showCaptured = state.observation?.status === 'running' || state.settings.regionScope === 'window';
   return (
     <div className="screen-overlay" aria-hidden="true">
-      {state.candidate && (
+      {showCaptured && state.observed && (
+        <Zone rect={state.observed.rect} label="DERNIÈRE CAPTURE LOCALE" sent={false} />
+      )}
+      {!showCaptured && state.candidate && (
         <Zone rect={state.candidate} label="ZONE CANDIDATE" sent={false} />
       )}
       {state.sent && (

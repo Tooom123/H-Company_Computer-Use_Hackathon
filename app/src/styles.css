@@ -927,6 +927,92 @@ textarea {
   padding: 19px 0 22px;
   margin-top: 28px;
 }
+.continuous-panel {
+  padding: 22px 26px;
+  margin-bottom: 22px;
+}
+.continuous-intro {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+.continuous-controls,
+.review-toolbar,
+.review-navigation,
+.review-annotation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.continuous-controls {
+  margin-top: 17px;
+}
+.continuous-duration,
+.region-scope-label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.continuous-duration select,
+.region-scope-label select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 11px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+.region-scope-label { margin: 16px 0; }
+.continuous-overlay {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.continuous-shortcut {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 12px;
+}
+.continuous-shortcut kbd {
+  font: inherit;
+  color: var(--ink);
+  background: var(--pale);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+.observation-review {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.review-toolbar { justify-content: space-between; }
+.review-toolbar h3 { font-size: 14px; }
+.review-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.review-navigation .button { padding: 6px 12px; }
+.review-images {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+.review-images figure { margin: 0; min-width: 0; }
+.review-images figcaption { font-size: 11px; color: var(--muted); margin-bottom: 7px; }
+.review-images img { display: block; width: 100%; height: auto; }
+.review-reference { position: relative; }
+.review-crop-outline { position: absolute; border: 2px solid var(--green); background: #087c6114; pointer-events: none; }
+.review-context { margin: 12px 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.review-annotation { font-size: 12px; }
+.review-summary { margin-top: 14px; font-size: 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .continuous-panel { padding: 18px; }
+  .review-images { grid-template-columns: 1fr; }
+  .continuous-controls { align-items: flex-start; }
+}
 .notice {
   border: 1px solid #e3c7bb;
   border-radius: 8px;

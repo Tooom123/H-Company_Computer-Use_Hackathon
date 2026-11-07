@@ -66,6 +66,38 @@ Une calibration imprécise n’est pas une preuve de bon suivi. Refaire la calib
 élargir la région ou choisir le curseur/plein écran. La version rapporte l’erreur médiane
 sur les cibles de validation, mais n’ajuste pas encore automatiquement la taille du rectangle.
 
+## Essai continu sans panneau
+
+1. Préparer le logiciel cible, puis choisir **Curseur** pour vérifier le recadrage sans caméra,
+   ou **Regard** après calibration. Garder la même taille, par exemple 800 × 600, entre essais.
+2. Dans **Cadre de la région**, comparer **Écran** puis **Fenêtre regardée**. Le second mode
+   utilise la fenêtre visible sous le point de regard ou le curseur et borne le crop à son
+   rectangle. Sans fenêtre éligible, le panneau indique le retour à la région d’écran.
+3. Choisir 15, 30 ou 60 secondes et cliquer **Observer et masquer le panneau**. Trois secondes
+   permettent de revenir au logiciel ; environ une capture locale par seconde suit, sans
+   chevauchement ni rattrapage des captures lentes. Le contour est désactivé par défaut pour
+   ne pas attirer le regard. Le panneau revient automatiquement à la fin.
+4. **⌘⇧Espace** (Ctrl+Maj+Espace hors Mac) arrête l’essai et rappelle le panneau. Le rappel
+   de l’application depuis le Dock arrête aussi l’observation. Une erreur de capture ou la
+   limite de mémoire interrompt la session et restaure le panneau.
+5. Revoir les captures avec **Précédente / Suivante** : écran de référence avec rectangle,
+   crop exact, fenêtre choisie et coordonnées. Annoter **Cible présente**, **Cible absente**
+   ou **Impossible à juger**, selon la cible définie avant la séquence. Le taux affiché porte
+   seulement sur les captures évaluables ; ce n’est pas un taux de réussite métier.
+
+Aucun appel Holo automatique. Seul **Envoyer à Holo** transmet la capture sélectionnée et
+son aperçu global éventuel. L’image de référence destinée à la revue (largeur maximale
+1 024 px) reste locale et n’entre jamais dans le payload. Les observations restent en mémoire,
+avec un budget de conservation de 64 Mio (pas un plafond de RAM du processus). **Effacer**
+ou démarrer un nouvel essai remplace cette série : terminer les annotations avant la suite.
+
+Le repérage des fenêtres respecte leur ordre devant/derrière au point sélectionné. Il ne
+reconstitue pas les parties masquées : le crop contient les pixels réellement visibles,
+y compris une éventuelle fenêtre superposée ailleurs dans le rectangle. La géométrie des
+fenêtres est relevée juste avant la capture, sans atomicité avec les pixels ; évaluer les
+fenêtres stables avant les déplacements rapides. Le suivi explicite de pose de tête et la
+décision Jev ne sont pas encore implémentés.
+
 ## Ce qui est mesuré
 
 - `detail.dataUrl` et `global.dataUrl` sont les buffers utilisés par `buildRequest()`, sans
@@ -94,8 +126,9 @@ sur les cibles de validation, mais n’ajuste pas encore automatiquement la tail
   de 1 500 ms au moment du choix. L’intervalle natif et le temps de préparation restent séparés.
 
 Les captures temporaires sont effacées dans un `finally`, y compris lors des erreurs.
-L’observation et le résultat ne persistent qu’en mémoire. Pas d’export automatique de captures
-ou de traces privées. Le panneau ne fournit pas encore l’agrégation sur plusieurs tentatives.
+Les observations et les résultats ne persistent qu’en mémoire. Pas d’export automatique de
+captures ou de traces privées. Le panneau agrège les annotations d’une session locale,
+mais pas encore les coûts et performances de plusieurs essais Holo.
 
 ## Architecture et raccordement de l’agent
 
@@ -104,6 +137,7 @@ ou de traces privées. Le panneau ne fournit pas encore l’agrégation sur plus
 | `src/App.tsx` | Panneau, sélection, approbation d’envoi, payload et mesures |
 | `src/Tracker.tsx`, `src/lib/webgazer.ts` | Calibration explicite, suivi local, arrêt des pistes caméra |
 | `src/Overlay.tsx` | Rectangle candidate / envoyé, sans interception de clics |
+| `src/ObservationPanel.tsx`, `electron/observation-session.mjs` | Sessions locales bornées, revue et annotations |
 | `electron/main.mjs`, `preload.cjs` | Fenêtres, permissions, IPC borné, orchestration et annulation |
 | `native/capture.swift`, `electron/capture.mjs` | ScreenCaptureKit, exclusion du processus, PNG et recadrage |
 | `electron/geometry.mjs` | Transformations capture / écran / coordonnées Holo |
@@ -178,6 +212,11 @@ Contrôles manuels du 7 novembre 2026 (Paris), **pas un benchmark comparatif** :
   **34 % de surface**. Le panneau confirme la demande appliquée, un âge du signal de 15 ms
   au choix et une préparation de 389 ms. Aucun appel Holo pour cet essai : ce pourcentage
   décrit l’aire du crop seul, pas les économies de tokens ni la réussite d’une tâche.
+- Le mode continu a conservé **15 captures en 15 secondes** (après les trois secondes
+  de préparation), en mode curseur sur une page publique de H, avec retour automatique
+  du panneau. La première image : fenêtre **Google Chrome**, crop **800 × 600**, origine
+  **14, 310**, source **1 470 × 956**, préparation **449 ms**. Référence et crop vérifiés
+  visuellement ; aucun envoi Holo. Ce contrôle valide le flux technique, pas le suivi du regard.
 
 ## Limites et dépendances
 

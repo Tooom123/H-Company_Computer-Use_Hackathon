@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, net, screen, session, systemPreferences } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, protocol, net, screen, session, systemPreferences } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import { runHolo } from './holo.mjs';
 import { boundedRect, screenPointToCapture, captureRectToDisplay, validateSettings } from './geometry.mjs';
 import { windowIdsFromMediaSources } from './window-ids.mjs';
 import { requestCameraAccess } from './camera-permission.mjs';
+import { ObservationSession, validateObservationOptions } from './observation-session.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -31,11 +32,54 @@ let operation = null;
 let shuttingDown = false;
 let displayGeneration = 0;
 let calibrationInteractive = false;
+let observationOverlay = false;
+let observationShortcutAvailable = false;
+const RECOVERY_SHORTCUT = 'CommandOrControl+Shift+Space';
 const cameraRequests = new WeakMap();
 const state = {
-  tracker: { state: 'off' }, candidate: null, sent: null, busy: null,
+  tracker: { state: 'off' }, candidate: null, sent: null, observed: null, busy: null,
   settings: { selection: 'gaze', roiWidth: 800, roiHeight: 600, includeGlobal: true, overlay: true },
 };
+const observation = new ObservationSession({
+  capture: async signal => {
+    operation = new AbortController();
+    try {
+      return await captureFrame(AbortSignal.any([signal, operation.signal]), true);
+    } finally { operation = null; }
+  },
+  onChange: status => { state.observation = status; broadcast(); },
+  onFinish: () => { setOverlayVisibility(); showPanel(); },
+});
+state.observation = { ...observation.state };
+
+function showPanel() {
+  if (shuttingDown || !panel || panel.isDestroyed()) return;
+  if (panel.isMinimized()) panel.restore();
+  panel.show(); panel.focus();
+}
+function recoverPanel() {
+  if (observation.active) void observation.stop('user');
+  else { if (state.busy === 'capture') operation?.abort(); showPanel(); }
+}
+async function captureFrame(signal, reference = false) {
+  const generation = displayGeneration;
+  const settings = { ...state.settings };
+  const selection = currentSelection(settings);
+  state.busy = 'capture'; state.sent = null;
+  broadcast();
+  try {
+    const captured = await captureObservation({
+      binary, display, settings, signal, reference,
+      excludeWindowIds: windowIdsFromMediaSources(BrowserWindow.getAllWindows().filter(window => !window.isDestroyed() && window.isVisible() && !window.isMinimized()).map(window => window.getMediaSourceId())),
+      selection,
+    });
+    signal.throwIfAborted();
+    if (generation !== displayGeneration) throw new Error('Écran modifié pendant la capture. Recommencez.');
+    frame = captured;
+    state.observed = { frameId: captured.frameId, rect: captureRectToDisplay(captured.cropRect, { width: captured.sourceWidth, height: captured.sourceHeight }, captured.screenBounds) };
+    return captured;
+  } finally { state.busy = null; updateCandidate(); }
+}
 
 function isOwnURL(url) {
   try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.host}` === origin; } catch { return false; }
@@ -72,7 +116,8 @@ function resetTracker() {
 }
 function setOverlayVisibility() {
   if (!overlay || overlay.isDestroyed()) return;
-  if (state.settings.overlay && !calibrationInteractive) overlay.showInactive(); else overlay.hide();
+  const wanted = observation.active ? observationOverlay : state.settings.overlay;
+  if (wanted && !calibrationInteractive) overlay.showInactive(); else overlay.hide();
 }
 function currentSelection(settings = state.settings, snapshot = gaze) {
   if (settings.selection === 'full') return { point: null, fallbackReason: null, gazeAgeMs: null };
@@ -110,7 +155,7 @@ ipcMain.handle('companion:status', event => {
   authorize(event);
   const captureAvailable = process.platform === 'darwin' && existsSync(binary);
   return {
-    platform: process.platform, model, models, apiKeyConfigured: Boolean(process.env.HAI_API_KEY?.trim()), captureAvailable,
+    platform: process.platform, model, models, apiKeyConfigured: Boolean(process.env.HAI_API_KEY?.trim()), captureAvailable, observationShortcutAvailable,
     captureError: captureAvailable ? undefined : 'Capture propre disponible sur macOS 14+, après npm run native (Xcode Command Line Tools).',
     display: { id: display.id, bounds: display.bounds, scaleFactor: display.scaleFactor },
   };
@@ -123,14 +168,14 @@ ipcMain.handle('companion:state', event => {
 });
 ipcMain.handle('companion:configure', (event, input) => {
   authorize(event);
-  if (state.busy) throw new Error('Attendez la fin de l’opération avant de changer le mode.');
+  if (state.busy || observation.active) throw new Error('Arrêtez l’observation ou attendez la fin de l’opération avant de changer le mode.');
   state.settings = validateSettings(input);
   setOverlayVisibility();
   updateCandidate();
 });
 ipcMain.handle('companion:start-tracker', event => {
   authorize(event);
-  if (state.busy) throw new Error('Une opération est en cours.');
+  if (state.busy || observation.active) throw new Error('Une opération est en cours.');
   resetTracker();
   calibrationInteractive = true;
   setOverlayVisibility();
@@ -145,8 +190,9 @@ ipcMain.handle('companion:start-tracker', event => {
   });
   broadcast();
 });
-ipcMain.handle('companion:stop-tracker', event => {
+ipcMain.handle('companion:stop-tracker', async event => {
   authorize(event, event.sender === tracker?.webContents ? tracker : panel);
+  if (observation.active) await observation.stop('user');
   resetTracker();
 });
 ipcMain.handle('companion:finish-calibration', event => {
@@ -192,37 +238,53 @@ ipcMain.on('companion:tracker-status', (event, status) => {
 });
 ipcMain.handle('companion:capture', async event => {
   authorize(event);
-  if (state.busy) throw new Error('Une opération est déjà en cours.');
+  if (state.busy || observation.active) throw new Error('Une opération est déjà en cours.');
   if (process.platform !== 'darwin' || !existsSync(binary)) throw new Error('Capture ScreenCaptureKit indisponible ; lancez npm run native sur Mac.');
   operation = new AbortController();
   const controller = operation;
-  const generation = displayGeneration;
   state.busy = 'capture';
   state.sent = null;
+  state.observed = null;
   frame = null;
+  panel.hide();
   broadcast();
   try {
     await delay(3000, undefined, { signal: operation.signal });
-    const settings = { ...state.settings };
-    // Freeze coordinates, validity and receipt age together before native capture.
-    // A later lost/tracking callback must not change this observation's decision.
-    const selection = currentSelection(settings);
-    const captured = await captureObservation({
-      binary, display, settings, signal: operation.signal,
-      excludeWindowIds: windowIdsFromMediaSources(BrowserWindow.getAllWindows().filter(window => !window.isDestroyed() && window.isVisible() && !window.isMinimized()).map(window => window.getMediaSourceId())),
-      selection,
-    });
-    controller.signal.throwIfAborted();
-    if (generation !== displayGeneration) throw new Error('Écran modifié pendant la capture. Recommencez.');
-    frame = captured;
-    return frame;
+    return await captureFrame(controller.signal);
   } finally {
-    operation = null; state.busy = null; updateCandidate();
+    operation = null; state.busy = null; updateCandidate(); showPanel();
   }
+});
+ipcMain.handle('companion:observation-start', (event, input) => {
+  authorize(event);
+  const options = validateObservationOptions(input);
+  if (state.busy || observation.active || calibrationInteractive) throw new Error('Terminez l’opération ou la calibration en cours.');
+  if (state.settings.selection === 'gaze' && !['tracking', 'lost'].includes(state.tracker.state)) throw new Error('Activez et calibrez le regard avant cette observation, ou choisissez Curseur.');
+  if (process.platform !== 'darwin' || !existsSync(binary)) throw new Error('Capture macOS indisponible.');
+  if (!observationShortcutAvailable) throw new Error('Le raccourci ⌘⇧Espace est déjà utilisé. Libérez-le puis relancez l’app pour pouvoir revenir au panneau.');
+  observationOverlay = options.showOverlay;
+  frame = null; state.sent = null; state.observed = null;
+  panel.hide();
+  observation.start(options);
+  setOverlayVisibility();
+});
+ipcMain.handle('companion:observation-stop', async event => { authorize(event); await observation.stop('user'); });
+ipcMain.handle('companion:observation-list', event => { authorize(event); return observation.list(); });
+ipcMain.handle('companion:observation-select', (event, id) => {
+  authorize(event);
+  if (state.busy) throw new Error('Une opération est en cours.');
+  frame = observation.select(id); state.sent = null; updateCandidate();
+  return frame;
+});
+ipcMain.handle('companion:observation-annotate', (event, input) => { authorize(event); observation.annotate(input); });
+ipcMain.handle('companion:observation-clear', event => {
+  authorize(event);
+  if (state.busy) throw new Error('Une opération est en cours.');
+  observation.clear(); frame = null; state.sent = null; state.observed = null; broadcast();
 });
 ipcMain.handle('companion:analyze', async (event, input) => {
   authorize(event);
-  if (state.busy) throw new Error('Une opération est déjà en cours.');
+  if (state.busy || observation.active) throw new Error('Une opération est déjà en cours.');
   if (!frame || input?.frameId !== frame.frameId) throw new Error('Observation expirée. Préparez une nouvelle capture.');
   if (typeof input.prompt !== 'string' || input.prompt.trim().length === 0 || input.prompt.length > 8000) throw new Error('Saisissez une consigne de 1 à 8 000 caractères.');
   if (!process.env.HAI_API_KEY?.trim()) throw new Error('Renseignez HAI_API_KEY dans app/.env puis relancez l’app.');
@@ -239,7 +301,10 @@ ipcMain.handle('companion:analyze', async (event, input) => {
     operation = null; state.busy = null; broadcast();
   }
 });
-ipcMain.handle('companion:cancel', event => { authorize(event); operation?.abort(); });
+ipcMain.handle('companion:cancel', async event => {
+  authorize(event);
+  if (observation.active) await observation.stop('user'); else operation?.abort();
+});
 
 app.whenReady().then(() => {
   protocol.handle('hcompanion', request => {
@@ -261,6 +326,11 @@ app.whenReady().then(() => {
   session.defaultSession.on('will-download', event => event.preventDefault());
   display = screen.getPrimaryDisplay();
   panel = makeWindow({ width: 1180, height: 850, minWidth: 760, minHeight: 650, title: 'H-Companion · Vision Lab', backgroundColor: '#f4f6f1' }, '');
+  observationShortcutAvailable = globalShortcut.register(RECOVERY_SHORTCUT, recoverPanel);
+  // Returning through the Dock also stops sampling: looking at the lab must not
+  // silently keep recording the software behind it.
+  panel.on('show', () => { if (observation.active) void observation.stop('panel-returned'); });
+  app.on('activate', recoverPanel);
   overlay = makeWindow({ ...display.bounds, title: 'H-Companion · Zone', transparent: true, frame: false, focusable: false, resizable: false, movable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, show: false }, '#overlay');
   overlay.setIgnoreMouseEvents(true);
   overlay.setAlwaysOnTop(true, 'floating');
@@ -268,7 +338,8 @@ app.whenReady().then(() => {
   panel.on('closed', () => { if (!shuttingDown) app.quit(); });
   const invalidateDisplay = () => {
     displayGeneration += 1;
-    operation?.abort(); resetTracker(); frame = null; state.sent = null;
+    if (observation.active) void observation.stop('display-changed');
+    operation?.abort(); resetTracker(); frame = null; state.sent = null; state.observed = null;
     display = screen.getPrimaryDisplay(); overlay?.setBounds(display.bounds);
     state.tracker = { state: 'off', message: 'Géométrie écran modifiée : relancez la calibration et capturez à nouveau.' };
     broadcast();
@@ -280,6 +351,7 @@ app.whenReady().then(() => {
   screen.on('display-removed', invalidateDisplay);
   screen.on('display-added', invalidateDisplay);
   const timer = setInterval(updateCandidate, 100);
-  app.on('before-quit', () => { shuttingDown = true; clearInterval(timer); operation?.abort(); resetTracker(); });
+  app.on('before-quit', () => { shuttingDown = true; clearInterval(timer); void observation.stop('user'); operation?.abort(); resetTracker(); });
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 });
 app.on('window-all-closed', () => app.quit());
