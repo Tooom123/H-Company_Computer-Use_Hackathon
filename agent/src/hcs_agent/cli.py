@@ -225,8 +225,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
     from .voice import IntentRouter, PushToTalk, intent_to_request
 
     registry = ProcedureRegistry()
-    vocab = sorted({p.software for p in registry.all()} | {
-        "Odoo", "CRM", "Acme Demo", "Acme", "relance", "opportunité", "activité", "pipeline", "gagnée", "To Do"})
+    # Proper nouns only: common words in the vocabulary made Gladia swap real words for them.
+    vocab = ["Acme Demo", "Acme Corp", "Odoo"]
     ov = None
     if not args.no_overlay and sys.platform == "darwin":
         from .overlay import Overlay

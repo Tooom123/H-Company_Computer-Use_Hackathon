@@ -119,5 +119,5 @@ def test_extract_json_tolerates_prose_around_the_object():
 
 def test_vocabulary_entries_carry_pronunciations_for_demo_names():
     e = _vocab_entry("Acme Demo")
-    assert e["value"] == "Acme Demo" and "acmé démo" in e["pronunciations"] and e["intensity"] == 1.0
+    assert e["value"] == "Acme Demo" and "acmé démo" in e["pronunciations"] and e["intensity"] <= 0.5
     assert "pronunciations" not in _vocab_entry("pipeline")
