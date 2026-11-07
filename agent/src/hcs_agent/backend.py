@@ -755,7 +755,8 @@ class MockBackend:
         self._located = getattr(self, "_located", 0) + 1
         if "CRM app" in description:
             return Located(False, None, "[simulated] pipeline already displayed")
-        return Located(True, (400 + 60 * self._located, 300 + 40 * self._located), "", 0.01)
+        cx, cy = 400 + 60 * self._located, 300 + 40 * self._located
+        return Located(True, (cx, cy), "", 0.01, (cx - 60, cy - 14, 120, 28))
 
     def screenshot(self, path: Path) -> Path | None:
         return None

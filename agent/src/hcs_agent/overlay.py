@@ -37,6 +37,7 @@ class Mark:
     text: str = ""
     size: tuple[float, float] = (0, 0)  # box: width/height in points; 0 = default
     to: tuple[float, float] | None = None  # arrow end
+    box: tuple[float, float, float, float] | None = None  # element bounds (x, y, w, h), top-left origin
 
 
 @dataclass
@@ -47,6 +48,7 @@ class Scene:
     marks: list[Mark] = field(default_factory=list)
     step: int | None = None
     doodle: str | None = None  # "check" | "asterisk" | "question"
+    target_box: tuple[float, float, float, float] | None = None  # bounds of the main control
 
 
 def mouse_position() -> tuple[float, float]:
@@ -166,8 +168,25 @@ def _doodle(kind, cx, cy, rnd):
         _stroke([(cx, cy - 11), (cx + 1, cy - 12)], rnd, 2.2, 0.5)
 
 
-def _frame(cx, cy, rnd, style, w=84, h=68):
-    """Frame the main control with a style picked per step so it does not look stamped."""
+def _frame(cx, cy, rnd, style, w=84, h=68, box=None):
+    """Frame the main control. With the element's bounds, the mark hugs the element (padding ~8 pt) and the
+    shape follows its proportions: wide controls get a rounded box / brackets, compact ones a loop."""
+    if box is not None:
+        bx, by, bw, bh = box
+        cx, cy = bx + bw / 2, by + bh / 2  # AppKit coords already (caller flips)
+        w, h = bw + 18, bh + 16
+        ratio = bw / max(1.0, bh)
+        if ratio > 2.2:
+            (_rounded_box if style % 2 == 0 else _bracket)(cx, cy, w, h, rnd)
+            if style == 3:
+                _highlight(cx, cy - bh / 2 - 6, bw, rnd)
+        elif ratio > 1.3:
+            (_rounded_box if style in (1, 3) else lambda *a: _circle(cx, cy, rnd, w / 2 + 6, h / 2 + 4))(cx, cy, w, h, rnd)
+        else:
+            _circle(cx, cy, rnd, max(w, h) / 2 + 6, max(w, h) / 2 + 2)
+            if style == 3:
+                _circle(cx + 2, cy - 2, rnd, max(w, h) / 2 + 2, max(w, h) / 2 + 5)
+        return
     if style == 0:
         _circle(cx, cy, rnd)
     elif style == 1:
@@ -311,8 +330,12 @@ class _SketchView(AppKit.NSView):
             tx, ty = sc.target
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
             _, _, lw, lh = _measure(label, 19, 340)
-            right = tx + 48 + lw + 40 < W
-            text_x, text_y = (tx + 48 if right else tx - 48 - lw), ty + 40
+            half_w = (sc.target_box[2] / 2 + 14) if sc.target_box else 48
+            half_h = (sc.target_box[3] / 2 + 14) if sc.target_box else 40
+            right = tx + half_w + lw + 40 < W
+            text_x, text_y = (tx + half_w if right else tx - half_w - lw), ty + half_h
+            if sc.target_box:
+                placed.append((sc.target_box[0] - 10, sc.target_box[1] - 10, sc.target_box[2] + 20, sc.target_box[3] + 20))
             main_note = _place(*_clamp(text_x, text_y, lw + 20, lh + 12, W, H), lw + 20, lh + 12, (W, H), placed) + (lw + 20, lh + 12, right)
         elif sc.text:
             _, _, lw, lh = _measure(sc.text, 19, 340)
@@ -325,14 +348,20 @@ class _SketchView(AppKit.NSView):
         # Secondary marks (their labels avoid the papers already placed).
         for m in sc.marks:
             mx, my = m.xy
+            bw, bh = (m.box[2], m.box[3]) if m.box else (0, 0)
             if m.shape == "circle":
-                _circle(mx, my, rnd, 36, 30) if (style + len(m.text)) % 2 else _rounded_box(mx, my, 76, 56, rnd)
+                if m.box:
+                    _circle(mx, my, rnd, bw / 2 + 12, bh / 2 + 10)
+                else:
+                    _circle(mx, my, rnd, 36, 30) if (style + len(m.text)) % 2 else _rounded_box(mx, my, 76, 56, rnd)
             elif m.shape == "box":
-                w, h = (m.size[0] or 160), (m.size[1] or 60)
+                w, h = (bw + 16 if m.box else (m.size[0] or 160)), (bh + 14 if m.box else (m.size[1] or 60))
                 _box(mx - w / 2, my - h / 2, w, h, rnd) if style % 2 else _bracket(mx, my, w, h, rnd)
             elif m.shape == "underline":
-                _highlight(mx, my, 140, rnd) if style % 2 else \
-                    _stroke([(mx - 60 + i * 24, my - 10 + (2 if i % 2 else -2)) for i in range(0, 6)], rnd, 1.4, 1.2)
+                width = bw + 8 if m.box else 140
+                base_y = my - (bh / 2 + 4 if m.box else 10)
+                _highlight(mx, base_y + 4, width, rnd) if style % 2 else \
+                    _stroke([(mx - width / 2 + i * (width / 5), base_y + (2 if i % 2 else -2)) for i in range(0, 6)], rnd, 1.4, 1.2)
             if m.text and ("!" in m.text or "ttention" in m.text or "Pas " in m.text):
                 _doodle("asterisk", mx - 48, my + 22, rnd)
             elif m.shape == "arrow" and m.to:
@@ -353,8 +382,9 @@ class _SketchView(AppKit.NSView):
                 _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
             if sc.target is not None:
                 tx, ty = sc.target
-                _frame(tx, ty, rnd, style)
-                _arrow((nx + (6 if right else w - 26), ny - 12), (tx + (46 if right else -46), ty + 16), rnd)
+                _frame(tx, ty, rnd, style, box=sc.target_box)
+                half_w = (sc.target_box[2] / 2 + 12) if sc.target_box else 46
+                _arrow((nx + (6 if right else w - 26), ny - 12), (tx + (half_w if right else -half_w), ty + 10), rnd)
             if sc.doodle:
                 _doodle(sc.doodle, nx + w - 4, ny + h + 6, rnd)
         # Remember how many strokes this scene has, so the next frames reveal them in sequence.
@@ -402,14 +432,21 @@ class Overlay:
     def _flip(self, xy):
         return None if xy is None else (xy[0], self._screen_h - xy[1])
 
+    def _flip_box(self, box):
+        if box is None:
+            return None
+        x, y, w, h = box
+        return (x, self._screen_h - y - h, w, h)
+
     # ------------------------------------------------------------------ API (any thread)
 
     def show_scene(self, scene: Scene) -> None:
         self._seed += 1
         flipped = Scene(
             text=scene.text[:110], target=self._flip(scene.target), why=scene.why[:160], step=scene.step,
-            marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to)) for m in scene.marks],
-            doodle=scene.doodle,
+            marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to), self._flip_box(m.box))
+                   for m in scene.marks],
+            doodle=scene.doodle, target_box=self._flip_box(scene.target_box),
         )
 
         def apply() -> None:

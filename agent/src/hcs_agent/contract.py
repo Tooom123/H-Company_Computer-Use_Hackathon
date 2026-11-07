@@ -159,6 +159,7 @@ class Annotation(BaseModel):
     text: str = ""
     pointer: tuple[int, int] | None = None
     size: tuple[int, int] | None = None
+    box: tuple[int, int, int, int] | None = Field(default=None, description="Element bounds (x, y, w, h) in screen points.")
 
 
 class GuidanceStep(BaseModel):

@@ -459,9 +459,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     ov.show_scene(Scene(
-                        text=g.instruction, target=g.pointer, why=_short(why, 90), step=g.index,
+                        text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
                         doodle="question" if "je ne le vois" in g.instruction else None,
-                        marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0))
+                        marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
+                                    None, a.box)
                                for a in g.annotations if a.pointer]))
             if auto:
                 time.sleep(0.3)
