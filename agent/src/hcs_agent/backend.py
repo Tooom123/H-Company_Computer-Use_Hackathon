@@ -461,15 +461,24 @@ class HBackend:
         observed = {k: bool(answer.checks.get(k, False)) for k in checks}
         return VerifyResult(sid, status, observed, answer.observed, cost_usd=_total_cost(events))
 
-    def locate(self, description: str, context: str = "") -> Located | None:
+    def _grounding(self):
         if not hasattr(self, "_grounder"):
             from .grounding import Grounder
 
             self._grounder = Grounder()
+        return self._grounder
+
+    def locate(self, description: str, context: str = "") -> Located | None:
         try:
-            return self._grounder.locate(description, context)
+            return self._grounding().locate(description, context)
         except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
             return Located(False, None, f"grounding error: {exc}")
+
+    def screen_matches(self, expected: str) -> tuple[bool, str]:
+        try:
+            return self._grounding().screen_matches(expected)
+        except Exception as exc:  # noqa: BLE001
+            return True, f"screen check unavailable: {exc}"  # do not block the guide on a check failure
 
     def screenshot(self, path: Path) -> Path | None:
         try:
@@ -699,6 +708,9 @@ class MockBackend:
         return VerifyResult("sim_verify_" + bound.request.session_id, "simulated", checks,
                             "[simulated] " + ("all checks visible" if satisfied else "expected element not found"),
                             cost_usd=0.0)
+
+    def screen_matches(self, expected: str) -> tuple[bool, str]:
+        return True, "[simulated] expected screen displayed"
 
     def locate(self, description: str, context: str = "") -> Located | None:
         time.sleep(self.step_delay_s)

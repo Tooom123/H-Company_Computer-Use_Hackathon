@@ -47,6 +47,16 @@ agent_instructions: |
      close it, and report the task as blocked with the exact message text. Do not retry or work around.
   4. If no error appears, confirm the "Won" ribbon is visible on the opportunity.
 
+expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
+recovery_steps:
+  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
+    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
+  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
+    element: "the apps grid icon at the far top-left of the Odoo top bar"
+    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+    optional: true
+
 postcondition:
   description: >-
     After reopening the opportunity "{opportunity}", it displays the "Won" ribbon and its stage is "Won".

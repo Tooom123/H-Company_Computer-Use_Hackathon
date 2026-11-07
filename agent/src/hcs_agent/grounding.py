@@ -18,16 +18,22 @@ import httpx
 H_MODELS_URL = os.environ.get("HAI_MODELS_BASE_URL", "https://api.hcompany.ai/v1")
 GROUNDING_WIDTH = 1024
 
-_TOOLS = [
-    {"type": "function", "function": {
-        "name": "point", "description": "Point at the requested control.",
-        "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
-                       "required": ["x", "y"]}}},
-    {"type": "function", "function": {
-        "name": "not_found", "description": "The requested control is not visible on this screen.",
-        "parameters": {"type": "object", "properties": {"what_is_visible": {"type": "string"}},
-                       "required": ["what_is_visible"]}}},
-]
+_POINT = {"type": "function", "function": {
+    "name": "point", "description": "Point at the requested control.",
+    "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
+                   "required": ["x", "y"]}}}
+_NOT_FOUND = {"type": "function", "function": {
+    "name": "not_found", "description": "The requested control is not visible on this screen.",
+    "parameters": {"type": "object", "properties": {"what_is_visible": {"type": "string"}},
+                   "required": ["what_is_visible"]}}}
+_TOOLS = [_POINT, _NOT_FOUND]
+_CHECK = {"type": "function", "function": {
+    "name": "screen_check",
+    "description": "Report whether the expected screen is displayed.",
+    "parameters": {"type": "object", "properties": {
+        "matches": {"type": "boolean", "description": "True if the described screen is what is displayed."},
+        "what_is_visible": {"type": "string", "description": "Which app and which page is displayed, in a few words."}},
+        "required": ["matches", "what_is_visible"]}}}
 
 
 @dataclass
@@ -66,19 +72,14 @@ class Grounder:
         self.model = model or os.environ.get("HCS_GROUNDING_MODEL", "holo4-35b-a3b")
         self._http = httpx.Client(timeout=30, headers={"Authorization": f"Bearer {self.api_key}"})
 
-    def locate(self, description: str, context: str = "") -> Located:
-        """Find `description` on the current screen. `context` names the app for disambiguation."""
-        t0 = time.time()
-        img_b64, (iw, ih), (sw, sh) = capture()
-        prompt = (f"{context + ' ' if context else ''}Point at: {description}. "
-                  "If it is not visible on this screen, call not_found and describe what is visible instead.")
+    def _call(self, img_b64: str, prompt: str, tools: list) -> tuple[dict | None, dict]:
         body = {
             "model": self.model,
             "messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
                 {"type": "text", "text": prompt},
             ]}],
-            "tools": _TOOLS,
+            "tools": tools,
             "tool_choice": "required",
             "temperature": 0,
             "max_tokens": 200,
@@ -88,16 +89,33 @@ class Grounder:
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
-        latency = time.time() - t0
         if not calls:
-            return Located(False, None, msg.get("content") or "", latency)
+            return None, {}
         import json
 
         fn = calls[0]["function"]
-        args = json.loads(fn.get("arguments") or "{}")
-        if fn["name"] == "point" and "x" in args and "y" in args:
+        return fn, json.loads(fn.get("arguments") or "{}")
+
+    def locate(self, description: str, context: str = "", strict: bool = False) -> Located:
+        """Find `description` on the current screen.
+
+        Default is "always point": Holo gives up far too easily when offered a not_found escape, so we only
+        offer it with `strict=True` (used to confirm we are on the expected screen).
+        """
+        t0 = time.time()
+        img_b64, (iw, ih), (sw, sh) = capture()
+        prompt = f"{context + ' ' if context else ''}Point at: {description}."
+        if strict:
+            prompt += " If it is really not on this screen, call not_found and describe what is visible instead."
+        fn, args = self._call(img_b64, prompt, _TOOLS if strict else [_POINT])
+        latency = time.time() - t0
+        if fn and fn["name"] == "point" and "x" in args and "y" in args:
             # Holo returns coordinates normalised to [0, 1000] on the image it was sent.
-            x = int(int(args["x"]) / 1000 * sw)
-            y = int(int(args["y"]) / 1000 * sh)
-            return Located(True, (x, y), "", latency)
+            return Located(True, (int(int(args["x"]) / 1000 * sw), int(int(args["y"]) / 1000 * sh)), "", latency)
         return Located(False, None, args.get("what_is_visible", ""), latency)
+
+    def screen_matches(self, expected: str) -> tuple[bool, str]:
+        """Is the expected screen displayed? Returns (matches, what is visible)."""
+        img_b64, _, _ = capture(768)
+        fn, args = self._call(img_b64, f"Expected screen: {expected}. Is this what is displayed?", [_CHECK])
+        return bool(args.get("matches")), args.get("what_is_visible", "")

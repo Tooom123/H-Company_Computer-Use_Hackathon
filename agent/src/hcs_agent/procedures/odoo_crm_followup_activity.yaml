@@ -92,6 +92,16 @@ guide_steps:
     element: "the Schedule button at the bottom of the Schedule Activity dialog"
     why: "Ça planifie l'activité ; Mark as Done la fermerait tout de suite."
 
+expected_screen: "the Odoo CRM pipeline (kanban board with New / Qualified / Proposition / Won columns) in a browser"
+recovery_steps:
+  - instruction: "Clique sur CRM en haut à gauche pour revenir au pipeline"
+    element: "the CRM app name / breadcrumb at the top-left of the Odoo top bar"
+    why: "On repart toujours du pipeline : c'est l'écran de base de l'app."
+  - instruction: "Clique sur le menu des applications (icône en grille) puis CRM"
+    element: "the apps grid icon at the far top-left of the Odoo top bar"
+    why: "Si tu es dans une autre app Odoo, le menu ramène à CRM."
+    optional: true
+
 postcondition:
   description: >-
     After reopening the opportunity "{opportunity}", an activity with summary "{activity_title}",

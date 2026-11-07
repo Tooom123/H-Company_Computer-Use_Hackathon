@@ -279,6 +279,8 @@ class Intervention:
         i = 0
         pre_loc = None  # location of script[i] found while verifying the previous step
         misses = 0
+        if not self._ensure_screen(bound):
+            return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
         while i < len(script):
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -306,9 +308,21 @@ class Intervention:
                     i += 1  # already past this step
                     pre_loc = n
                     continue
-                hint = " (je ne le vois pas encore)" if misses == 0 else " — je ne le vois toujours pas ; vérifie l'écran"
-                gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=step.why,
-                                  kind=step.action, instruction=step.instruction + hint)
+                misses += 1
+                if misses >= 2:
+                    # Lost: bring the user back to the base screen, then restart the script from the top.
+                    if not self._recover(bound):
+                        return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                    i, misses, pre_loc = 0, 0, None
+                    continue
+                why = step.why
+                doc = self.backend.knowledge.ask(f"In {bound.request.software}, where is: {step.element}?",
+                                                 software=bound.request.software, depth="fast")
+                if doc and doc.answer:
+                    why = (doc.answer.strip().split("\n")[0])[:160]
+                    self._note("agent_lookup", doc)
+                gs = GuidanceStep(index=len(self.guidance) + 1, pointer=None, where=step.element, why=why,
+                                  kind=step.action, instruction=step.instruction + " (je ne le vois pas encore)")
             else:
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, kind=step.action, last=False,
@@ -352,6 +366,51 @@ class Intervention:
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
+
+    def _ensure_screen(self, bound: BoundProcedure, attempts: int = 40) -> bool:
+        """Before guiding: wait until the expected screen is displayed, asking the user to show it if needed."""
+        expected = bound.expected_screen
+        check = getattr(self.backend, "screen_matches", None)
+        if not expected or check is None:
+            return True
+        shown = False
+        for _ in range(attempts):
+            if self._stop.is_set():
+                return False
+            ok, visible = check(expected)
+            self._trace(f"screen check: {'ok' if ok else 'not yet'} ({visible[:60]})")
+            if ok:
+                if shown:
+                    self._set_state(State.running, "Screen found.")
+                return True
+            if not shown:
+                gs = GuidanceStep(index=len(self.guidance) + 1, kind="wait", pointer=None,
+                                  instruction=f"Affiche {bound.request.software} (pipeline CRM) à l'écran",
+                                  why=f"Je vois : {visible[:80]}")
+                self.guidance.append(gs)
+                self._set_state(State.awaiting_user, "Show the software first.")
+                self._emit("guidance", gs.instruction, step=gs.model_dump())
+                shown = True
+            time.sleep(1.5)
+        return False
+
+    def _recover(self, bound: BoundProcedure) -> bool:
+        """Guide the user back to the base screen with the procedure's recovery steps."""
+        self._trace("lost: guiding back to the base screen")
+        for step in bound.recovery_script():
+            loc = self.backend.locate(step.element, "This is Odoo in a browser on macOS.") if step.element else None
+            if loc is None or not loc.found:
+                if step.optional:
+                    continue
+            gs = GuidanceStep(index=len(self.guidance) + 1, instruction=step.instruction, why=step.why,
+                              where=step.element or "", pointer=loc.screen_xy if loc and loc.found else None,
+                              kind=step.action)
+            if self._on_guidance(gs) is None:
+                return False
+            check = getattr(self.backend, "screen_matches", None)
+            if check and check(bound.expected_screen)[0]:
+                return True
+        return self._ensure_screen(bound, attempts=10)
 
     def _trace(self, summary: str) -> None:
         self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))

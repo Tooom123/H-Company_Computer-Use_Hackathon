@@ -299,6 +299,8 @@ class _InputWatcher:
 
     def acted(self, kind: str, settle_s: float = 0.5) -> bool:
         now = time.time()
+        if kind == "wait":  # the agent itself decides when to move on (screen polling)
+            return False
         if kind == "info":  # read it; any click or Enter moves on, or 9 s pass
             return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or now - self.armed_at > 9
         if kind == "type":
@@ -373,7 +375,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                       end="", flush=True)
                 prompted = True
             g = it.guidance[-1]
-            if inputs.acted(g.kind) or (g.kind == "click" and watcher.changed_and_settled()):
+            if g.kind != "wait" and (inputs.acted(g.kind) or (g.kind == "click" and watcher.changed_and_settled())):
                 print(f"\n  {'input' if inputs.acted(g.kind) else 'screen'} detected, next…", flush=True)
                 advance()
                 return

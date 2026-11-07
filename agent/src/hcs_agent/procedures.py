@@ -88,6 +88,9 @@ class Procedure(BaseModel):
     forbidden_actions: list[str]
     agent_instructions: str
     guide_steps: list[GuideStepSpec] = Field(default_factory=list)
+    expected_screen: str = Field(default="", description="What must be displayed before step 1, for the screen check.")
+    recovery_steps: list[GuideStepSpec] = Field(
+        default_factory=list, description="How to get back to the base screen when the script is lost.")
     postcondition: Postcondition
     escalation: EscalationRule
 
@@ -170,6 +173,14 @@ class BoundProcedure(BaseModel):
     @property
     def guide(self) -> bool:
         return self.request.mode is Mode.guide
+
+    def recovery_script(self) -> list[GuideStepSpec]:
+        return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element) if x.element else None,
+                              why=self._r(x.why), optional=x.optional, kind=x.kind) for x in self.procedure.recovery_steps]
+
+    @property
+    def expected_screen(self) -> str:
+        return self._r(self.procedure.expected_screen)
 
     def guide_script(self) -> list[GuideStepSpec]:
         return [GuideStepSpec(instruction=self._r(x.instruction), element=self._r(x.element) if x.element else None,
