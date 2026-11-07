@@ -21,6 +21,13 @@ vidéo à fréquence fixe. L'interface se rafraîchit toutes les deux secondes.
 Les anciennes traces Odoo apparaissent dans la même console ; leurs images
 ne sont pas publiées automatiquement en l'absence d'un manifeste autorisé.
 
+Le portail reprend la direction visuelle de la homepage de Tom sur `main`
+(`cbad15f`) : papier blanc, noir et gris, annotations rouges, boutons noirs et
+typographies Plus Jakarta Sans, Fira Code et Caveat. Les trois polices sont
+servies localement avec leurs licences OFL, derrière l'authentification de la
+console ; aucune requête vers un CDN de polices n'est nécessaire. Configuration,
+Documentation, Sessions et Tour de contrôle partagent le même thème.
+
 ## Démarrage
 
 Installer les dépendances Python du pilote décrites dans `pilot/README.md`,
@@ -72,6 +79,9 @@ Un coffre contient des identifiants ; un profil contient l'état d'un navigateur
 connecté. La connexion au tableau de bord H dans Chrome **ne connecte pas** le
 navigateur cloud de l'agent. Se déconnecter puis se reconnecter dans Chrome
 ne répare donc pas le profil cloud. Ne pas importer son profil Chrome personnel.
+Le compte de démonstration utilise uniquement Google/SSO, confirmé par son
+propriétaire : la tentative de préparer un fichier de mot de passe H est
+abandonnée, sans création de coffre ni transmission d'identifiants.
 
 **Correction après observation réelle du 8 novembre :** les deux liens
 `agent_view_url` préparés ouvrent ici le suivi/replay et une réponse « Ready for

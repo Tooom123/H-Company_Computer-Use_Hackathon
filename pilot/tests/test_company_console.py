@@ -73,7 +73,7 @@ def episode(root, sid, *, state='resolved', quarantined=False, simulated=False,
     return directory
 
 
-@pytest.mark.parametrize('path', ['/company', '/company/', '/company/documents', '/company/sessions', '/company/sessions/sess_missing'])
+@pytest.mark.parametrize('path', ['/company', '/company/', '/company/documents', '/company/sessions', '/company/sessions/sess_missing', '/company/assets/fonts/PlusJakartaSans.ttf'])
 def test_every_route_requires_basic_auth(tmp_path, path):
     client, _ = factory(tmp_path)
     assert client.get(path, auth=None).status_code == 401
@@ -88,6 +88,16 @@ def test_cloud_string_declared_report_is_compatible(tmp_path):
     client, _ = factory(tmp_path)
     response = client.get('/company/sessions/sess_cloud')
     assert response.status_code == 200 and 'Cloud final answer' in response.text
+
+
+def test_company_pages_share_local_brand_fonts(tmp_path):
+    client, _ = factory(tmp_path)
+    page = client.get('/company/documents')
+    assert 'Plus Jakarta Sans' in page.text and 'fonts.googleapis.com' not in page.text
+    assert "font-src 'self'" in page.headers['content-security-policy']
+    assert client.get('/company/assets/fonts/PlusJakartaSans.ttf').status_code == 200
+    assert client.get('/company/assets/fonts/README.md').status_code == 404
+    assert 'href="/company/documents" aria-current="page"' in page.text
 
 
 @pytest.mark.parametrize('flag', [{'scope_violation': True}, {'quarantined': True}, {'phase': 'quarantine'}])

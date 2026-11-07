@@ -25,6 +25,8 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
+from pilot.portal_theme import mount_portal_fonts, portal_header, portal_styles
+
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_FORM_BYTES = MAX_DOCUMENT_BYTES + 16384
 SAFE_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$')
@@ -186,6 +188,7 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
             raise HTTPException(403, 'Origine du formulaire refusée.')
 
     router.dependencies.append(Depends(authenticated))
+    mount_portal_fonts(router)
 
     def valid_csrf(value: str) -> bool:
         if not isinstance(value, str) or len(value) > 200:
@@ -214,18 +217,18 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
     def page(request: Request, title: str, content: str, *, status_code=200):
         token = csrf(request)
         content = content.replace('<!--CSRF-->', f'<input type="hidden" name="csrf" value="{_e(token)}">')
-        live_link = '<a href="/company/live">Tour de contrôle</a>' if config.get('control_tower_enabled') else ''
         if config.get('simulated') is True:
             content = '<p class="badge">Mode simulé · aucun résultat réel de Holo</p>' + content
-        response = HTMLResponse('''<!doctype html><html lang="fr"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>''' + _e(title) + ''' · H-Companion</title>
-<style>*{box-sizing:border-box}body{margin:0;background:#f5f8f5;color:#18332e;font:16px system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:32px 22px}header{display:flex;gap:24px;align-items:center;flex-wrap:wrap}nav{display:flex;gap:18px;flex-wrap:wrap}a{color:#087b64;overflow-wrap:anywhere}h1{margin-top:36px}h2{font-size:21px}.card{background:white;border:1px solid #d7e3dc;border-radius:12px;padding:22px;margin:18px 0}.muted{color:#536b62}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}.metric strong{display:block;font-size:30px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #e0e8e2}input,textarea,button{max-width:100%;font:inherit;padding:10px;border-radius:6px;border:1px solid #8da69c}textarea{width:95%;min-height:90px}button{background:#176b57;color:white;cursor:pointer}label{display:block;margin:12px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f5f1;padding:16px}code{overflow-wrap:anywhere}.warning{border-left:5px solid #b97316}.badge{display:inline-block;padding:3px 9px;border-radius:20px;background:#e4eee7}dl{display:grid;grid-template-columns:minmax(130px,220px) 1fr;gap:14px}dd{margin:0;overflow-wrap:anywhere}@media(max-width:600px){dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:14px}.card{padding:16px}main{padding:24px 16px}}</style>
-<main><header><strong>H-Companion · Entreprise</strong><nav><a href="/company">Configuration</a><a href="/company/documents">Documentation</a><a href="/company/sessions">Sessions et retours</a>''' + live_link + '''</nav></header><h1>''' + _e(title) + '</h1>' + content +
-            '<p class="muted">Console privée · une entreprise · aucun contrôle du bureau depuis ces pages.</p></main></html>', status_code=status_code)
+        response = HTMLResponse('<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1"><title>' + _e(title) + ' · H-Companion</title>'
+            '<style>' + portal_styles('/company/assets/fonts') + CONSOLE_CSS + '</style></head><body><main>'
+            + portal_header(request.url.path.rstrip('/') or '/company', live=bool(config.get('control_tower_enabled')))
+            + '<div class="page-intro"><p class="eyebrow">Support / espace entreprise</p><h1>' + _e(title) + '</h1></div>'
+            + content + '<p class="page-footer">Console privée · une entreprise · aucun contrôle du bureau depuis ces pages.</p></main></body></html>', status_code=status_code)
         response.set_cookie(COOKIE, token, max_age=3600, httponly=True, secure=request.url.scheme == 'https', samesite='strict', path='/company')
         response.headers.update({'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
                                  'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY',
-                                 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
+                                 'Content-Security-Policy': "default-src 'none'; font-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
         return response
 
     @router.get('', response_class=HTMLResponse)
@@ -368,3 +371,6 @@ def mount_company_console(app, *, private_root: Path, knowledge, username: str,
 
     app.include_router(router)
     return router
+
+
+CONSOLE_CSS = 'main{max-width:1240px}.card{background:var(--grey-100);border:1px solid var(--grey-200);border-radius:16px;padding:24px;margin:18px 0}.card p{font-size:13px}.card h2{font-size:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}.metric strong{display:block;font-size:30px;letter-spacing:-.04em;margin-top:8px}.metric{font-size:12px;color:var(--grey-600)}textarea{width:100%;min-height:100px;background:var(--white)}label{display:block;margin:14px 0;font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--grey-800);color:var(--grey-200);padding:18px;border-radius:12px;font-size:12px}.warning{border-left:3px solid var(--red)}dl{display:grid;grid-template-columns:minmax(130px,220px) minmax(0,1fr);gap:16px;font-size:13px}dt{color:var(--grey-500);font-size:11px}dd{margin:0;overflow-wrap:anywhere}.scroll table{background:var(--white);border-radius:10px}.scroll table tbody tr:hover{background:var(--grey-100)}input[type=file]{background:var(--white);font-size:12px}input[type=file]::file-selector-button{background:var(--grey-200);color:var(--grey-750);border:0;border-radius:999px;padding:7px 12px;margin-right:10px;font:inherit}form button{font-size:12px;padding:11px 18px}form input[type=text]{width:min(600px,100%)}.page-footer{margin-top:28px}@media(max-width:600px){dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:14px}.card{padding:17px}th,td{padding:10px;font-size:11px}}\n'

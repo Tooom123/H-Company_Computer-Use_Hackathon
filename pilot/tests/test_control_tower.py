@@ -48,7 +48,7 @@ def client(roots):
     return result
 
 
-@pytest.mark.parametrize('route', ['', '/data', '/sessions/cloud/sess_live', '/frames/cloud/sess_live/000001'])
+@pytest.mark.parametrize('route', ['', '/data', '/sessions/cloud/sess_live', '/frames/cloud/sess_live/000001', '/assets/fonts/PlusJakartaSans.ttf'])
 def test_all_routes_require_company_auth(tmp_path, route):
     folder = episode(tmp_path)
     frame(folder)
@@ -64,6 +64,20 @@ def test_all_routes_require_company_auth(tmp_path, route):
 def test_browser_origin_and_host_are_checked(tmp_path, headers):
     c = client({'cloud': tmp_path})
     assert c.get('/company/live/data', headers=headers).status_code == 403
+
+
+def test_brand_fonts_are_local_allowlisted_and_same_origin(tmp_path):
+    c = client({'cloud': tmp_path})
+    page = c.get('/company/live')
+    assert "font-src 'self'" in page.headers['content-security-policy']
+    assert 'fonts.googleapis.com' not in page.text and 'fonts.gstatic.com' not in page.text
+    for name in ['PlusJakartaSans.ttf', 'FiraCode.ttf', 'Caveat.ttf']:
+        result = c.get('/company/live/assets/fonts/' + name)
+        assert result.status_code == 200 and result.content[:4] == b'\x00\x01\x00\x00'
+        assert result.headers['content-type'] == 'font/ttf'
+        assert result.headers['cross-origin-resource-policy'] == 'same-origin'
+    assert c.get('/company/live/assets/fonts/README.md').status_code == 404
+    assert c.get('/company/live/assets/fonts/..%2Fepisode.json').status_code == 404
 
 
 def test_live_metadata_and_image_are_bounded_and_do_not_expose_resource_secrets(tmp_path):
