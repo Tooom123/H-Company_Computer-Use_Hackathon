@@ -7,6 +7,51 @@ One line per run that actually drove H on the Mac. Simulated runs do not belong 
 | 2026-11-07 | Edouard / coding agent | Sonde visuelle Holo3.1 sur une image fictive : 6 bouteilles commandées, 4 reçues | 2 468 ms (requête) | verified : réponse « 2 bouteilles », aucune action desktop | Aucune | 544 tokens entrée, 10 sortie ; test API uniquement, pas une tâche métier complète |
 | 2026-11-07 | Edouard / coding agent | Même image fictive, holo4-27b | 3 174 ms (requête) | verified : réponse « 2 bouteilles », aucune action desktop | Aucune | 544 tokens entrée, 10 sortie ; un seul appel, pas un benchmark |
 | 2026-11-07 | Edouard / coding agent | Même image fictive, holo4-35b-a3b | 2 386 ms (requête) | verified : réponse « 2 bouteilles », aucune action desktop | Aucune | 544 tokens entrée, 15 sortie ; un seul appel, pas un benchmark |
+| 2026-11-07, 20:15 Europe/Paris | Edouard / coding agent | Odoo 01, lecture prix/stock `HACK-GING-033`, moteur Matteo `185ab70`, holo4-35b-a3b | 43,79 s approbation → fin ; arrêt effectif 3,32 s après Ctrl+C | stopped : fenêtres hors scénario au premier plan, aucune lecture métier validée | Interruption par Codex ; remise au premier plan à corriger avant nouvel essai | 1 session H, 7 étapes déclarées par H ; 36 événements et 8 images référencées archivés en privé. Trace exclue de l’entraînement. |
+| 2026-11-07, 20:19 Europe/Paris | Edouard / coding agent | Même lecture, Odoo isolé en plein écran | 38,36 s approbation → fin | escalated : acteur annonce correctement 10 EUR / 10 unités, mais laisse Inventaire ouvert ; prix absent de l’écran final | Aucune pendant le passage ; consigne de fin corrigée après | 2 sessions H (acteur + vérificateur), 35 événements, 6 images référencées ; export complet. |
+| 2026-11-07, 20:21 Europe/Paris | Edouard / coding agent | Même lecture, fin demandée sur Informations générales | 37,48 s approbation → fin | escalated : prix et quantité visibles, mais le vérificateur refuse « Quantité disponible » comme stock physique | Aucune pendant le passage ; critère de stock précisé après | 2 sessions H, 31 événements, 4 images référencées ; export complet. Faux négatif probable du vérificateur, verdict original conservé. |
+| 2026-11-07, 20:23 Europe/Paris | Edouard / coding agent | Même lecture, consigne de fin et libellé du stock précisés | 26,40 s approbation → fin | verified : état resolved, 4/4 contrôles ; prix 10 EUR, Quantité disponible 10, bonne société et référence | Aucune pendant ce passage ; revue indépendante finale par Codex | 2 sessions H, 27 événements, 3 images référencées ; export complet ; essai de développement après corrections, pas un holdout. |
+
+Passage interrompu de 20:15 : `usage_per_model` renvoyé par H = 81 012 tokens
+d’entrée, 42 240 en cache, 2 098 de sortie, 1 514 de raisonnement. Conserver ces
+champs séparés : ce ne sont ni des tokens image isolés ni un coût facturé calculé.
+L’arrêt a été demandé avant achèvement de la tâche ; les étapes en vol ne sont pas
+nécessairement bloquées immédiatement. Le rapport indique `declared.outcome=not_run`
+malgré les actions visibles dans les événements : **ce champ ne suffit pas à
+déterminer si le moteur a agi**. Aucun postcontrôle métier n’a été exécuté par H.
+
+### Lecture Odoo 01 validée après deux corrections de procédure
+
+La première correction demande à l’acteur de laisser **Informations générales**
+ouvert pour que prix et stock restent simultanément vérifiables. La seconde nomme
+le champ de l’interface : **Quantité disponible / Disponible**, distinct de
+**Prévu(e)**. La vue officielle Odoo 20 affiche `qty_available`, défini comme
+`Quantity On Hand` : [vue produit](https://github.com/odoo/odoo/blob/20.0/addons/stock/views/product_views.xml#L166),
+[définition du champ](https://github.com/odoo/odoo/blob/20.0/addons/stock/models/product.py#L794).
+La lecture concerne le stock enregistré dans Odoo, pas un comptage physique indépendant.
+Les valeurs attendues restent exclusivement dans le vérificateur, pas dans les
+instructions de l’acteur. Les rapports précédents n’ont pas été réécrits.
+
+À 20:23, le vérificateur renvoie quatre booléens vrais. Codex a ensuite relu
+indépendamment l’arbre d’accessibilité du Mac : société fictive, référence
+`HACK-GING-033`, Informations générales, prix 10,00 EUR, Quantité disponible 10,00.
+L’image finale archivée a également été relue. Aucun changement métier demandé ;
+la trace réussie contient la navigation vers la fiche puis une réponse et une
+vérification. Le retour utilisateur est recueilli séparément.
+
+| Usage H du passage réussi | Acteur | Vérificateur | Total |
+| --- | ---: | ---: | ---: |
+| Tokens d’entrée | 19 296 | 8 553 | 27 849 |
+| Tokens en cache, champ distinct | 8 448 | 3 168 | 11 616 |
+| Tokens de sortie | 777 | 283 | 1 060 |
+| Tokens de raisonnement, champ distinct | 369 | 155 | 524 |
+| Étapes déclarées par H | 2 | 1 | 3 |
+
+Ce passage utilise le **desktop plein écran via Agents API**, sans les crops du
+Vision Lab et sans RAG. Les 26,40 s incluent acteur et vérification, pas l’export
+ultérieur. Ces totaux d’usage ne prouvent aucune économie et ne constituent pas
+un calcul de facturation. Ces essais répétés ont servi à corriger le protocole :
+les garder dans le lot de développement, jamais dans l’évaluation tenue à l’écart.
 
 ## Contrôles desktop locaux — sans appel H
 
@@ -101,3 +146,7 @@ Accessibilité manquante pour le processus Python. Le rapport privé porte
 aucune vérification et **aucun `h_session_id`**. Il s’agit d’un échec de préparation,
 pas d’une tâche exécutée par Holo ni d’une trace d’entraînement. Reprendre seulement
 après activation autorisée de la permission et lancement d’un nouveau processus.
+
+La permission Accessibilité de l’application parente ChatGPT a ensuite été activée
+avec l’accord d’Edouard et sa validation Touch ID. Le processus suivant a passé le
+précontrôle et atteint l’approbation du plan (voir passage réel interrompu ci-dessus).

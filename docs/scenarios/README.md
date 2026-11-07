@@ -7,9 +7,13 @@ Le dernier essai humain Vision Lab est terminé : 18/21 crops évaluables contie
 la cible entière, 2/30 replis, 40 % de surface détaillée moyenne conservée. Voir
 [les mesures et leurs limites](../test-log.md#essai-humain-cinq-zones--dernière-capture-à-195927).
 Ces chiffres ne mesurent pas encore les tokens ou la réussite d’une tâche Holo.
-Le premier lancement Odoo 01 a ensuite été arrêté au précontrôle macOS : permission
-Accessibilité manquante pour Python. Aucun appel H et aucune action métier ; le
-premier épisode réel et son export restent à valider.
+Le pilote réel **Odoo 01 est validé** : 10 EUR / 10 unités, quatre contrôles vrais,
+26,40 s approbation → fin, puis revue indépendante. L’archive privée contient les
+deux sessions H, 27 événements et 3 images référencées. Un passage interrompu et
+deux escalades précédents sont conservés : fenêtre initiale hors scénario, prix
+masqué à la fin, puis ambiguïté du vérificateur sur « Quantité disponible ».
+Le YAML précise maintenant l’onglet final et le libellé exact du champ de stock.
+Ces essais constituent du développement, pas un benchmark tenu à l’écart.
 
 ## Ordre de passage
 

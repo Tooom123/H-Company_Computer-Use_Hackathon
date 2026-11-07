@@ -55,7 +55,7 @@ transformation des clics n’est pas une intégration de computer-use fonctionne
 
 ## 3. Premier passage métier avec Matteo
 
-Le remote `matteo` a été inspecté à `8bba047`. Son moteur propose déjà une API locale,
+Le remote `matteo` a été inspecté jusqu’à `185ab70`. Son moteur propose déjà une API locale,
 approbation, arrêt, modes `act` / `guide`, vérification distincte et feedback final.
 Ses procédures présentes ciblent le CRM Odoo 19. Notre instance dédiée est Odoo 20
 avec Inventaire / Achats / Ventes : ne pas lancer une procédure CRM par défaut.
@@ -67,9 +67,12 @@ au chargeur de Matteo. Son chargement, son interpolation et ses quatre vérifica
 ont été validés offline contre les vrais modules `contract.py` et `procedures.py`
 de `8bba047` (Python 3.13.7, Pydantic 2.10.3, PyYAML 6.0.3). Les valeurs attendues
 sont présentes dans la vérification, absentes des instructions de l’acteur, du guide
-et du plan. Le SDK `hai_agents` n’étant pas installé dans cet environnement de
-validation, le cycle HTTP/mock complet reste à exécuter sur l’environnement de
-Matteo avant le passage réel. La procédure n’a pas encore piloté Odoo avec Holo.
+et du plan. L’intégration temporaire à `185ab70` avec SDK 1.4.3 a ensuite passé les
+tests offline et le cycle HTTP simulé. Le premier parcours réel est désormais
+validé en 26,40 s après deux corrections du YAML (onglet final et libellé du stock),
+avec quatre contrôles vrais et revue indépendante. L’archive privée contient
+action et vérification, 27 événements et 3 images référencées. Les essais de
+développement précédents restent conservés dans [le journal](test-log.md).
 
 Deuxième parcours, après réussite du premier : achat 6 × 4 € = 24 €, réception de
 4, reliquat de 2, réception finale. Les postconditions indépendantes sont stock

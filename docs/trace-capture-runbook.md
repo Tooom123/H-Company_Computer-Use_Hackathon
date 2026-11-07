@@ -138,8 +138,18 @@ Le feedback H de session est binaire ; ne pas convertir automatiquement `partial
 ou `unknown` en succès. Le feedback `useful` de Matteo et le consentement de partage
 au support ne remplacent ni le résultat métier ni l’accord de réutilisation pour entraînement.
 
-Validation de l’exporteur : `python3 scripts/test_trace_export_h.py` — neuf tests
+Validation de l’exporteur : `python3 scripts/test_trace_export_h.py` — onze tests
 offline couvrent deux pages, arguments longs, images, usage, données manquantes,
 troncature amont, pagination instable, protection de la clé sur redirection, chemins
-et distinction feedback utilisateur/vérification. Aucun export réel H n’est encore
-attesté par ces tests.
+et distinction feedback utilisateur/vérification. Les ressources sont acceptées sur
+les routes v2 et historiques v1, uniquement pour la même session et le même hôte H.
+
+Premier contrôle réel le 7 novembre 2026 : un passage Odoo interrompu a fourni
+36 événements et 8 images référencées, archivés sans anomalie après correction
+de l’exporteur. Les événements v2 exposaient des images sous
+`/api/v1/trajectories/{session_id}/resources/...`. L’archive reste privée et exclue
+de l’entraînement car des fenêtres hors scénario ont été capturées. Ce contrôle
+valide cet export précis, pas un dataset SFT. Un passage Odoo 01 réussi a ensuite
+été archivé : 2 sessions H (action + vérification), 27 événements, 3 images
+référencées, aucun manque signalé. Les 4 contrôles et la revue indépendante
+confirment 10 EUR / 10 unités. Voir le [journal des essais](test-log.md).

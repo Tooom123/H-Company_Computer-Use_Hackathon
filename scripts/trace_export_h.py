@@ -46,7 +46,13 @@ def checked_url(url: str, session_id: str, *, api: bool = False) -> tuple[str, b
         raise ExportError('Resource path traversal is not allowed')
     if p.hostname == 'agp.eu.hcompany.ai':
         prefix = '/api/v2/sessions/' + quote(session_id, safe='')
-        allowed = p.path.startswith(prefix + '/resources/')
+        # The v2 events endpoint still returns screenshots served by the legacy
+        # trajectory resource route. Keep both restricted to this exact session.
+        resource_prefixes = (
+            prefix + '/resources/',
+            '/api/v1/trajectories/' + quote(session_id, safe='') + '/resources/',
+        )
+        allowed = p.path.startswith(resource_prefixes)
         if api:
             allowed = p.path in {prefix, prefix + '/status', prefix + '/events'}
         if not allowed:

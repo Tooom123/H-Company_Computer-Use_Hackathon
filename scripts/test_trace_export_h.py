@@ -90,12 +90,50 @@ class ExportTests(unittest.TestCase):
                 if len(self.requests) == 1:
                     raise HTTPError(req.full_url, 302, 'redirect', {'Location': 'https://bucket.s3.eu-west-1.amazonaws.com/image.png?signature=secret'}, None)
                 return BytesIO(PNG)
-        client = export.CloudClient('test-key-not-real')
-        client.opener = RedirectOpener()
-        self.assertEqual(client.read('/api/v2/sessions/s1/resources/screenshots/a.png', 's1'), PNG)
-        first, second = client.opener.requests
-        self.assertEqual(first.get_header('Authorization'), 'Bearer test-key-not-real')
-        self.assertIsNone(second.get_header('Authorization'))
+        for route in ['/api/v2/sessions/s1', '/api/v1/trajectories/s1']:
+            with self.subTest(route=route):
+                client = export.CloudClient('test-key-not-real')
+                client.opener = RedirectOpener()
+                image = {'type': 'url', 'source': route + '/resources/screenshots/s1/a.png'}
+                self.assertEqual(client.image('s1', image), PNG)
+                first, second = client.opener.requests
+                self.assertEqual(first.get_header('Authorization'), 'Bearer test-key-not-real')
+                self.assertIsNone(second.get_header('Authorization'))
+
+    def test_legacy_image_urls_from_v2_events_are_archived(self):
+        class ImageOpener:
+            def __init__(self): self.requests = []
+            def open(self, req, timeout):
+                self.requests.append(req)
+                return BytesIO(PNG)
+        client = FakeClient()
+        cloud = export.CloudClient('test-key-not-real')
+        cloud.opener = ImageOpener()
+        client.image = cloud.image
+        client.events[0]['data']['image'] = {
+            'type': 'url', 'media_type': 'image/png',
+            'source': 'https://agp.eu.hcompany.ai/api/v1/trajectories/session-123/resources/screenshots/session-123/a.png',
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = export.archive_session(client, 'session-123', root, size=2)
+            self.assertTrue(result['archive_complete'])
+            self.assertEqual(len(result['images']), 1)
+            self.assertEqual((root/'session-123'/result['images'][0]['path']).read_bytes(), PNG)
+            self.assertEqual(len(cloud.opener.requests), 1)
+
+    def test_legacy_route_is_allowed_only_for_own_session_resources(self):
+        for url in [
+            '/api/v1/trajectories/other/resources/screenshots/a.png',
+            '/api/v1/trajectories/s1-other/resources/screenshots/a.png',
+            '/api/v1/trajectories/s1/status',
+            '/api/v1/trajectories/s1/resources/screenshots/%2e%2e/a.png',
+            'https://evil.example/api/v1/trajectories/s1/resources/screenshots/a.png',
+        ]:
+            with self.subTest(url=url), self.assertRaises(export.ExportError):
+                export.checked_url(url, 's1')
+        with self.assertRaises(export.ExportError):
+            export.checked_url('/api/v1/trajectories/s1/resources/screenshots/a.png', 's1', api=True)
 
     def test_rejects_foreign_urls_traversal_and_simulated_ids(self):
         for url in ['http://agp.eu.hcompany.ai/api/v2/sessions/s1/resources/a/b',
