@@ -1,5 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { GazeHeatmap } from "./lib/gaze-heatmap.js";
 import type { LiveState, Rect } from "./lib/types";
+
+/**
+ * Gaze halo (Tom): a honeycomb of very transparent red cells around the estimated gaze, sized by the
+ * tracker's uncertainty. Desktop targets are not known here yet, so the cloud is gaze-only; pass them
+ * with heat.setTargets() once they come from accessibility / Holo element localization.
+ */
+function GazeHalo({ uncertaintyPx }: { uncertaintyPx?: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const heat = useRef<GazeHeatmap | null>(null);
+  useEffect(() => {
+    if (!canvas.current || !window.companion?.onGaze) return;
+    const h = new GazeHeatmap({ canvas: canvas.current });
+    h.setTargets([]);
+    h.start();
+    heat.current = h;
+    const off = window.companion.onGaze((sample) => h.push(sample));
+    return () => { off(); h.stop(); heat.current = null; };
+  }, []);
+  useEffect(() => { heat.current?.setUncertainty(uncertaintyPx); }, [uncertaintyPx]);
+  return <canvas ref={canvas} data-testid="gaze-halo"
+    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />;
+}
 
 function Zone({
   rect,
@@ -72,6 +95,7 @@ export default function Overlay() {
   const showCaptured = state.observation?.status === 'running' || state.settings.regionScope === 'window';
   return (
     <div className="screen-overlay" aria-hidden="true">
+      {state.tracker.state === "tracking" && <GazeHalo uncertaintyPx={state.tracker.calibrationErrorPx} />}
       {showCaptured && state.observed && (
         <Zone rect={state.observed.rect} label="DERNIÈRE CAPTURE LOCALE" sent={false} />
       )}
