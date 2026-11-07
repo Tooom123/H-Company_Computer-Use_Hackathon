@@ -23,3 +23,6 @@ runs/
 .DS_Store
 .idea/
 .vscode/
+
+# desktop app smoke captures
+desktop/smoke-*.png

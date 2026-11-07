@@ -583,11 +583,14 @@ class MagnetWidget:
         self.view.on_change = on_change
         self.window.setContentView_(self.view)
         self.window.orderFrontRegardless()
+        self.visible = True
         # Rect in top-left screen points (pynput's frame), to tell Magnet clicks apart from clicks in the app.
         screen_h = AppKit.NSScreen.screens()[0].frame().size.height
         self.rect = (18.0, screen_h - 18.0 - h, w, h)
 
     def contains(self, x: float, y: float) -> bool:
+        if not self.visible:
+            return False  # hidden (the desktop app holds the setting): a click there is a click in the app below
         rx, ry, rw, rh = self.rect
         return rx <= x <= rx + rw and ry <= y <= ry + rh
 
@@ -599,7 +602,15 @@ class MagnetWidget:
         _on_main(apply)
 
     def close(self) -> None:
+        self.hide()
+
+    def hide(self) -> None:
+        self.visible = False
         _on_main(lambda: self.window.orderOut_(None))
+
+    def show(self) -> None:
+        self.visible = True
+        _on_main(lambda: self.window.orderFrontRegardless())
 
 
 def _on_main(fn: Callable[[], None]) -> None:
