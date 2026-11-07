@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -144,6 +145,24 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool) -> None:
             it.wait(0.15)
 
 
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    """Close orphaned desktop command channels left by killed runs; they hold concurrency slots."""
+    import httpx
+    from hai_agents.client import default_api_key
+
+    base = os.environ.get("HAI_BASE_URL", "https://agp.eu.hcompany.ai").rstrip("/")
+    headers = {"Authorization": f"Bearer {default_api_key()}"}
+    with httpx.Client(headers=headers, timeout=20) as http:
+        items = http.get(f"{base}/api/v1/trajectories/", params={"size": 100}).json().get("items", [])
+        stale = [t for t in items if t.get("status") in {"pending", "running", "idle"}]
+        for t in stale:
+            code = http.delete(f"{base}/api/v1/trajectories/{t['id']}").status_code
+            print(f"closed {t['id']} ({t.get('type')}, {t.get('status')}) -> {code}")
+        quota = http.get(f"{base}/api/v2/sessions/quota").json()
+    print(f"{len(stale)} channel(s) closed; quota: {quota.get('active')}/{quota.get('limit')} active")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from .server import serve
 
@@ -184,6 +203,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--mock", action="store_true", help="Use the simulated backend (no H, no desktop control)")
     run.add_argument("--runs-dir", default="runs")
     run.set_defaults(fn=cmd_run)
+
+    sub.add_parser("cleanup", help="Close orphaned H sessions/channels that hold concurrency slots").set_defaults(fn=cmd_cleanup)
 
     srv = sub.add_parser("serve", help="Serve the local API for the Electron app")
     srv.add_argument("--host", default="127.0.0.1")
