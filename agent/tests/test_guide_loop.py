@@ -177,3 +177,16 @@ def test_overlay_keeps_the_dialog_holding_the_target_clear():
     nxt = ctl("AXButton", "Next", 0)
     nxt.box = (1012, 755, 63, 36)
     assert _container_of(nxt, [page, dialog, nxt], 1512, 982) == [(420, 330, 672, 478)]
+
+
+def test_a_label_target_is_moved_to_the_field_it_names(guide):
+    """Live run 2026-11-08: "Type demo-web-reader in the Name field" framed the label 'Name' above the field,
+    so the user's click in the field was outside the frame and the step never completed."""
+    label = ctl("AXStaticText", "Name", 465)
+    field = ctl("AXTextField", "Name *", 756)
+    guide.page.items = [ctl("AXHeading", "Build an agent", 700), label, field, ctl("AXButton", "Next", 1040)]
+    plans = iter([{"done": False, "instruction": "Type \"demo-web-reader\" in the Name field.", "kind": "type",
+                   "text": "demo-web-reader", "target": 1}, {"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: next(plans)
+    guide.it._dynamic_guide(guide.bound)
+    assert guide.shown[0].where == "Name *" and guide.shown[0].pointer == (756, 100) and guide.shown[0].kind == "type"

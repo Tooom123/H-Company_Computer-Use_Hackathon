@@ -990,11 +990,17 @@ class _TargetTracker:
         self.step: int | None = None
         self.box: tuple[int, int, int, int] | None = None  # latest measured box (None = not visible)
         self.measured_at = 0.0
+        self.value: str | None = None  # content of the followed field (browser), None = not a readable field
+        self.initial: str | None = None
+        self.value_changed_at = 0.0
+        self._fresh = True
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
     def follow(self, step: int, description: str | None, box) -> None:
         self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
+        self.value = self.initial = None
+        self._fresh = True
         if self._thread is None and description and sys.platform == "darwin":
             self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
             self._thread.start()
@@ -1021,6 +1027,19 @@ class _TargetTracker:
                 continue  # no page to compare with: keep what we have
             self.box = best.box if (best and not ties and info.is_front) else None
             self.measured_at = time.time()
+            field = next((c for c in [best, *ties] if c is not None and getattr(c, "value", None) is not None), None)
+            value = field.value if field is not None else None
+            if self._fresh:
+                self.initial, self.value, self._fresh = value, value, False
+                self.value_changed_at = time.time()
+            elif value != self.value:
+                self.value, self.value_changed_at = value, time.time()
+
+    def field_filled(self, idle_s: float = 1.5) -> bool:
+        """The followed field now holds text it did not hold when the step was shown, and has been stable for
+        idle_s: the user typed it, wherever they clicked."""
+        return (self.value is not None and bool(self.value.strip()) and self.value != self.initial
+                and time.time() - self.value_changed_at >= idle_s)
 
     def stop(self) -> None:
         self._stop.set()
@@ -1354,6 +1373,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if inputs.acted(g.kind):
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
+                return
+            if g.kind == "type" and tracker.step == g.index and tracker.field_filled():
+                print("\n  the field now contains text; next step…", flush=True)
+                advance(note="Observed: the suggested field now contains text (read from the page). "
+                             "Result not verified; inspect the current screen.")
                 return
             try:
                 ready, _, _ = select.select([sys.stdin], [], [], 0)

@@ -414,3 +414,16 @@ def test_typing_then_clicking_next_completes_the_field(rig):
     rig.w._on_event("click", (900, 700))  # Next
     rig.clock[0] += 0.6
     assert rig.w.acted("type")
+
+
+def test_tracker_sees_a_field_filled_wherever_the_user_clicked(monkeypatch):
+    t = cli._TargetTracker() if hasattr(cli, "_TargetTracker") else None
+    if t is None:
+        t = next(v for v in vars(cli).values() if isinstance(v, type) and hasattr(v, "field_filled"))()
+    t.follow(3, "Name *", (454, 528, 604, 20))
+    t.initial, t.value, t._fresh = "", "", False
+    assert not t.field_filled()
+    t.value, t.value_changed_at = "demo-web-reader", 0.0
+    assert t.field_filled()
+    t.value_changed_at = __import__("time").time()
+    assert not t.field_filled()  # still typing

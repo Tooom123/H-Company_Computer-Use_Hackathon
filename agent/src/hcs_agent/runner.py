@@ -84,6 +84,20 @@ def _label_matches(label: str, name: str) -> bool:
     return bool(a and b) and (f" {a} " in f" {b} " or f" {b} " in f" {a} ")
 
 
+_TEXT_ROLES = ("AXHeading", "AXStaticText")
+
+
+def _actionable(target, items):
+    """A label or title chosen as the target -> the control it names, the nearest one (else unchanged)."""
+    if target is None or target.role not in _TEXT_ROLES:
+        return target
+    tx, ty = target.center
+    named = [e for e in items if e.role not in _TEXT_ROLES and e is not target and _label_matches(target.name, e.name)]
+    if not named:
+        return target
+    return min(named, key=lambda e: (e.center[0] - tx) ** 2 + (e.center[1] - ty) ** 2)
+
+
 def _field_state(e) -> str:
     """' value="…"' / ' empty' (+ required) for fields whose content was read (browser only)."""
     value = getattr(e, "value", None)
@@ -782,6 +796,9 @@ class Intervention:
             kind = plan.get("kind") if plan.get("kind") in ("click", "type", "info") else "click"
             target_index = plan.get("target")
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None
+            if kind in ("click", "type"):
+                # Page text is in the list now: a planner pointing at the label "Name" means the field "Name *".
+                target = _actionable(target, items)
             if kind == "click" and target is not None and target.role in ("AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"):
                 kind = "type"  # "click the field" means fill it: the user clicks and types (a click alone would stall)
             # The instruction and the box must name the same control: "Click 'Build'" framed on "Close" sent the
@@ -789,7 +806,8 @@ class Intervention:
             problem = None
             labels = [] if kind == "info" else _quoted_labels(instruction, exclude=plan.get("text"))
             if labels and not (target and any(_label_matches(lb, target.name) for lb in labels)):
-                named = next((e for lb in labels for e in items if _label_matches(lb, e.name)), None)
+                matches = [e for lb in labels for e in items if _label_matches(lb, e.name)]
+                named = next((e for e in matches if e.role not in _TEXT_ROLES), matches[0] if matches else None)
                 if named is not None:
                     target = named
                 else:
@@ -800,7 +818,7 @@ class Intervention:
             # shown means the user is going round in circles.
             step_key = (instruction, info.url, info.title, frozenset((e.role, e.name) for e in items))
             looped = step_key in shown_on and repeats == 0  # same page as last time: the repeat counter above decides
-            if problem is None and kind == "click" and target is not None and target.role in ("AXHeading", "AXStaticText"):
+            if problem is None and kind in ("click", "type") and target is not None and target.role in _TEXT_ROLES:
                 problem = (f"Correction: you asked to click {target.role.replace('AX', '').lower()} '{target.name[:50]}', "
                            "which is a title or text, not a control. If it is the title of an open dialog or wizard, "
                            "the step that opens it is done: continue inside it with a listed control.")
