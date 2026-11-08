@@ -530,7 +530,9 @@ async function loadVision(s) {
     ? v.builtin
       ? v.tracking
         ? `The camera follows your gaze in the background (accuracy ~${v.errorPx ?? "?"} px). Stop it here.`
-        : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
+        : v.browser
+          ? "Calibration opened in your browser, full screen: start the camera, click each red dot 5 times, then Start tracking."
+          : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
       : "Follow the targets on screen; it closes with this app."
     : v.builtin
       ? "Opens a full-screen calibration (9 dots + an accuracy check); then tracking keeps running, invisible."

@@ -8,7 +8,20 @@ const $ = (id) => document.getElementById(id);
 const stage = $("stage");
 const params = new URLSearchParams(location.search);
 // Embedded in the desktop app (gaze-window.mjs): gaze points and accuracy go to the agent through the bridge.
-const bridge = params.has("embedded") ? window.hcsGaze : null;
+// Opened by the desktop app in the browser (Linux): the same calls, posted to the app's local server.
+let feedLast = 0;
+const browserFeed = params.has("feed") ? {
+  sample: (x, y) => {
+    const now = performance.now();
+    if (now - feedLast < 66) return;
+    feedLast = now;
+    fetch("/gaze", { method: "POST", body: JSON.stringify({ x, y }) }).catch(() => {});
+  },
+  accuracy: (px) => fetch("/accuracy", { method: "POST", body: JSON.stringify({ px }) }).catch(() => {}),
+  track: () => {},
+  close: () => window.close(),
+} : null;
+const bridge = params.has("embedded") ? window.hcsGaze : browserFeed;
 if (bridge) document.body.classList.add("embedded");
 
 let mode = "intro"; // intro | calibrate | validate | result | test
@@ -59,6 +72,9 @@ function onSample(sample) {
 }
 
 async function startCamera() {
+  if (browserFeed && !document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {}); // the gaze maps to the screen only in full screen
+  }
   $("introErr").textContent = "";
   $("startBtn").disabled = true;
   $("startBtn").textContent = "Starting the camera…";
@@ -278,6 +294,7 @@ function startTracking() {
   heat.stop();
   tracker?.showPreview(false);
   document.body.classList.add("tracking");
+  if (browserFeed) $("trackingNote").hidden = false; // a browser tab cannot become click-through: say what to do
   bridge.track();
 }
 $("redoBtn").onclick = async () => {

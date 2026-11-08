@@ -51,7 +51,7 @@
   /* embedded in the desktop app: after calibration the window is transparent and only tracks */
   body.tracking, body.tracking html{background:transparent!important}
   html:has(body.tracking){background:transparent!important}
-  body.tracking #heat, body.tracking .card, body.tracking .hud, body.tracking #stage, body.tracking #calib{display:none!important}
+  body.tracking #heat, body.tracking .card:not(#trackingNote), body.tracking .hud, body.tracking #stage, body.tracking #calib{display:none!important}
   body.cam-tl #webgazerVideoContainer{left:12px!important;top:12px!important;right:auto!important;bottom:auto!important}
   body.cam-tr #webgazerVideoContainer{right:12px!important;top:12px!important;left:auto!important;bottom:auto!important}
   body.cam-bl #webgazerVideoContainer{left:12px!important;bottom:12px!important;right:auto!important;top:auto!important}
@@ -78,6 +78,12 @@
 </div>
 
 <div id="calib" hidden><div class="banner" id="banner"></div></div>
+
+<div class="card" id="trackingNote" hidden>
+  <h1>Your gaze is being tracked</h1>
+  <p>Switch back to your work (Alt+Tab) and keep this window open in full screen: the assistant receives your gaze
+    while it runs. Close this tab to stop the camera.</p>
+</div>
 
 <div class="card" id="result" hidden>
   <h1 id="resTitle"></h1>

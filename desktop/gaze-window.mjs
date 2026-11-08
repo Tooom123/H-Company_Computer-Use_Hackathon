@@ -4,7 +4,7 @@
 // lets every click through, stays invisible to screen capture, and keeps tracking: each gaze point (screen points,
 // no image) goes to the agent's control point (POST /gaze), so the agent can crop its screenshots around it.
 
-import { BrowserWindow, ipcMain, screen, session } from "electron";
+import { BrowserWindow, ipcMain, screen, session, shell } from "electron";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -14,9 +14,20 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/ja
   ".binarypb": "application/octet-stream", ".tflite": "application/octet-stream", ".png": "image/png", ".svg": "image/svg+xml" };
 
 /** Static files of heatmap/ on 127.0.0.1 (a secure context for the camera; file:// cannot fetch the models). */
-function serve(root) {
+function serve(root, onFeed) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
+      if (req.method === "POST" && (req.url === "/gaze" || req.url === "/accuracy")) { // browser mode: same origin
+        let body = "";
+        req.on("data", (c) => { body += c; if (body.length > 2000) req.destroy(); });
+        req.on("end", () => {
+          let data = null;
+          try { data = JSON.parse(body); } catch {}
+          res.writeHead(data ? 204 : 400).end();
+          if (data) onFeed(req.url, data);
+        });
+        return;
+      }
       const rel = decodeURIComponent((req.url || "/").split("?")[0]).replace(/^\/+/, "") || "vision.html";
       const file = path.resolve(root, rel);
       if (!file.startsWith(path.resolve(root) + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -39,11 +50,28 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
   let inFlight = false;
   let pausedUntil = 0;
   let samples = 0;
+  let lastFeed = 0;
+  let opened = 0;
+  // Electron 45 crashes when WebGazer starts on Linux (checked on Wayland, every GPU/sandbox switch): there the
+  // calibration opens in the user's browser instead, full screen, and the page posts its gaze to this server.
+  const mode = process.platform === "linux" && process.env.HCS_VISION_WINDOW !== "electron" ? "browser" : "electron";
+  const onFeed = (url, d) => {
+    if (url === "/accuracy" && Number.isFinite(d.px) && d.px > 0) errorPx = Math.round(d.px);
+    if (url === "/gaze" && opened && Number.isFinite(d.x) && Number.isFinite(d.y)) {
+      lastFeed = Date.now();
+      samples += 1;
+      forward(d.x, d.y); // full screen in the browser: page coordinates are screen coordinates
+    }
+  };
 
   const ready = () => fs.existsSync(path.join(heatmapDir, "vision.html")) && fs.existsSync(path.join(heatmapDir, "vendor", "webgazer.js"));
 
   function status() {
     if (!ready()) return { available: false, running: false, builtin: true, reason: "Run `npm install && npm run assets` in heatmap/ once (local WebGazer)." };
+    if (mode === "browser") {
+      const live = Date.now() - lastFeed < 3000;
+      return { available: true, running: live || Date.now() - opened < 120000, tracking: live, builtin: true, browser: true, errorPx, samples };
+    }
     return { available: true, running: Boolean(win && !win.isDestroyed()), tracking, builtin: true, errorPx, samples };
   }
 
@@ -87,8 +115,13 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
       win.show();
       return status();
     }
-    if (!server) server = await serve(heatmapDir);
+    if (!server) server = await serve(heatmapDir, onFeed);
     const origin = `http://127.0.0.1:${server.address().port}`;
+    if (mode === "browser") {
+      opened = Date.now();
+      await shell.openExternal(`${origin}/vision.html?feed=1`);
+      return status();
+    }
     const ses = session.fromPartition("gaze-calibration");
     ses.setPermissionRequestHandler((wc, permission, cb) => cb(permission === "media" && wc.getURL().startsWith(origin)));
     ses.setPermissionCheckHandler((wc, permission) => permission === "media" && (wc?.getURL() || "").startsWith(origin));
@@ -107,6 +140,8 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
   }
 
   function stop() {
+    opened = 0;
+    lastFeed = 0; // browser mode: the tab keeps running until the user closes it; the feed is ignored from now
     if (win && !win.isDestroyed()) win.destroy(); // the page's unload stops the camera
     win = null;
     tracking = false;
