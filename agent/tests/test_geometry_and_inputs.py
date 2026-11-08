@@ -121,3 +121,11 @@ def test_vocabulary_entries_carry_pronunciations_for_demo_names():
     e = _vocab_entry("Acme Demo")
     assert e["value"] == "Acme Demo" and "acmé démo" in e["pronunciations"] and e["intensity"] <= 0.5
     assert "pronunciations" not in _vocab_entry("pipeline")
+
+
+def test_intent_tolerates_null_fields_from_the_model():
+    from hcs_agent.voice import Intent
+
+    i = Intent.model_validate({"procedure_id": None, "mode": None, "parameters": {"opportunity": None},
+                               "role": None, "goal": None, "missing": None, "question": "Which task?"})
+    assert i.goal == "" and i.parameters == {} and i.missing == [] and i.mode == "act" and i.question == "Which task?"

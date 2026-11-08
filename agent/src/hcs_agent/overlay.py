@@ -61,7 +61,11 @@ def screen_size_points() -> tuple[float, float]:
     return float(f.size.width), float(f.size.height)
 
 
+TEXT_SCALE = 1.5  # all red handwriting is drawn 1.5x the base sizes below
+
+
 def _hand_font(size: float):
+    size = size * TEXT_SCALE
     for name in HAND_FONTS:
         f = AppKit.NSFont.fontWithName_size_(name, size)
         if f is not None:
@@ -278,20 +282,21 @@ def _place(x, y, w, h, bounds, placed):
     return x, y
 
 
-def _note(x, y, text, rnd, size=19, max_w=340, color=PAPER, underline=True, bounds=None, placed=None) -> tuple[float, float, float, float]:
+def _note(x, y, text, rnd, size=19, max_w=480, color=PAPER, underline=True, bounds=None, placed=None) -> tuple[float, float, float, float]:
     """Handwritten text on a paper scrap, anchored at its bottom-left. Returns (x, y, width, height) drawn."""
     attrs, s, tw, th = _measure(text, size, max_w)
     if bounds is not None:
         if placed is not None:
-            x, y = _place(x, y, tw + 20, th + 12, bounds, placed)
+            x, y = _place(x, y, tw + 20, th + 18, bounds, placed)
         else:
-            x, y = _clamp(x, y, tw + 20, th + 12, bounds[0], bounds[1])
-    _draw_paper(x - 10, y - 6, tw + 20, th + 12, rnd, color)
+            x, y = _clamp(x, y, tw + 20, th + 18, bounds[0], bounds[1])
+    pad_y = 9
+    _draw_paper(x - 10, y - pad_y, tw + 20, th + 2 * pad_y, rnd, color)
     _ink().setStroke()
-    s.drawInRect_withAttributes_(((x, y), (max_w, th + 4)), attrs)
+    s.drawInRect_withAttributes_(((x, y), (max_w, th)), attrs)  # text block exactly centred in the paper
     if underline:
         _stroke([(x + i * (tw / 6), y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)], rnd, 1.0, 1.0)
-    return x, y, tw + 20, th + 12
+    return x, y, tw + 20, th + 18
 
 
 class _SketchView(AppKit.NSView):
@@ -330,21 +335,21 @@ class _SketchView(AppKit.NSView):
         if sc.target is not None:
             tx, ty = sc.target
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
-            _, _, lw, lh = _measure(label, 19, 340)
+            _, _, lw, lh = _measure(label, 19, 480)
             half_w = (sc.target_box[2] / 2 + 14) if sc.target_box else 48
             half_h = (sc.target_box[3] / 2 + 14) if sc.target_box else 40
             right = tx + half_w + lw + 40 < W
             text_x, text_y = (tx + half_w if right else tx - half_w - lw), ty + half_h
             if sc.target_box:
                 placed.append((sc.target_box[0] - 10, sc.target_box[1] - 10, sc.target_box[2] + 20, sc.target_box[3] + 20))
-            main_note = _place(*_clamp(text_x, text_y, lw + 20, lh + 12, W, H), lw + 20, lh + 12, (W, H), placed) + (lw + 20, lh + 12, right)
+            main_note = _place(*_clamp(text_x, text_y, lw + 20, lh + 18, W, H), lw + 20, lh + 18, (W, H), placed) + (lw + 20, lh + 18, right)
         elif sc.text:
-            _, _, lw, lh = _measure(sc.text, 19, 340)
-            main_note = _place(W / 2 - lw / 2, H - 92, lw + 20, lh + 12, (W, H), placed) + (lw + 20, lh + 12, True)
+            _, _, lw, lh = _measure(sc.text, 19, 480)
+            main_note = _place(W / 2 - lw / 2, H - 110, lw + 20, lh + 18, (W, H), placed) + (lw + 20, lh + 18, True)
         why_rect = None
         if sc.why and main_note:
-            _, _, ww, wh = _measure(sc.why, 14, 300)
-            why_rect = _place(main_note[0] + 6, main_note[1] - 20 - wh, ww + 20, wh + 12, (W, H), placed)
+            _, _, ww, wh = _measure(sc.why, 14, 420)
+            why_rect = _place(main_note[0] + 6, main_note[1] - 26 - wh, ww + 20, wh + 18, (W, H), placed)
 
         # Secondary marks (their labels avoid the papers already placed).
         for m in sc.marks:
@@ -371,7 +376,7 @@ class _SketchView(AppKit.NSView):
                 # Small label next to the mark, with a short link stroke.
                 lx = mx + 50 if mx + 300 < W else mx - 50 - 220
                 ly = my + 26
-                lx, ly, lw2, lh2 = _note(lx, ly, m.text, rnd, size=15, max_w=220, color=PAPER_SOFT, underline=False, bounds=(W, H), placed=placed)
+                lx, ly, lw2, lh2 = _note(lx, ly, m.text, rnd, size=15, max_w=320, color=PAPER_SOFT, underline=False, bounds=(W, H), placed=placed)
                 _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else lw2 - 24), ly - 2)], rnd, 1.1, 1.0)
 
         # Main note + circle + arrow, drawn last so they stay on top.
@@ -380,7 +385,7 @@ class _SketchView(AppKit.NSView):
             label = (f"{sc.step}. {sc.text}" if sc.step else sc.text)
             _note(nx, ny, label, rnd)
             if why_rect:
-                _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=300, color=PAPER_SOFT, underline=False)
+                _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=420, color=PAPER_SOFT, underline=False)
             if sc.target is not None:
                 tx, ty = sc.target
                 _frame(tx, ty, rnd, style, box=sc.target_box)
@@ -392,21 +397,26 @@ class _SketchView(AppKit.NSView):
         self.stroke_total = max(self.stroke_total, _REVEAL["index"]) if self.progress < 1 else _REVEAL["index"]
 
     def _draw_badge(self):
+        """Status badge in the same draft style as the notes: a small paper scrap, handwritten red text,
+        a pencil dot that pulses while listening. Sits ~3 cm above the bottom edge, clear of the Dock."""
         import time
 
         text, pulsing = self.badge
         bounds = self.bounds()
-        w, h = max(210.0, 52 + 7.6 * len(text)), 36.0  # pill grows with the text
-        x, y = bounds.size.width / 2 - w / 2, 86.0  # ~2 cm above the bottom edge, clear of the Dock
-        pill = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(((x, y), (w, h)), h / 2, h / 2)
-        AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.08, 0.88).setFill()
-        pill.fill()
-        alpha = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(time.time() * 6)) if pulsing else 1.0
-        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.95, 0.23, 0.2, alpha).setFill()
-        AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x + 14, y + h / 2 - 7), (14, 14))).fill()
-        attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.systemFontOfSize_(14),
-                 AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
-        Foundation.NSString.stringWithString_(text).drawInRect_withAttributes_(((x + 38, y + 8), (w - 46, 20)), attrs)
+        rnd = random.Random(11)
+        attrs, s, tw, th = _measure(text, 15, 600)
+        w, h = tw + 44, th + 14
+        x, y = bounds.size.width / 2 - w / 2, 114.0
+        saved = (_REVEAL["progress"], _REVEAL["index"], _REVEAL["total"])
+        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 10_000
+        _draw_paper(x, y, w, h, rnd)
+        alpha = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(time.time() * 6)) if pulsing else 0.9
+        AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(GRAPHITE[0], GRAPHITE[1], GRAPHITE[2], alpha).setFill()
+        AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x + 14, y + h / 2 - 5), (10, 10))).fill()
+        _ink().setStroke()
+        _circle(x + 19, y + h / 2, rnd, 8, 7)  # a loose pencil ring around the dot
+        s.drawInRect_withAttributes_(((x + 36, y + (h - th) / 2), (tw + 4, th)), attrs)  # centred on the paper
+        _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = saved
 
 
 class Overlay:
@@ -562,14 +572,14 @@ class _MagnetView(AppKit.NSView):
                     _circle(cx, y, rnd, 11 - k * 2, 10 - k * 2)
         attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
         Foundation.NSString.stringWithString_(f"Magnet: {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
-            ((14, H - 30), (W - 28, 18)), attrs)
+            ((14, H - 40), (W - 28, 28)), attrs)
 
 
 class MagnetWidget:
     """Clickable autonomy slider, bottom-left. Visible to the user, hidden from screen capture."""
 
     def __init__(self, level: int, on_change: Callable[[int], None]) -> None:
-        w, h = 250.0, 62.0
+        w, h = 330.0, 80.0
         self.window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((18, 18), (w, h)), AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False)
         self.window.setOpaque_(False)
