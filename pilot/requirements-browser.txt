@@ -1,0 +1,4 @@
+# Add to the isolated pilot environment described in README.md.
+hai-agents[browser]==1.4.3
+playwright==1.64.1
+selenium==4.52.0

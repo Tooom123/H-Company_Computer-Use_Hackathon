@@ -191,6 +191,28 @@
       "title": "Kind",
       "type": "string"
     },
+    "done_when": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Expected visible result to check after an interaction; not an observed or verified outcome.",
+      "title": "Done When"
+    },
+    "prepared_speech": {
+      "description": "At most two tentative next instructions for audio preparation only. Never display or advance to these without a fresh observation and guidance response.",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 2,
+      "title": "Prepared Speech",
+      "type": "array"
+    },
     "annotations": {
       "items": {
         "$ref": "#/$defs/Annotation"

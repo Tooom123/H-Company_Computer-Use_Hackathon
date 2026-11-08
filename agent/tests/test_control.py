@@ -115,6 +115,33 @@ def test_stop_and_voice(rig):
     assert rig.call("GET", "/nope")[0] == 404
 
 
+def test_next_is_explicit_bound_to_step_and_never_claims_verification(rig):
+    calls = []
+
+    def next_step(sid, index, done):
+        calls.append((sid, index, done))
+        return (sid, index) == ("session-a", 2)
+
+    rig.ctl._next_step = next_step
+    for done in (True, False):
+        assert rig.call("POST", "/next", {
+            "session_id": "session-a", "step_index": 2, "done": done,
+        }) == (200, {"accepted": True, "verified": False})
+    assert calls == [("session-a", 2, True), ("session-a", 2, False)]
+    assert rig.call("POST", "/next", {
+        "session_id": "old-session", "step_index": 1, "done": True,
+    })[0] == 409
+    before = len(calls)
+    for body in ({}, {"session_id": "session-a", "step_index": True, "done": True},
+                 {"session_id": "session-a", "step_index": 0, "done": True},
+                 {"session_id": "session-a", "step_index": 2, "done": "yes"}):
+        assert rig.call("POST", "/next", body)[0] == 400
+    assert len(calls) == before
+    assert rig.call("POST", "/next", {
+        "session_id": "session-a", "step_index": 2, "done": True,
+    }, headers={"Content-Type": "application/json"})[0] == 403
+
+
 def test_app_presence_hides_then_brings_back_the_magnet(rig, monkeypatch):
     rig.call("GET", "/status")
     assert rig.presence == [True]
@@ -165,6 +192,8 @@ def test_failing_external_reads_show_unknown(tmp_path):
 def test_push_to_talk_key(rig):
     code, s = rig.call("POST", "/ptt", {"key": "alt_r"})
     assert code == 200 and rig.ptt == ["alt_r"] and {k["key"] for k in s["ptt_keys"]} >= {"cmd+h", "alt_r"}
+    assert rig.call("POST", "/ptt", {"key": "ctrl+shift+h"})[0] == 200
+    assert rig.ptt[-1] == "ctrl+shift+h"
     assert rig.call("POST", "/ptt", {"key": "cmd+q"})[0] == 400  # never a key that quits apps
     rig.ptt_ok = False
     assert rig.call("POST", "/ptt", {"key": "f9"})[0] == 409  # `run` has no push-to-talk
@@ -175,7 +204,7 @@ def test_clicks_in_the_app_window_are_not_user_steps(rig):
     urllib.request.urlopen(req, timeout=5).read()
     assert rig.ctl.app_contains(500, 300) and not rig.ctl.app_contains(50, 300)
     rig.call("GET", "/status", headers={"X-HCS-App": "1", "X-HCS-App-Bounds": "garbage"})
-    assert rig.ctl.app_bounds == (100, 50, 900, 600)  # a bad header keeps the last known window
+    assert rig.ctl.app_bounds is None  # no trustworthy visible bounds: never keep a stale exclusion rectangle
     rig.ctl.app_present = False
     assert not rig.ctl.app_contains(500, 300)  # app closed: every click counts again
 
@@ -198,3 +227,13 @@ def test_rate_a_task(rig, tmp_path):
     assert rig.call("POST", "/rate", {"id": "../etc", "useful": True})[0] == 400
     assert rig.call("POST", "/rate", {"id": "nope", "useful": True})[0] == 404
     assert rig.call("POST", "/rate", {"id": "s1", "useful": "yes"})[0] == 400
+
+
+def test_hidden_app_heartbeat_clears_click_exclusion_without_disconnect(tmp_path):
+    ctl = Controller(tmp_path, status=dict, set_autonomy=lambda _: None, stop=lambda: False,
+                     set_voice=dict, test_voice=lambda: False)
+    ctl.seen((100, 50, 900, 600))
+    assert ctl.app_contains(500, 300)
+    ctl.seen(None)
+    assert ctl.app_present and ctl.app_bounds is None
+    assert not ctl.app_contains(500, 300)

@@ -72,11 +72,14 @@ body.mac .buddy { right: 34px; } /* no window buttons on macOS */
   color: var(--white); font-weight: 700; font-size: 14px;
 }
 .head { width: 28px; height: 28px; display: block; } /* the website's favicon: the companion's red head */
-.tabs { display: flex; align-items: flex-end; gap: 4px; height: 100%; -webkit-app-region: no-drag; }
+.tabs { display: flex; flex: 1; min-width: 0; max-width: 640px; margin-left: 100px; margin-right: 120px; align-items: flex-end; gap: 4px; height: 100%; -webkit-app-region: no-drag; }
+body.mac .tabs { margin-left: 150px; margin-right: 70px; }
 .tab {
   position: relative;
   height: 38px;
   width: 124px;
+  min-width: 0;
+  flex: 1;
   border: 0;
   border-radius: 11px 11px 0 0;
   background: none;
@@ -248,3 +251,12 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
   .tab { min-width: 0; }
   .voices { grid-template-columns: 1fr; }
 }
+/* Explicit human labels; no positive answer is selected by default. */
+.feedback-field { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; font-size: 14px; }
+.feedback-field textarea, .feedback-field select { width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: #fff; border: 1px solid #d8d8dd; border-radius: 10px; padding: 12px; }
+.feedback-field textarea { resize: vertical; }
+
+/* Task safety control stays outside the scrolling tab content. */
+.stopbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 24px; background: var(--white); border-bottom: 1px solid var(--grey-250); }
+.stopbar p { margin: 2px 0 0; }
+.stopbar .btn { flex: none; }

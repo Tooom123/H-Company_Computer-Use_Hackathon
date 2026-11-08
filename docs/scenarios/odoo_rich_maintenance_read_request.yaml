@@ -1,0 +1,87 @@
+id: odoo_rich_maintenance_read_request
+software: odoo
+software_version: '20.0'
+session_type: onboarding
+title: Comprendre une intervention de maintenance
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 35
+max_time_s_per_attempt: 300
+parameters: []
+preconditions:
+- L’opérateur a ouvert et authentifié la démo enrichie v2.1 sur https://holo-demo.62.83.79.254.sslip.io ; aucun
+  autre onglet Odoo ne doit être utilisé.
+- La société visible est exactement Holo — Déjà Bu Démo · DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a relu l’identité des documents et leur état de référence.
+- Ce cas est une lecture seule, indépendante des autres cas R01–R10 ; un manque de preuve doit être signalé, jamais
+  réparé.
+objective: >-
+  Lire la date planifiée, la description et l’étape Kanban de l’intervention Nettoyage et contrôle · Démo
+  liée au Frigo vitrine · Démo. L’étape est la colonne ou le chevron actif, distinct de la pastille
+  de statut individuel.
+planned_changes:
+- Aucune modification métier ; navigation, filtres temporaires et lecture uniquement.
+allowed_actions:
+- Naviguer dans les menus de la démo enrichie et ouvrir les fiches existantes nécessaires à cette seule question.
+- Utiliser la recherche, les filtres temporaires, les liens entre documents et le défilement pour lire les valeurs.
+forbidden_actions:
+- Quitter l’onglet https://holo-demo.62.83.79.254.sslip.io, ouvrir une autre origine Odoo, saisir des identifiants
+  ou changer de société.
+- Créer, modifier, supprimer, archiver, confirmer, valider, réserver ou clôturer un enregistrement métier.
+- Déplacer une carte ou un événement par glisser-déposer ; enregistrer un filtre partagé.
+- Envoyer un message, une invitation, une facture ou un paiement ; soumettre ou approuver une note de frais.
+- Exécuter une commande, un reset, une API de mutation, ou modifier les accès et paramètres.
+agent_instructions: |
+  Reste uniquement dans l’onglet Odoo déjà ouvert sur https://holo-demo.62.83.79.254.sslip.io
+  et dans la société Holo — Déjà Bu Démo · DONNÉES FICTIVES. Si l’origine, la société ou le document
+  est ambigu, arrête-toi sans saisir d’identifiant. Les clics de navigation et les filtres temporaires
+  sont autorisés ; toute modification métier est interdite.
+
+  Ouvre Maintenance, puis les interventions. Recherche Nettoyage et contrôle · Démo et vérifie le lien
+  avec l’équipement Frigo vitrine · Démo. Les noms d’intervention se répètent pour plusieurs équipements :
+  le couple identifie la cible. Ouvre sa fiche, lis date planifiée, étape et description.
+  L’étape demandée est la colonne Kanban de la carte, ou le chevron actif dans la barre d’étapes en haut
+  de sa fiche. La pastille de statut individuel est un autre champ : ne la présente pas comme l’étape.
+  Si le chevron actif est ambigu, retourne à la liste pour lire la colonne de cette même carte,
+  puis rouvre la fiche sans déplacer la carte ni cliquer sur un autre chevron.
+  Dans ta réponse, donne le libellé exact de l’étape ainsi observée. Le nom d’une colonne ne prouve pas
+  qu’une réparation a été réalisée. Ne fais pas glisser de carte, n’édite pas de champ et ne clôture
+  pas l’intervention. Laisse la fiche ouverte.
+postcondition:
+  description: La bonne fiche ou liste est accessible et les critères ont été relus dans la seule démo enrichie.
+  checks:
+  - key: correct_environment
+    prompt: Le navigateur est sur https://holo-demo.62.83.79.254.sslip.io et la société Holo — Déjà Bu Démo · DONNÉES
+      FICTIVES est identifiable.
+  - key: correct_request
+    prompt: L’intervention ouverte est Nettoyage et contrôle · Démo et son équipement est Frigo vitrine · Démo.
+  - key: scheduled_date
+    prompt: La date planifiée visible est le 4 novembre 2026.
+  - key: stage_description_visible
+    prompt: >-
+      L’étape de cette intervention est Nouvelle demande, vérifiée par le chevron actif ou la colonne Kanban
+      de la même carte, et sa description est lisible. La pastille de statut individuel ne valide pas ce contrôle.
+  verification_instructions: 'Vérifie en lecture seule l’origine https://holo-demo.62.83.79.254.sslip.io et la société
+    Holo — Déjà Bu Démo · DONNÉES FICTIVES, puis les critères ci-dessous dans les écrans correspondants. Les attentes
+    ne sont pas des preuves : toute donnée absente, illisible ou différente produit false. Tu peux naviguer pour
+    relire mais jamais modifier un champ ou un état. Ne déduis pas la réussite du résumé de l’acteur. Ces contrôles
+    portent sur les écrans ; une revue humaine de la trace reste nécessaire pour évaluer la fidélité et l’utilité
+    de la réponse, ainsi que l’absence de mutation sur tout le parcours.
+
+    Ne conclus pas qu’une valeur est absente simplement parce qu’elle est hors de la vue courante. Fais défiler
+    la fiche et ouvre les vues de consultation nécessaires, sans édition. Vérifie les champs sur plusieurs captures
+    en conservant l’identité de la même fiche. Si un champ reste inaccessible après cette recherche, indique le
+    blocage et conserve false.
+
+    Pour l’étape, distingue la colonne Kanban ou le chevron actif de la pastille de statut individuel.
+    Ne valide pas le contrôle sur la seule présence d’une pastille. Relis le libellé du chevron actif ;
+    en cas d’ambiguïté, retourne à la liste pour identifier la colonne de cette même intervention,
+    puis rouvre sa fiche sans changer d’étape. Compare le libellé réellement observé à l’attente du contrôle.
+    Termine sur la fiche demandée avec la date et la description consultables.'
+escalation:
+  when:
+  - L’origine, la société, la référence, une permission ou un champ ne peut pas être identifié sans ambiguïté.
+  - Une action interdite serait nécessaire ou la postcondition reste non vérifiée après cet essai.
+  decision_expected: L’opérateur doit vérifier la fiche, l’accès ou le critère manquant ; aucune réparation ni changement
+    de périmètre automatique.
+  default_category: unknown

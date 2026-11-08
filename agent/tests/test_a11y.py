@@ -59,6 +59,18 @@ def test_sitemap_doc_lookup_and_platform_memory(tmp_path, monkeypatch):
     assert "Share a session" in sitemap.context_for("hcompany", "share a session", with_doc=False)
 
 
+def test_ax_product_identity_without_expected_page_evidence_is_inconclusive():
+    from types import SimpleNamespace
+    from hcs_agent.a11y import screen_check
+    info = SimpleNamespace(app="Chrome", title="Odoo", url="https://demo.odoo.com/", is_front=True,
+                           elements=[Candidate("AXButton", "Menu", (0, 0, 20, 20)),
+                                     Candidate("AXLink", "Settings", (30, 0, 20, 20))])
+    matched, _ = screen_check("expected result", "odoo", info=info)
+    assert matched is None
+    matched, _ = screen_check("expected result", "salesforce", info=info)
+    assert matched is False
+
+
 def test_doc_lookup_prefers_guides_and_limits_pages():
     from hcs_agent import sitemap
 

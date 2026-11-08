@@ -3,6 +3,10 @@
 État vérifié le **7 novembre 2026**. Ce document distingue les résultats observés,
 le code disponible et les prochaines étapes proposées.
 
+Actualisation après cette note : le navigateur isolé, le portail documentaire et
+la nouvelle campagne sont décrits dans le [bilan d’intégration](bilan-isolation-et-portail-2026-11-07.md).
+Les états ci-dessous décrivent le point de départ de cette intégration.
+
 ## 1. Le produit et sa promesse
 
 **Un assistant qui voit où l’utilisateur est bloqué dans un logiciel, lui explique

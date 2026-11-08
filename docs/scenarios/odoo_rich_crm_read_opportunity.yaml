@@ -1,0 +1,79 @@
+id: odoo_rich_crm_read_opportunity
+software: odoo
+software_version: '20.0'
+session_type: onboarding
+title: Comprendre une opportunité et sa prochaine action
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 35
+max_time_s_per_attempt: 300
+parameters: []
+preconditions:
+- L’opérateur a ouvert et authentifié la démo enrichie v2.1 sur https://holo-demo.62.83.79.254.sslip.io ; aucun
+  autre onglet Odoo ne doit être utilisé.
+- La société visible est exactement Holo — Déjà Bu Démo · DONNÉES FICTIVES.
+- Un seul acteur contrôle le Mac ; l’opérateur a relu l’identité des documents et leur état de référence.
+- Ce cas est une lecture seule, indépendante des autres cas R01–R10 ; un manque de preuve doit être signalé, jamais
+  réparé.
+objective: Ouvrir l’opportunité CRM Coffrets de fin d’année — Maison Aube · Démo et expliquer son état et la prochaine
+  activité.
+planned_changes:
+- Aucune modification métier ; navigation, filtres temporaires et lecture uniquement.
+allowed_actions:
+- Naviguer dans les menus de la démo enrichie et ouvrir les fiches existantes nécessaires à cette seule question.
+- Utiliser la recherche, les filtres temporaires, les liens entre documents et le défilement pour lire les valeurs.
+forbidden_actions:
+- Quitter l’onglet https://holo-demo.62.83.79.254.sslip.io, ouvrir une autre origine Odoo, saisir des identifiants
+  ou changer de société.
+- Créer, modifier, supprimer, archiver, confirmer, valider, réserver ou clôturer un enregistrement métier.
+- Déplacer une carte ou un événement par glisser-déposer ; enregistrer un filtre partagé.
+- Envoyer un message, une invitation, une facture ou un paiement ; soumettre ou approuver une note de frais.
+- Exécuter une commande, un reset, une API de mutation, ou modifier les accès et paramètres.
+agent_instructions: "Reste uniquement dans l’onglet Odoo déjà ouvert sur https://holo-demo.62.83.79.254.sslip.io\
+  \ et dans la société Holo — Déjà Bu Démo · DONNÉES FICTIVES. Si l’origine, la société ou le document est ambigu,\
+  \ arrête-toi sans saisir d’identifiant. Les clics de navigation et les filtres temporaires sont autorisés ; toute\
+  \ modification métier est interdite. \n\nDepuis le pipeline CRM, cherche le titre exact Coffrets de fin d’année\
+  \ — Maison Aube · Démo. Plusieurs opportunités parlent de coffrets : distingue-les par leur client. Ouvre cette\
+  \ fiche et lis le client, l’étape, le revenu espéré, puis les activités et leurs échéances. N’assimile pas une\
+  \ date de clôture attendue à une date d’activité. Réponds en français avec les valeurs effectivement lues et laisse\
+  \ la fiche ouverte.\nPour la recherche, commence par un fragment distinctif du client, puis contrôle le titre\
+  \ complet sur la fiche. Pour l’activité, cherche la date exacte dans les détails de consultation « Infos » ou\
+  \ une infobulle. N’utilise pas « Modifier » ou « Terminé ». Si seule une date relative est lisible, restitue-la\
+  \ comme telle et précise que la date exacte n’a pas pu être vérifiée."
+postcondition:
+  description: La bonne fiche ou liste est accessible et les critères ont été relus dans la seule démo enrichie.
+  checks:
+  - key: correct_environment
+    prompt: Le navigateur est sur https://holo-demo.62.83.79.254.sslip.io et la société Holo — Déjà Bu Démo · DONNÉES
+      FICTIVES est identifiable.
+  - key: correct_opportunity
+    prompt: La fiche ouverte porte exactement Coffrets de fin d’année — Maison Aube · Démo et son client est Maison
+      Aube · Démo.
+  - key: stage
+    prompt: L’étape visible de cette opportunité est Premier contact.
+  - key: expected_revenue
+    prompt: Le revenu espéré visible est 350 EUR.
+  - key: next_activity
+    prompt: Une activité Relancer et documenter est visible sur cette fiche avec échéance le 4 novembre 2026.
+  verification_instructions: 'Vérifie en lecture seule l’origine https://holo-demo.62.83.79.254.sslip.io et la société
+    Holo — Déjà Bu Démo · DONNÉES FICTIVES, puis les critères ci-dessous dans les écrans correspondants. Les attentes
+    ne sont pas des preuves : toute donnée absente, illisible ou différente produit false. Tu peux naviguer pour
+    relire mais jamais modifier un champ ou un état. Ne déduis pas la réussite du résumé de l’acteur. Ces contrôles
+    portent sur les écrans ; une revue humaine de la trace reste nécessaire pour évaluer la fidélité et l’utilité
+    de la réponse, ainsi que l’absence de mutation sur tout le parcours.
+
+    Ne conclus pas qu’une valeur est absente simplement parce qu’elle est hors de la vue courante. Fais défiler
+    la fiche et ouvre les vues de consultation nécessaires, sans édition. Vérifie les champs sur plusieurs captures
+    en conservant l’identité de la même fiche. Si un champ reste inaccessible après cette recherche, indique le
+    blocage et conserve false.
+
+    Pour le revenu, remonte en haut de la fiche : le champ Revenu attendu est sous son titre. Pour l’échéance, consulte
+    les détails Infos de l’activité sans cliquer Modifier ou Terminé. Une date relative seule ne prouve pas une
+    date absolue sans date d’observation fiable.'
+escalation:
+  when:
+  - L’origine, la société, la référence, une permission ou un champ ne peut pas être identifié sans ambiguïté.
+  - Une action interdite serait nécessaire ou la postcondition reste non vérifiée après cet essai.
+  decision_expected: L’opérateur doit vérifier la fiche, l’accès ou le critère manquant ; aucune réparation ni changement
+    de périmètre automatique.
+  default_category: unknown

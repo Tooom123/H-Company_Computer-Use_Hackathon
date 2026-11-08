@@ -1,7 +1,7 @@
 // H Companion app — renderer. Polls the assistant once a second (that poll is also the app's heartbeat:
 // while it lasts, the on-screen autonomy slider stays hidden and the setting lives here).
 import { drawAutonomy, paintBadge, paintRing } from "./sketch.js";
-import { STATUS_LABEL, duration, isBusy, keyLabel, procedureName, readyBadge, taskLine, when } from "./view.js";
+import { STATUS_LABEL, duration, isBusy, keyLabel, procedureName, readyBadge, safePttPreference, taskLine, when } from "./view.js";
 
 const $ = (id) => document.getElementById(id);
 const api = window.hcs;
@@ -13,16 +13,22 @@ const VOICES = [
   { id: "XrExE9yKIg1WjnnlVkGX", name: "Matilda", note: "upbeat, knowledgeable" },
 ];
 const KEYS = [
-  { key: "cmd+h", label: "⌘H" },
+  { key: "ctrl+shift+h", label: "⌃⇧H" },
   { key: "cmd+j", label: "⌘J" },
   { key: "alt_r", label: "Right ⌥" },
   { key: "f9", label: "F9" },
 ];
 
-let status = null; // last /status, null = assistant not running
+let status = null; // last /status, null = agent not running
+let stepReplyPending = false;
+let stopPending = false;
+let stopNotice = null;
 let lastSessionKey = "";
 let view = "home";
 let pendingAutonomy = null; // optimistic value while the POST is in flight
+let feedback = null;
+let feedbackBusy = false;
+let feedbackCommentDirty = false;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -61,12 +67,14 @@ async function syncPrefs() {
   const speed = pref("speed");
   const enabled = pref("tts");
   if (sp && sp.available) {
-    if (voice && voice !== sp.voice) want.voice = voice;
+    // A configured/custom voice (e.g. the demo narrator) wins over a stale preset preference.
+    if (sp.provider !== "macos" && VOICES.some((v) => v.id === sp.voice)
+      && VOICES.some((v) => v.id === voice) && voice !== sp.voice) want.voice = voice;
     if (speed && Number(speed) !== sp.speed) want.speed = Number(speed);
     if (enabled !== null && (enabled === "true") !== sp.enabled) want.enabled = enabled === "true";
     if (Object.keys(want).length) await api.agent("POST", "/voice", want);
   }
-  const key = pref("ptt");
+  const key = safePttPreference(pref("ptt"));
   if (key && status.voice && status.voice.ptt_key && key !== status.voice.ptt_key) {
     await api.agent("POST", "/ptt", { key });
   }
@@ -84,6 +92,7 @@ function go(name) {
   if (name === "activity") loadSessions();
   if (name === "voice") renderVoice();
   if (name === "vision") loadVision();
+  if (name === "feedback") loadFeedback();
 }
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 if (api.platform === "darwin") document.body.classList.add("mac");
@@ -116,7 +125,7 @@ function buildAutonomy() {
     return Math.max(0, Math.min(1, (x - a) / (b - a)));
   };
   box.addEventListener("pointerdown", (e) => {
-    if (!status || e.button !== 0) return;
+    if (!status || status.agent?.observe_only || e.button !== 0) return;
     try {
       box.setPointerCapture(e.pointerId); // keep following the pointer outside the scrap
     } catch {}
@@ -154,6 +163,10 @@ function sayAutonomy(text) {
 
 async function setAutonomy(level) {
   if (!status) return;
+  if (status.agent?.observe_only) {
+    sayAutonomy("Show me only for this session. You keep control.");
+    return renderAutonomy();
+  }
   if (level === status.autonomy && pendingAutonomy === null) return renderAutonomy();
   const busy = isBusy(status);
   const guiding = busy && status.current.mode !== "act" && !status.current.takeover;
@@ -171,7 +184,9 @@ async function setAutonomy(level) {
 }
 
 function renderAutonomy() {
-  const level = pendingAutonomy ?? (status && Number.isInteger(status.autonomy) ? status.autonomy : null);
+  const readOnly = Boolean(status?.agent?.observe_only);
+  if (readOnly) drag = null;
+  const level = readOnly ? 0 : pendingAutonomy ?? (status && Number.isInteger(status.autonomy) ? status.autonomy : null);
   const shown = drag ? Math.round(drag.pos * (STOPS - 1)) : level; // the level the dot would land on
   const key = drag ? `d${drag.pos.toFixed(3)}` : String(level);
   if (key !== drawnKey) {
@@ -182,7 +197,8 @@ function renderAutonomy() {
   const box = $("magnet");
   box.classList.toggle("off", !status);
   box.classList.toggle("dragging", Boolean(drag));
-  box.setAttribute("aria-disabled", String(!status));
+  box.setAttribute("aria-disabled", String(!status || readOnly));
+  if (readOnly) $("autMsg").textContent = "Show me only for this session. You keep control.";
   if (shown !== null) {
     box.setAttribute("aria-valuenow", String(shown));
     box.setAttribute("aria-valuetext", LABELS[shown]);
@@ -191,23 +207,28 @@ function renderAutonomy() {
 
 // home: ready badge, running task, numbers -------------------------------------------------------
 function renderHome() {
+  renderStopControls();
   if (view !== "home") return;
   const busy = isBusy(status);
   $("offline").hidden = Boolean(status);
   $("hero").hidden = !status || busy;
+  const b = readyBadge(status);
+  $("voiceStatus").hidden = !status || !b.sub;
+  $("voiceStatus").textContent = b.sub ? `${b.text} ${b.sub}` : "";
   if (status && !busy) {
-    const b = readyBadge(status);
     $("readyText").textContent = b.text;
     $("readyBadge").classList.toggle("pulse", b.pulse);
     paint($("readyBadge"), { seed: 11, dot: "on" });
   }
   $("now").hidden = !busy;
+  $("stepReply").hidden = !busy || status.current.state !== "awaiting_user" || !status.current.step;
+  $("stepDone").disabled = stepReplyPending;
+  $("stepStuck").disabled = stepReplyPending;
   if (busy) {
     const c = status.current;
     $("nowProc").textContent = `${procedureName(c.procedure_id) || "Task"} · ${c.takeover || c.mode === "act" ? "I'm doing it" : "you do it, I guide"}`;
     $("nowGoal").textContent = c.goal || "";
     $("nowStep").textContent = taskLine(c);
-    $("stopBtn").disabled = c.state === "stopping";
     const steps = $("nowSteps");
     steps.replaceChildren();
     const total = c.step && c.step.total;
@@ -218,11 +239,67 @@ function renderHome() {
   renderAutonomy();
 }
 
-$("stopBtn").addEventListener("click", async () => {
-  $("stopBtn").disabled = true;
-  await api.agent("POST", "/stop");
-  poll();
-});
+function renderStopControls() {
+  const current = status?.current;
+  const busy = isBusy(status);
+  if (stopNotice && current && current.session_id !== stopNotice.session) stopNotice = null;
+  const stopping = stopPending || (busy && current.state === "stopping");
+  $("globalStopBar").hidden = !busy && !stopPending && !stopNotice;
+  for (const id of ["stopBtn", "globalStopBtn"]) {
+    $(id).disabled = !busy || stopping;
+    $(id).textContent = stopping ? "Stopping…" : id === "stopBtn" ? "Stop" : "Stop task";
+  }
+  let message = stopNotice?.message || "Available from every tab. You remain in control.";
+  if (busy && current.state === "stopping") message = "Stop requested. Waiting for the task to finish.";
+  else if (stopNotice && current?.terminal && stopNotice.accepted) {
+    message = current.state === "stopped" || current.status === "abandoned"
+      ? "Task stopped." : "Task finished. Check its result in Activity.";
+  }
+  $("stopMessage").textContent = message;
+}
+
+async function stopTask() {
+  if (stopPending || !isBusy(status) || status.current.state === "stopping") return;
+  stopPending = true;
+  const session = status.current.session_id;
+  stopNotice = { session, message: "Sending Stop…", accepted: false };
+  renderStopControls();
+  try {
+    const r = await api.agent("POST", "/stop");
+    const accepted = r.ok && r.data?.stopped === true;
+    stopNotice = { session, accepted, message: accepted
+      ? "Stop requested. Waiting for the task to finish."
+      : r.ok ? "No active task accepted Stop. Check the current status."
+      : "Stop was not accepted. Check the connection and try again." };
+  } catch {
+    stopNotice = { session, accepted: false, message: "Stop could not be sent. Check the connection and try again." };
+  } finally {
+    stopPending = false;
+    renderStopControls();
+    await poll();
+  }
+}
+$("stopBtn").addEventListener("click", stopTask);
+$("globalStopBtn").addEventListener("click", stopTask);
+async function reportStep(done) {
+  const c = status?.current;
+  if (stepReplyPending || !c || c.terminal || c.state !== "awaiting_user" || !c.step) return;
+  const body = { session_id: c.session_id, step_index: c.step.index, done };
+  stepReplyPending = true;
+  $("stepReplyMessage").textContent = "";
+  renderHome();
+  try {
+    const r = await api.agent("POST", "/next", body);
+    if (!r.ok) $("stepReplyMessage").textContent = r.status === 409
+      ? "L’étape a changé. Vérifie la consigne actuelle."
+      : "Réponse non transmise. Réessaie dans un instant.";
+  } finally {
+    stepReplyPending = false;
+    await poll();
+  }
+}
+$("stepDone").addEventListener("click", () => reportStep(true));
+$("stepStuck").addEventListener("click", () => reportStep(false));
 $("copyCmd").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("cmdText").textContent);
@@ -298,6 +375,74 @@ async function loadSessions() {
     box.append(row);
   }
 }
+// Human feedback: dictation is explicitly armed, never routed as a task.
+function renderFeedback() {
+  const usable = Boolean(status && feedback?.available && !feedback?.saved);
+  const locked = !usable || feedbackBusy;
+  $("feedbackHome").hidden = !usable;
+  $("feedbackSession").textContent = feedback?.session_id
+    ? `Essai ${feedback.session_id}${feedback.saved ? " · retour enregistré" : ""}`
+    : "Termine un essai pour donner ton retour.";
+  $("feedbackHint").textContent = feedback?.dictation_armed
+    ? `Maintiens ${keyLabel(status?.voice?.ptt_key)}, dicte ton retour, puis relâche. Cette dictée ne lance pas une nouvelle tâche.`
+    : "Tu peux dicter ou écrire ton retour. Relis-le avant de l’enregistrer.";
+  $("feedbackDictate").disabled = locked || Boolean(feedback?.dictation_armed);
+  $("feedbackComment").disabled = locked || Boolean(feedback?.dictation_armed);
+  $("feedbackSuccess").disabled = locked;
+  $("feedbackUseful").disabled = locked;
+  $("feedbackSave").disabled = locked || Boolean(feedback?.dictation_armed)
+    || !$("feedbackSuccess").value || !$("feedbackUseful").value;
+}
+
+async function loadFeedback() {
+  if (!status) { renderFeedback(); return; }
+  if (feedbackBusy) return;
+  const r = await api.agent("GET", "/feedback");
+  if (!r.ok || !r.data) { feedback = null; renderFeedback(); return; }
+  const previous = feedback;
+  feedback = r.data;
+  if (previous?.session_id !== feedback.session_id) {
+    feedbackCommentDirty = false;
+    $("feedbackSuccess").value = "";
+    $("feedbackUseful").value = "";
+    $("feedbackMessage").textContent = "";
+  }
+  const dictated = previous?.dictation_armed && !feedback.dictation_armed;
+  if (!feedbackCommentDirty || dictated) {
+    $("feedbackComment").value = feedback.comment || "";
+    feedbackCommentDirty = false;
+  }
+  renderFeedback();
+}
+
+$("feedbackHome").addEventListener("click", () => go("feedback"));
+$("feedbackComment").addEventListener("input", () => { feedbackCommentDirty = true; });
+for (const id of ["feedbackSuccess", "feedbackUseful"]) $(id).addEventListener("change", renderFeedback);
+$("feedbackDictate").addEventListener("click", async () => {
+  if (!feedback?.session_id || feedbackBusy) return;
+  feedbackBusy = true; renderFeedback();
+  try {
+    const r = await api.agent("POST", "/feedback/dictate", { session_id: feedback.session_id });
+    if (r.ok && r.data) feedback = r.data;
+    $("feedbackMessage").textContent = r.ok ? "Dictée prête." : (r.data?.error || "Impossible de préparer la dictée.");
+  } finally { feedbackBusy = false; renderFeedback(); }
+});
+$("feedbackSave").addEventListener("click", async () => {
+  if (!feedback?.session_id || feedbackBusy || $("feedbackSave").disabled) return;
+  feedbackBusy = true; renderFeedback();
+  try {
+    const r = await api.agent("POST", "/feedback", {
+      session_id: feedback.session_id, success: $("feedbackSuccess").value,
+      useful: $("feedbackUseful").value, comment: $("feedbackComment").value,
+      confirmed_by_human: true, allow_screenshots_to_support: false, training_consent: false,
+    });
+    if (r.ok) {
+      feedback = { ...feedback, saved: true };
+      $("feedbackMessage").textContent = "Retour enregistré pour cet essai. Tu peux poser ta prochaine question.";
+    } else $("feedbackMessage").textContent = r.data?.error || "Le retour n’a pas été enregistré. Réessaie.";
+  } finally { feedbackBusy = false; renderFeedback(); }
+});
+
 
 // voice -----------------------------------------------------------------------------------------
 let speedTouched = 0;
@@ -306,6 +451,7 @@ let pttMsg = null; // feedback after a key change, kept for a few seconds
 function renderVoice() {
   const sp = (status && status.speech) || null;
   const usable = Boolean(sp && sp.available);
+  const localVoice = sp?.provider === "macos";
   const sw = $("ttsSwitch");
   sw.setAttribute("aria-checked", String(Boolean(sp && sp.enabled)));
   sw.disabled = !usable;
@@ -316,16 +462,28 @@ function renderVoice() {
       b.dataset.id = v.id;
       b.append(el("b", null, v.name), el("span", null, v.note));
       b.addEventListener("click", async () => {
-        pref("voice", v.id);
-        await api.agent("POST", "/voice", { voice: v.id });
+        if (status?.speech?.provider === "macos") return;
+        const r = await api.agent("POST", "/voice", { voice: v.id });
+        if (r.ok) pref("voice", v.id);
         poll();
       });
       box.append(b);
     }
   }
+  const configured = box.querySelector(".configured-voice");
+  if (configured && configured.dataset.id !== sp?.voice) configured.remove();
+  if (usable && !localVoice && sp.voice && !Array.from(box.querySelectorAll(".voice")).some((b) => b.dataset.id === sp.voice)) {
+    const b = el("button", "voice configured-voice");
+    b.dataset.id = sp.voice;
+    b.append(el("b", null, "Configured voice"), el("span", null, "Current session"));
+    // Informational: this voice is selected by the launcher, not a preset to overwrite.
+    b.disabled = true;
+    box.append(b);
+  }
   box.querySelectorAll(".voice").forEach((b) => {
     b.classList.toggle("on", Boolean(sp && sp.voice === b.dataset.id));
-    b.disabled = !usable;
+    b.disabled = !usable || localVoice || b.classList.contains("configured-voice");
+    b.title = localVoice ? "Ces voix ElevenLabs sont indisponibles en mode voix locale." : "";
   });
   if (sp && Date.now() - speedTouched > 2000) $("speed").value = String(sp.speed ?? 1);
   $("speed").disabled = !usable;
@@ -334,12 +492,14 @@ function renderVoice() {
   $("ttsNote").textContent = !status
     ? "Start the assistant to set the voice."
     : usable
-      ? "Voices by ElevenLabs. Sentences are prepared ahead, so the voice starts with the drawing."
-      : "Voice unavailable: add the ElevenLabs key (ELEVEN in backend/.env), then restart the assistant.";
+      ? localVoice
+        ? `Voix locale macOS : ${sp.voice || "voix système"}. Le son, la vitesse et le test restent disponibles ; les voix ElevenLabs sont désactivées.`
+        : "Voices by ElevenLabs. Sentences are prepared ahead, so the voice starts with the drawing."
+      : "Voix indisponible. Vérifie la sortie audio et la configuration du moteur vocal.";
 
   const keys = $("pttKeys");
   if (!keys.children.length) {
-    for (const k of (status && status.ptt_keys) || KEYS) {
+    for (const k of ((status && status.ptt_keys) || KEYS).filter((k) => safePttPreference(k.key))) {
       const b = el("button", "keycap", k.label);
       b.dataset.key = k.key;
       b.setAttribute("role", "radio");
@@ -404,6 +564,7 @@ async function poll() {
   status = r.ok ? r.data : null;
   if (status && !was) await syncPrefs();
   renderHome();
+  await loadFeedback();
   if (view === "voice") renderVoice();
   // A task just ended (or the assistant came up): refresh the numbers and the list.
   const key = status && status.current ? `${status.current.session_id}:${status.current.terminal}` : String(Boolean(status));
@@ -416,6 +577,6 @@ async function poll() {
 
 buildAutonomy();
 window.addEventListener("resize", () => renderHome());
-go(["home", "activity", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
+go(["home", "activity", "feedback", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
 poll();
 setInterval(poll, 1000);

@@ -22,7 +22,7 @@ _CHAR_KEYCODES = {c: k for c, k in zip("asdfhgzxcv", range(0, 10))} | {
 
 class InputHub:
     """Singleton: `InputHub.get()`. Subscribers get (event, payload) with event in
-    click | key_down | key_up | combo_down | combo_up."""
+    click | scroll | key_down | key_up | combo_down | combo_up."""
 
     _instance: "InputHub | None" = None
     _lock = threading.Lock()
@@ -57,7 +57,10 @@ class InputHub:
         def on_release(key):
             self._emit("key_up", key)
 
-        self._mouse = mouse.Listener(on_click=on_click)
+        def on_scroll(x, y, dx, dy):
+            self._emit("scroll", (x, y, dx, dy))
+
+        self._mouse = mouse.Listener(on_click=on_click, on_scroll=on_scroll)
         self._keys = keyboard.Listener(on_press=on_press, on_release=on_release, darwin_intercept=self._intercept)
         self._mouse.start()
         self._keys.start()
@@ -94,9 +97,18 @@ class InputHub:
             return event
         from Quartz import (CGEventGetFlags, CGEventGetIntegerValueField, kCGEventFlagMaskAlternate,
                             kCGEventFlagMaskCommand, kCGEventFlagMaskControl, kCGEventFlagMaskShift,
-                            kCGEventKeyDown, kCGEventKeyUp, kCGKeyboardEventKeycode)
+                            kCGEventFlagsChanged, kCGEventKeyDown, kCGEventKeyUp, kCGKeyboardEventKeycode)
 
-        if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
+        if event_type not in (kCGEventKeyDown, kCGEventKeyUp, kCGEventFlagsChanged):
+            return event
+        flags = CGEventGetFlags(event)
+        held = {"cmd": bool(flags & kCGEventFlagMaskCommand), "alt": bool(flags & kCGEventFlagMaskAlternate),
+                "ctrl": bool(flags & kCGEventFlagMaskControl), "shift": bool(flags & kCGEventFlagMaskShift)}
+        if event_type == kCGEventFlagsChanged:
+            # macOS reports modifier releases as flagsChanged, not ordinary keyUp events.
+            if self._combo_down and not all(held.get(m) for m in self._combo_mods):
+                self._combo_down = False
+                self._emit("combo_up", None)
             return event
         keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
         if keycode != self._combo_keycode:
@@ -104,9 +116,6 @@ class InputHub:
                 self._combo_down = False
                 self._emit("combo_up", None)
             return event
-        flags = CGEventGetFlags(event)
-        held = {"cmd": bool(flags & kCGEventFlagMaskCommand), "alt": bool(flags & kCGEventFlagMaskAlternate),
-                "ctrl": bool(flags & kCGEventFlagMaskControl), "shift": bool(flags & kCGEventFlagMaskShift)}
         if not all(held.get(m) for m in self._combo_mods):
             if self._combo_down:
                 self._combo_down = False

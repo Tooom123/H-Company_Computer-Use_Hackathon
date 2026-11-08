@@ -8,6 +8,7 @@ developed without a Mac that has H permissions. Mock runs are never a validation
 from __future__ import annotations
 
 import base64
+import math
 import os
 import sys
 import threading
@@ -17,14 +18,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from hai_agents.polling import AnswerValidationError
+from hai_agents_local.desktop import PyautoguiDesktopBridge
 
 from .contract import Category, DeclaredResult, GuidanceStep, Step
 from .grounding import Located
 from .knowledge import DocAnswer, Knowledge, NoKnowledge
-from .procedures import BoundProcedure
+from .procedures import BoundProcedure, RESPONSE_LANGUAGE_INSTRUCTIONS
 
 StepCallback = Callable[[Step], None]
 LookupCallback = Callable[[DocAnswer], None]
@@ -78,34 +80,91 @@ def _lenient(model: type[BaseModel], raw: Any) -> BaseModel | None:
         return None
 
 
-class GuideSubStep(BaseModel):
+class GuideTarget(BaseModel):
+    """A point in the explicit full-screenshot normalized frame, never guessed pixels."""
+
+    target_x: float | None = Field(default=None, ge=0, le=1000,
+        description="Horizontal position normalized to 0..1000 across the FULL screenshot: 0 left, 1000 right. Null if uncertain.")
+    target_y: float | None = Field(default=None, ge=0, le=1000,
+        description="Vertical position normalized to 0..1000 across the FULL screenshot: 0 top, 1000 bottom. Null if uncertain.")
+
+    @field_validator("target_x", "target_y", mode="before")
+    @classmethod
+    def valid_coordinate_or_none(cls, value):
+        # Keep useful guidance text even if the model supplies an invalid point.
+        if type(value) not in (int, float) or not 0 <= value <= 1000 or not math.isfinite(value):
+            return None
+        return value
+
+
+class GuideSubStep(GuideTarget):
     instruction: str = Field(default="", description="One short imperative line, max 12 words.")
     where: str | None = ""
     why: str | None = ""
-    target_x: int | None = None
-    target_y: int | None = None
+    kind: Literal["click", "type", "key", "info", "wait"] = Field(default="click",
+        description="Expected human interaction: click, type, key, info (read only), or wait (observe a pending result).")
+    done_when: str | None = Field(default=None,
+        description="Concrete visible state to verify after this interaction. A click alone is not completion.")
 
 
-class GuideAnswer(BaseModel):
+class GuideAnswer(GuideTarget):
     """Guidance answered by the H agent in guide mode: the next step, plus following steps visible on the same screen."""
 
     steps: list[GuideSubStep] | None = Field(
         default=None,
         description="Up to 3 consecutive steps whose controls are ALL visible on the current screen, in order. "
-                    "The first one must also be repeated in the top-level fields.")
+                    "The first one must also be repeated in the top-level fields. Only the first is shown; the "
+                    "others prepare audio and must be revalidated on a fresh screen before use.")
     instruction: str = Field(default="", description="What the user should do now. One short line, max 12 words.")
     where: str | None = Field(default="", description="Where the control is on screen, in words.")
     why: str | None = Field(default="", description="One or two sentences: what this step achieves for the user.")
-    target_x: int | None = Field(default=None, description="X pixel of the control in the screenshot you see, or null if there is nothing to point at.")
-    target_y: int | None = Field(default=None, description="Y pixel of the control in the screenshot you see, or null.")
+    kind: Literal["click", "type", "key", "info", "wait"] = Field(default="click",
+        description="Expected human interaction: click, type, key, info (read only), or wait (observe a pending result).")
+    done_when: str | None = Field(default=None,
+        description="Concrete visible state to verify after this interaction. A click alone is not completion.")
+    coordinate_system: Literal["normalized_1000"] | None = Field(default=None,
+        description="Set normalized_1000 explicitly whenever returning a target, including targets in steps. Applies to both axes and every step. Never pixels or viewport coordinates.")
     last: bool | None = Field(default=False, description="True when the goal is visibly achieved or the user is blocked.")
     blocked: bool | None = Field(default=False, description="True if the user cannot proceed (error, permission).")
     blocker: str | None = Field(default=None, description="Exact message seen on screen when blocked.")
+
+    @field_validator("coordinate_system", mode="before")
+    @classmethod
+    def explicit_coordinate_system_or_none(cls, value):
+        return value if value == "normalized_1000" else None
 
     def model_post_init(self, __context) -> None:
         self.where, self.why = self.where or "", self.why or ""
         self.last, self.blocked = bool(self.last), bool(self.blocked)
         self.steps = [x for x in (self.steps or []) if x.instruction]
+
+
+_GUIDANCE_PROGRESSION = """\
+Progression protocol: only the first proposed step is shown. Following steps are tentative audio
+preparation, never permission to advance without observing the screen again. Give the current step's
+kind and, where possible, done_when: a visible postcondition, not just an input event.
+An 'Observed interaction:' message is an automatic input or screen-change signal, NOT human feedback
+or proof of success. A 'User reported' message is a declaration, also not verified success. After either,
+take a fresh screenshot, check the previous expected result, then adapt the next instruction and target
+to the actual current screen. Never reuse the previous batch or declare completion just because an
+input occurred. Stay within the reference procedure and observation-only tool permissions.
+"""
+
+
+def _guidance_reply_message(done: bool, note: str | None, expected: str | None) -> str:
+    """Preserve automatic signals versus human declarations; neither proves a postcondition."""
+    note = (note or "").strip()
+    if note.startswith("Observed interaction:"):
+        signal = note
+    else:
+        signal = ("User reported completing the interaction." if done
+                  else "User reported difficulty completing the interaction.")
+        if note:
+            signal += f" User note: {note}"
+    expected_result = f" Expected visible result to verify: {expected}." if expected else ""
+    return (signal + " This is not a verified outcome." + expected_result
+            + " Take a fresh screenshot and verify the result before choosing the next instruction."
+              " Adapt to the current screen; discard any stale remaining steps from the previous answer.")
 
 
 class VerificationAnswer(BaseModel):
@@ -184,6 +243,33 @@ def make_lookup_tool(knowledge: Knowledge, software: str, on_lookup: LookupCallb
 # --------------------------------------------------------------------------- real H backend
 
 
+class ReadOnlyDesktopBridge(PyautoguiDesktopBridge):
+    """Enforce GUIDE observation at the local command boundary, before driver access.
+
+    Names are SDK wire methods, not model tool names. Every other method (including
+    future methods) is denied. Local overlay drawing remains outside this bridge.
+    This does not redact sensitive information visible on the user's screen.
+    """
+
+    commands = frozenset({
+        "platform", "screenshot_b64", "get_screen_size", "get_mouse_position",
+        "get_observation_snapshot",
+    })
+
+    def _dispatch(self, name, args):
+        if name not in self.commands or args:
+            return None, "GUIDE observation only: desktop input, files and shell are disabled."
+        # Do not call the base dispatcher: it logs raw driver exceptions, which
+        # may contain private paths or credentials. These methods take no args.
+        from hai_agents_local.transport import serialize_result
+
+        try:
+            method = getattr(self._driver, name)
+            return serialize_result(method() if callable(method) else method), None
+        except Exception:
+            return None, "GUIDE observation unavailable; no desktop action was performed."
+
+
 class HBackend:
     """Drives this Mac through H's desktop environment."""
 
@@ -205,12 +291,17 @@ class HBackend:
         self.screenshot_max_width = screenshot_max_width
         self.timezone_name = timezone_name
         self.knowledge = knowledge or NoKnowledge()
+        # Freeze the permission for this backend/channel; a later environment
+        # edit must not upgrade an already running observation-only session.
+        self.observe_only = os.environ.get("HCS_GUIDE_OBSERVE_ONLY", "").lower() in {"1", "true", "yes"}
         self._desktop_session_id: str | None = None
-        if os.environ.get("HCS_AUTO_CLEANUP", "1") not in {"0", "false", "no"}:
+        if not self.observe_only and os.environ.get("HCS_AUTO_CLEANUP", "1") not in {"0", "false", "no"}:
             self._close_orphans()
 
     def _close_orphans(self) -> None:
         """Close command channels left pending by earlier dead processes: each one holds a concurrency slot."""
+        if getattr(self, "observe_only", False):
+            return  # GUIDE never enumerates or deletes unrelated sessions.
         import httpx
 
         wrapper = self._client._client_wrapper
@@ -236,7 +327,8 @@ class HBackend:
         if self._desktop_session_id is not None and not self._channel_healthy(self._desktop_session_id):
             self._desktop_session_id = None  # stale: the bridge died or the platform closed the channel
         if self._desktop_session_id is None:
-            bridge = PyautoguiDesktopBridge(
+            bridge_type = ReadOnlyDesktopBridge if getattr(self, "observe_only", False) else PyautoguiDesktopBridge
+            bridge = bridge_type(
                 "user-mac", api_key=wrapper._api_key, base_url=wrapper.get_base_url(),
                 max_width=self.screenshot_max_width,
             )
@@ -278,7 +370,7 @@ class HBackend:
             "name": _agent_name(name),
             "description": "Customer-success assistant driving the user's own desktop.",
             "model": self.model,
-            "instructions": instructions,
+            "instructions": instructions + "\n\n" + RESPONSE_LANGUAGE_INSTRUCTIONS,
             "environments": [
                 # host=user_device is what makes the SDK serve this Mac from this process; without it H
                 # provisions a cloud desktop and the screen seen by the agent is not the user's.
@@ -289,6 +381,14 @@ class HBackend:
         }
         if fast:
             spec["reasoning_effort"] = "low"  # guide steps are short observations, not plans
+        if getattr(self, "observe_only", False):
+            spec["instructions"] += (
+                "\nObservation-only GUIDE: only inspect the current screen and explain the next user action. "
+                "Never click, type, scroll, use shell or access files. The local bridge rejects these commands. "
+                "Ask the user to change the screen and wait for their confirmation."
+            )
+            # Defense in depth; the local allowlist above is the enforcement.
+            spec["environments"][0]["shell"] = False
         return spec
 
     # ----------------------------------------------------------------- session helpers
@@ -324,6 +424,10 @@ class HBackend:
     # ----------------------------------------------------------------- public API
 
     def run_attempt(self, bound, task, attempt, on_step, stop_event, on_lookup=None) -> AttemptResult:
+        if getattr(self, "observe_only", False):
+            return AttemptResult(None, "failed", DeclaredResult(
+                outcome="blocked", summary="Observation-only GUIDE cannot take control of the desktop.",
+                blocker="Desktop actions are disabled for this session.", blocker_category=Category.environment))
         proc = bound.procedure
         if stop_event.is_set():
             return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -361,11 +465,16 @@ class HBackend:
 
     def run_guidance(self, bound, task, on_step, on_guidance, stop_event, on_lookup=None) -> AttemptResult:
         """Interactive session: one guidance step per turn, the user performs it, then we continue."""
+        from .a11y import native_target
+        if native_target():
+            message = "Native coaching uses the authorized accessibility tree; whole-desktop agent fallback is disabled."
+            return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message, blocker=message))
         proc = bound.procedure
         if stop_event.is_set():
             return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
         tools = [make_lookup_tool(self.knowledge, bound.request.software, on_lookup)]
-        agent = self._agent_spec(f"hcs-guide-{proc.id}", bound.guide_instructions, fast=True)
+        agent = self._agent_spec(f"hcs-guide-{proc.id}",
+                                 bound.guide_instructions + "\n\n" + _GUIDANCE_PROGRESSION, fast=True)
         done = threading.Event()
         guidance: list[GuidanceStep] = []
         sid = None
@@ -396,29 +505,23 @@ class HBackend:
                 if ans is None:
                     declared = DeclaredResult(outcome="unclear", summary=str(result.answer or ""))
                     break
-                width = min(self.screenshot_max_width, 1024)
                 subs = ans.steps or [GuideSubStep(instruction=ans.instruction, where=ans.where, why=ans.why,
-                                                  target_x=ans.target_x, target_y=ans.target_y)]
+                                                  target_x=ans.target_x, target_y=ans.target_y,
+                                                  kind=ans.kind, done_when=ans.done_when)]
                 subs = [x for x in subs if x.instruction] or [GuideSubStep(instruction=ans.instruction or "…")]
                 if ans.blocked or ans.last:
                     subs = subs[:1]
-                replies: list[str] = []
-                aborted = False
-                for k, sub in enumerate(subs[:3]):
-                    gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where or "",
-                                      why=sub.why or "", pointer=_to_screen_points(sub.target_x, sub.target_y, width),
-                                      last=(ans.last or ans.blocked))
-                    guidance.append(gs)
-                    reply = on_guidance(gs)  # blocks until the user did it (or stop); None on last steps
-                    if gs.last:
-                        break
-                    if reply is None or stop_event.is_set():
-                        aborted = True
-                        break
-                    did, note = reply
-                    replies.append(("I did it." if did else "I could not do it.") + (f" {note}" if note else ""))
-                    if not did:
-                        break  # the user is stuck: let the agent look again now
+                # Later instructions are audio candidates only. A click or page transition can
+                # invalidate every remaining target, even if all were visible in the last frame.
+                sub = subs[0]
+                gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where or "",
+                                  why=sub.why or "", pointer=_guide_target_to_screen(
+                                      sub.target_x, sub.target_y, ans.coordinate_system),
+                                  kind=sub.kind, done_when=sub.done_when,
+                                  prepared_speech=[candidate.instruction for candidate in subs[1:3]],
+                                  last=(ans.last or ans.blocked))
+                guidance.append(gs)
+                reply = on_guidance(gs)  # blocks for an interaction/report, not proof of success
                 if ans.blocked:
                     declared = DeclaredResult(outcome="blocked", summary=ans.instruction, blocker=ans.blocker,
                                               steps_taken=[g.instruction for g in guidance])
@@ -427,9 +530,10 @@ class HBackend:
                     declared = DeclaredResult(outcome="done", summary=ans.instruction,
                                               steps_taken=[g.instruction for g in guidance])
                     break
-                if aborted:
+                if reply is None or stop_event.is_set():
                     break
-                handle.send_message(" ".join(replies) + " Look at the screen and give me the next step(s).")
+                did, note = reply
+                handle.send_message(_guidance_reply_message(did, note, gs.done_when))
             else:
                 declared = DeclaredResult(outcome="unclear", summary="Too many guidance steps.")
             if stop_event.is_set():
@@ -447,6 +551,9 @@ class HBackend:
         return AttemptResult(sid, "completed", declared, cost_usd=cost, guidance=guidance)
 
     def verify(self, bound, on_step, stop_event) -> VerifyResult:
+        if getattr(self, "observe_only", False):
+            return VerifyResult(None, "inconclusive", observed=(
+                "Observation-only GUIDE requires visual postcondition checks; autonomous verification is disabled."))
         checks = bound.checks
         if stop_event.is_set():
             return VerifyResult(None, "interrupted")
@@ -499,7 +606,8 @@ class HBackend:
             if info is not None:
                 from . import sitemap
 
-                sitemap.remember(info)  # the assistant learns the site as it is used (labels only)
+                if not getattr(self, "observe_only", False):
+                    sitemap.remember(info)
             if best is None or info is None or not info.is_front:
                 return None, []
             if best.score < 10:  # only word overlap, no label match: let Holo look
@@ -529,13 +637,16 @@ class HBackend:
             from . import a11y, sitemap
 
             info = a11y.page()
-            if info is None or len(info.elements) <= 1:
+            if info is None or (not getattr(info, "native", False) and len(info.elements) <= 1):
                 return None
-            sitemap.remember(info)
+            if getattr(info, "native", False) and not info.is_front:
+                return info, []
+            if not getattr(self, "observe_only", False):
+                sitemap.remember(info)
             seen: set[tuple[str, str]] = set()
             items = []
             for e in info.elements:
-                if e.role not in (*a11y.INTERACTIVE, "AXHeading"):
+                if e.role not in (*a11y.INTERACTIVE, "AXHeading", *(["AXStaticText"] if getattr(info, "native", False) else [])):
                     continue
                 key = (e.role, e.name.lower())
                 if key in seen or e.frame[2] * e.frame[3] > 500 * 400:
@@ -560,6 +671,9 @@ class HBackend:
         hit, ties = self._tree_locate(description)
         if hit is not None:
             return hit
+        from .a11y import native_target
+        if native_target():
+            return Located(False, None, "The requested control is not visible in the authorized native accessibility tree.")
         try:
             loc = self._grounding().locate(description, context)
         except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
@@ -573,27 +687,44 @@ class HBackend:
         return loc
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:
-        try:
-            return self._grounding().effect_visible(expected)
-        except Exception as exc:  # noqa: BLE001
-            return True, f"effect check unavailable: {exc}"
+        return self._visual_check("effect_visible", expected)
 
     def screen_matches(self, expected: str, software: str = "") -> tuple[bool, str]:
-        if self.use_a11y:
+        if getattr(self, "use_a11y", False):
             try:
                 from . import a11y
-
                 ok, where = a11y.screen_check(expected, software)
-                if ok is not None:
+                if type(ok) is bool and isinstance(where, str) and where.strip():
+                    self.last_visual_check = {"check": "screen_matches", "status": "observed", "matched": ok}
                     return ok, f"tree: {where}"
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
+        return self._visual_check("screen_matches", expected)
+
+    def _visual_check(self, method: str, expected: str) -> tuple[bool, str]:
+        from .a11y import native_target
+        if native_target():
+            self.last_visual_check = {"check": method, "status": "unavailable",
+                                      "message": "Native AX observation does not independently verify the outcome."}
+            return False, ""
         try:
-            return self._grounding().screen_matches(expected)
-        except Exception as exc:  # noqa: BLE001
-            return True, f"screen check unavailable: {exc}"  # do not block the guide on a check failure
+            result = getattr(self._grounding(), method)(expected)
+            if (not isinstance(result, tuple) or len(result) != 2 or type(result[0]) is not bool
+                    or not isinstance(result[1], str) or not result[1].strip()):
+                raise ValueError("Unusable visual check")
+        except Exception:
+            self.last_visual_check = {"check": method, "status": "unavailable",
+                                      "message": "Visual verification unavailable; outcome inconclusive."}
+            # An empty description prevents the runner mistaking an unavailable
+            # check for another foreground application and waiting indefinitely.
+            return False, ""
+        self.last_visual_check = {"check": method, "status": "observed", "matched": result[0]}
+        return result
 
     def screenshot(self, path: Path) -> Path | None:
+        from .a11y import native_target
+        if native_target():
+            return None  # This native pilot shares AX labels only; never fall back to a whole-desktop image.
         try:
             from .grounding import grab_screen
 
@@ -645,6 +776,30 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
     if etype == "AgentErrorEvent":
         return Step(index=index, attempt=attempt, timestamp=ts, kind="error", summary=str(d.get("error"))[:300])
     return None
+
+
+def _guide_target_to_screen(x, y, coordinate_system, *, screen_size=None) -> tuple[int, int] | None:
+    """Full-main-display GUIDE target -> overlay points; missing/unknown frames hide the target.
+
+    No pixel/normalized heuristic. This mapping is for uncropped full-display
+    captures only; a future cropped/window capture needs its own explicit frame.
+    """
+    if coordinate_system != "normalized_1000":
+        return None
+    if any(type(v) not in (int, float) or not 0 <= v <= 1000 or not math.isfinite(v) for v in (x, y)):
+        return None
+    try:
+        if screen_size is None:
+            from .overlay import screen_size_points
+
+            screen_size = screen_size_points()
+        sw, sh = screen_size
+        if any(type(v) not in (int, float) or not math.isfinite(v) or v < 1 for v in (sw, sh)):
+            return None
+        # Each axis has its own scale; Retina backing pixels never enter here.
+        return min(round(x * sw / 1000), math.ceil(sw) - 1), min(round(y * sh / 1000), math.ceil(sh) - 1)
+    except Exception:
+        return None
 
 
 def _to_screen_points(x: int | None, y: int | None, screenshot_max_width: int) -> tuple[int, int] | None:

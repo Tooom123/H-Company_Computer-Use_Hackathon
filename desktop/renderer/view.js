@@ -1,7 +1,7 @@
 // Pure formatting for the UI (no DOM): what to say about the agent's state. Tested with `node --test`.
 
 export function keyLabel(key) {
-  if (!key) return "⌘H";
+  if (!key) return "⌃⇧H";
   const names = { cmd: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧", space: "Space", alt_r: "Right ⌥", cmd_r: "Right ⌘" };
   return key
     .toLowerCase()
@@ -20,6 +20,9 @@ export function procedureName(id) {
 /** The paper badge on Home: the same words as the on-screen badge. Only "Listening…" while the key is held. */
 export function readyBadge(status) {
   const v = (status && status.voice) || {};
+  if (v.state === "starting") return { text: "Opening microphone…", sub: "Allow microphone access if macOS asks", pulse: true };
+  if (typeof v.state === "string" && v.state.startsWith("error:")) return { text: "Microphone or transcription error", sub: v.state.slice(6).trim(), pulse: false };
+  if (v.state === "too_short") return { text: "Recording too short", sub: `Hold ${keyLabel(v.ptt_key)} while speaking, then release`, pulse: false };
   if (v.state === "recording") return { text: "Listening…", pulse: true };
   if (v.state === "transcribing") return { text: "Transcribing…", pulse: true };
   return { text: `${keyLabel(v.ptt_key)}: new request`, pulse: false };
@@ -71,4 +74,9 @@ export function when(iso, now = new Date()) {
   if (mins < 60) return `${mins} min ago`;
   if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** Never restore the macOS Hide shortcut from an old app preference. */
+export function safePttPreference(key) {
+  return ["ctrl+shift+h", "cmd+j", "alt_r", "f9"].includes(key) ? key : null;
 }
