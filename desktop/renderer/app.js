@@ -26,9 +26,6 @@ let stopNotice = null;
 let lastSessionKey = "";
 let view = "home";
 let pendingAutonomy = null; // optimistic value while the POST is in flight
-let feedback = null;
-let feedbackBusy = false;
-let feedbackCommentDirty = false;
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -92,7 +89,6 @@ function go(name) {
   if (name === "activity") loadSessions();
   if (name === "voice") renderVoice();
   if (name === "vision") loadVision();
-  if (name === "feedback") loadFeedback();
 }
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 if (api.platform === "darwin") document.body.classList.add("mac");
@@ -375,75 +371,6 @@ async function loadSessions() {
     box.append(row);
   }
 }
-// Human feedback: dictation is explicitly armed, never routed as a task.
-function renderFeedback() {
-  const usable = Boolean(status && feedback?.available && !feedback?.saved);
-  const locked = !usable || feedbackBusy;
-  $("feedbackHome").hidden = !usable;
-  $("feedbackSession").textContent = feedback?.session_id
-    ? `Essai ${feedback.session_id}${feedback.saved ? " · retour enregistré" : ""}`
-    : "Termine un essai pour donner ton retour.";
-  $("feedbackHint").textContent = feedback?.dictation_armed
-    ? `Maintiens ${keyLabel(status?.voice?.ptt_key)}, dicte ton retour, puis relâche. Cette dictée ne lance pas une nouvelle tâche.`
-    : "Tu peux dicter ou écrire ton retour. Relis-le avant de l’enregistrer.";
-  $("feedbackDictate").disabled = locked || Boolean(feedback?.dictation_armed);
-  $("feedbackComment").disabled = locked || Boolean(feedback?.dictation_armed);
-  $("feedbackSuccess").disabled = locked;
-  $("feedbackUseful").disabled = locked;
-  $("feedbackSave").disabled = locked || Boolean(feedback?.dictation_armed)
-    || !$("feedbackSuccess").value || !$("feedbackUseful").value;
-}
-
-async function loadFeedback() {
-  if (!status) { renderFeedback(); return; }
-  if (feedbackBusy) return;
-  const r = await api.agent("GET", "/feedback");
-  if (!r.ok || !r.data) { feedback = null; renderFeedback(); return; }
-  const previous = feedback;
-  feedback = r.data;
-  if (previous?.session_id !== feedback.session_id) {
-    feedbackCommentDirty = false;
-    $("feedbackSuccess").value = "";
-    $("feedbackUseful").value = "";
-    $("feedbackMessage").textContent = "";
-  }
-  const dictated = previous?.dictation_armed && !feedback.dictation_armed;
-  if (!feedbackCommentDirty || dictated) {
-    $("feedbackComment").value = feedback.comment || "";
-    feedbackCommentDirty = false;
-  }
-  renderFeedback();
-}
-
-$("feedbackHome").addEventListener("click", () => go("feedback"));
-$("feedbackComment").addEventListener("input", () => { feedbackCommentDirty = true; });
-for (const id of ["feedbackSuccess", "feedbackUseful"]) $(id).addEventListener("change", renderFeedback);
-$("feedbackDictate").addEventListener("click", async () => {
-  if (!feedback?.session_id || feedbackBusy) return;
-  feedbackBusy = true; renderFeedback();
-  try {
-    const r = await api.agent("POST", "/feedback/dictate", { session_id: feedback.session_id });
-    if (r.ok && r.data) feedback = r.data;
-    $("feedbackMessage").textContent = r.ok ? "Dictée prête." : (r.data?.error || "Impossible de préparer la dictée.");
-  } finally { feedbackBusy = false; renderFeedback(); }
-});
-$("feedbackSave").addEventListener("click", async () => {
-  if (!feedback?.session_id || feedbackBusy || $("feedbackSave").disabled) return;
-  feedbackBusy = true; renderFeedback();
-  try {
-    const r = await api.agent("POST", "/feedback", {
-      session_id: feedback.session_id, success: $("feedbackSuccess").value,
-      useful: $("feedbackUseful").value, comment: $("feedbackComment").value,
-      confirmed_by_human: true, allow_screenshots_to_support: false, training_consent: false,
-    });
-    if (r.ok) {
-      feedback = { ...feedback, saved: true };
-      $("feedbackMessage").textContent = "Retour enregistré pour cet essai. Tu peux poser ta prochaine question.";
-    } else $("feedbackMessage").textContent = r.data?.error || "Le retour n’a pas été enregistré. Réessaie.";
-  } finally { feedbackBusy = false; renderFeedback(); }
-});
-
-
 // voice -----------------------------------------------------------------------------------------
 let speedTouched = 0;
 let pttMsg = null; // feedback after a key change, kept for a few seconds
@@ -564,7 +491,6 @@ async function poll() {
   status = r.ok ? r.data : null;
   if (status && !was) await syncPrefs();
   renderHome();
-  await loadFeedback();
   if (view === "voice") renderVoice();
   // A task just ended (or the assistant came up): refresh the numbers and the list.
   const key = status && status.current ? `${status.current.session_id}:${status.current.terminal}` : String(Boolean(status));
@@ -577,6 +503,6 @@ async function poll() {
 
 buildAutonomy();
 window.addEventListener("resize", () => renderHome());
-go(["home", "activity", "feedback", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
+go(["home", "activity", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
 poll();
 setInterval(poll, 1000);

@@ -79,19 +79,6 @@ test("step fallback sends the exact displayed session, step and human answer", a
   assert.equal(r.calls.length, before, "a stale confirmation does not start another request");
 });
 
-test("feedback requires two explicit labels and preserves separate consent flags", async () => {
-  const r = await renderer();
-  assert.equal(r.ids.get("feedbackSave").disabled, true);
-  r.ids.get("feedbackSuccess").value = "partial";
-  r.ids.get("feedbackUseful").value = "yes";
-  r.ids.get("feedbackComment").value = "Helpful but I checked the result myself.";
-  r.ids.get("feedbackUseful").events.change();
-  assert.equal(r.ids.get("feedbackSave").disabled, false);
-  await r.ids.get("feedbackSave").events.click();
-  const sent = r.calls.find((c) => c.method === "POST" && c.path === "/feedback");
-  assert.deepEqual(JSON.parse(JSON.stringify(sent.body)), { session_id: "episode-7", success: "partial", useful: "yes", comment: "Helpful but I checked the result myself.", confirmed_by_human: true, allow_screenshots_to_support: false, training_consent: false });
-});
-
 test("main process hides confirmation before next and restores it on backend rejection", async () => {
   const handlers = new Map();
   const order = [];
