@@ -1,0 +1,46 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css">
+<style>
+.wrap{display:flex;height:calc(900px - 46px - 55px)}
+.side{width:230px;background:#fff;border-right:1px solid #e3e5e8;padding:8px 0}
+.side button{display:block;width:100%;text-align:left;border:0;border-radius:0;padding:9px 18px;background:none}
+.side button.on{background:#f1ecf0;font-weight:600}
+.main{flex:1;padding:16px 24px;overflow:hidden}
+.sec{font-size:16px;font-weight:600;margin:8px 0 10px;padding-bottom:6px;border-bottom:1px solid #e3e5e8}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 40px;margin-bottom:16px}
+.opt{display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid #eceef1;border-radius:4px;padding:10px}
+.opt input{margin-top:3px}.opt small{display:block;color:#6c757d}
+.opt .link{border:0;background:none;color:#017e84;padding:0;margin-top:4px}
+</style></head><body>
+<div class="nav"><button class="icon" data-id="apps">▦</button><b>Settings</b><span>General Settings</span><span>Users &amp; Companies</span><span>Translations</span><span>Technical</span>
+<div class="right"><button class="icon" data-id="discuss">💬</button><button class="icon" data-id="activities">⏰</button><span class="avatar" data-id="user">MA</span></div></div>
+<div class="cp"><h2>Settings</h2><button class="primary" data-id="save">Save</button><button data-id="discard">Discard</button><div class="search" style="margin-left:auto">Search…</div></div>
+<div class="wrap"><div class="side" id="side"></div><div class="main" id="main"></div></div>
+<script>
+const sections = ["General Settings","Discuss","CRM","Sales","Invoicing","Inventory","Purchase","Employees","Website","Point of Sale"];
+const side = document.getElementById("side");
+sections.forEach((s, i) => { const b = document.createElement("button"); b.textContent = s; b.dataset.id = "sec-" + s.toLowerCase().replace(/[^a-z]+/g, "-"); if (!i) b.className = "on"; side.append(b); });
+const groups = [
+  ["Users", [["Invite users","Send invitations by email","Manage users"],["Access rights","Default access for new users","Default access rights"],["Multi-companies","Manage several companies","Manage companies"],["Portal access","Customers see their documents",""]]],
+  ["Languages & Currencies", [["Multi-currencies","Sell and buy in several currencies","Currencies"],["Languages","Translate the interface","Manage languages"],["Time zone","Used for emails and calendars",""],["Units of measure","Sell in kilos, litres…","Units"]]],
+  ["Integrations", [["Mail plugin","Integrate with Outlook or Gmail",""],["Google calendar","Synchronise calendars","Configure"],["OAuth","Log in with Google",""],["reCAPTCHA","Protect forms from bots",""]]],
+];
+const main = document.getElementById("main");
+for (const [title, opts] of groups) {
+  const h = document.createElement("div"); h.className = "sec"; h.textContent = title; main.append(h);
+  const g = document.createElement("div"); g.className = "grid";
+  for (const [name, sub, link] of opts) {
+    const id = name.toLowerCase().replace(/[^a-z]+/g, "-");
+    const o = document.createElement("div"); o.className = "opt";
+    o.innerHTML = `<input type="checkbox" data-id="chk-${id}"><div><b>${name}</b><small>${sub}</small>${link ? `<button class="link" data-id="link-${id}">→ ${link}</button>` : ""}</div>`;
+    g.append(o);
+  }
+  main.append(g);
+}
+window.TASKS = [
+  { target: "chk-multi-currencies", instruction: "the checkbox to enable Multi-currencies" },
+  { target: "link-invite-users", instruction: "the Manage users link under Invite users" },
+  { target: "sec-inventory", instruction: "the Inventory section in the left menu" },
+  { target: "discard", instruction: "the Discard button" },
+  { target: "chk-google-calendar", instruction: "the checkbox to enable Google calendar" },
+];
+</script></body></html>

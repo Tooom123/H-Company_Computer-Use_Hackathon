@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css">
+<style>
+.page{display:flex;gap:14px;padding:12px 16px}
+.form{flex:1;background:#fff;border:1px solid #e3e5e8;border-radius:4px;padding:16px 22px}
+.bar2{display:flex;gap:6px;margin-bottom:12px}.bar2 .st{margin-left:auto;display:flex;gap:0}
+.st span{border:1px solid #d0d4da;padding:4px 12px;color:#6c757d}.st span.on{background:#714b67;color:#fff;border-color:#714b67}
+h1{font-size:24px;margin:4px 0 12px;font-weight:500}
+.fields{display:grid;grid-template-columns:140px 1fr 140px 1fr;gap:6px 12px;margin-bottom:14px}.fields span{color:#6c757d}
+.tabs{display:flex;gap:2px;border-bottom:1px solid #d0d4da;margin-bottom:8px}.tabs button{border-bottom:0;border-radius:4px 4px 0 0;background:#f8f9fa}.tabs button.on{background:#fff}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 6px;border-bottom:1px solid #eceef1}th{color:#6c757d;font-weight:600}
+.trash{border:0;background:none;color:#868e96;padding:0}
+.addl{border:0;background:none;color:#017e84;padding:6px 0}
+.chatter{width:380px;background:#fff;border:1px solid #e3e5e8;border-radius:4px;padding:12px}
+.chatter .acts{display:flex;gap:6px;margin-bottom:12px}.msg{border-top:1px solid #eceef1;padding:8px 0;color:#495057}
+</style></head><body>
+<div class="nav"><button class="icon" data-id="apps">▦</button><b>Invoicing</b><span>Customers</span><span>Vendors</span><span>Accounting</span><span>Reporting</span>
+<div class="right"><button class="icon" data-id="discuss">💬</button><button class="icon" data-id="activities">⏰</button><span class="avatar" data-id="user">MA</span></div></div>
+<div class="cp"><h2>Invoices / Draft</h2><button data-id="gear" class="icon" style="color:#495057">⚙</button><span class="pager" style="margin-left:auto">3 / 12</span><button class="icon" data-id="prev" style="color:#495057">‹</button><button class="icon" data-id="next" style="color:#495057">›</button></div>
+<div class="page"><div class="form">
+<div class="bar2"><button class="primary" data-id="confirm">Confirm</button><button data-id="preview">Preview</button><button data-id="send">Send &amp; Print</button><button data-id="cancel">Cancel</button><div class="st"><span class="on">Draft</span><span>Posted</span></div></div>
+<h1>Draft Invoice</h1>
+<div class="fields"><span>Customer</span><b>Acme Corp</b><span>Invoice Date</span><b>11/08/2026</b><span>Delivery Address</span><b>Acme Corp, Paris</b><span>Payment terms</span><b>30 Days</b></div>
+<div class="tabs"><button class="on" data-id="tab-lines">Invoice Lines</button><button data-id="tab-journal">Journal Items</button><button data-id="tab-other">Other Info</button></div>
+<table><tr><th>Product</th><th>Label</th><th>Quantity</th><th>Price</th><th>Taxes</th><th>Amount</th><th></th></tr><tbody id="lines"></tbody></table>
+<button class="addl" data-id="add-line">Add a line</button> <button class="addl" data-id="add-section">Add a section</button> <button class="addl" data-id="add-note">Add a note</button>
+</div><div class="chatter"><div class="acts"><button data-id="send-message">Send message</button><button data-id="log-note">Log note</button><button data-id="chat-activities">Activities</button><button class="icon" data-id="attach" style="color:#495057">📎</button><button data-id="follow">Follow</button></div>
+<div class="msg"><b>Mitchell Admin</b> · Invoice created</div><div class="msg"><b>Tom</b> · Customer asked for 30 days</div><div class="msg"><b>System</b> · Draft saved</div></div></div>
+<script>
+const items = [["Desk","Office desk 160cm",2,"320.00"],["Chair","Ergonomic chair",4,"145.00"],["Lamp","LED desk lamp",4,"39.90"],["Cabinet","Drawer cabinet",1,"210.00"],["Delivery","Shipping",1,"45.00"]];
+const tb = document.getElementById("lines");
+items.forEach(([p, l, q, pr], i) => { const tr = document.createElement("tr"); tr.innerHTML = `<td>${p}</td><td>${l}</td><td>${q}</td><td>${pr}</td><td>20%</td><td>${(q*pr).toFixed(2)} €</td><td><button class="trash" data-id="trash-${i+1}" title="Delete">🗑</button></td>`; tb.append(tr); });
+window.TASKS = [
+  { target: "trash-2", instruction: "the delete (trash) icon on the Chair line" },
+  { target: "log-note", instruction: "the Log note button in the chatter" },
+  { target: "tab-other", instruction: "the Other Info tab" },
+  { target: "add-line", instruction: "the Add a line link under the invoice lines" },
+  { target: "confirm", instruction: "the Confirm button" },
+  { target: "trash-4", instruction: "the delete (trash) icon on the Cabinet line" },
+];
+</script></body></html>

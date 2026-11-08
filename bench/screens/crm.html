@@ -1,0 +1,46 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="ui.css">
+<style>
+.board{display:flex;gap:12px;padding:12px 16px}
+.col{width:330px;flex:none}
+.colh{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:600}
+.colh .sum{margin-left:auto;color:#6c757d;font-weight:400}
+.bar{height:6px;background:#e3e5e8;border-radius:3px;margin-bottom:10px;overflow:hidden}.bar i{display:block;height:100%;background:#28a745}
+.card{background:#fff;border:1px solid #e3e5e8;border-radius:4px;padding:10px;margin-bottom:8px}
+.card b{display:block}.card .rev{color:#6c757d;margin:2px 0 6px}
+.card .foot{display:flex;align-items:center;gap:4px}
+.card .foot .avatar{margin-left:auto;width:22px;height:22px;font-size:10px}
+.star{border:0;background:none;padding:0 2px;color:#adb5bd;font-size:15px}
+.clock{border:0;background:none;padding:0 2px;color:#868e96;font-size:14px}
+.add{border:0;background:none;color:#6c757d;font-size:18px;padding:0 4px}
+</style></head><body>
+<div class="nav"><button class="icon" data-id="apps" title="Apps">▦</button><b>CRM</b><span>Sales</span><span>Leads</span><span>Reporting</span><span>Configuration</span>
+<div class="right"><button class="icon" data-id="discuss">💬</button><button class="icon" data-id="activities">⏰</button><span>My Company</span><span class="avatar" data-id="user">MA</span></div></div>
+<div class="cp"><h2>Pipeline</h2><button class="primary" data-id="new">New</button><button data-id="generate">Generate Leads</button>
+<div class="search">Search…</div><button data-id="filters">Filters</button><button data-id="groupby">Group By</button><button data-id="favorites">Favorites</button>
+<div class="views"><button class="icon" data-id="v-kanban" title="Kanban">▥</button><button class="icon" data-id="v-list" title="List">☰</button><button class="icon" data-id="v-calendar" title="Calendar">📅</button><button class="icon" data-id="v-pivot" title="Pivot">⊞</button><button class="icon" data-id="v-graph" title="Graph">📈</button><button class="icon" data-id="v-map" title="Map">🗺</button><button class="icon" data-id="v-activity" title="Activity">⏱</button></div><span class="pager">1-20 / 20</span></div>
+<div class="board" id="board"></div>
+<script>
+const cols = [["New",["Acme Demo","Zz Test 1","Northwind Office","Gemini Furniture"]],["Qualified",["Azure Interior","Zz Test 2","Deco Addict"]],["Proposition",["Ready Mat","Lumber Inc","Zz Test 3","Wood Corner"]],["Won",["Acme Corp renewal","Bright Studio"]]];
+const board = document.getElementById("board");
+let n = 0;
+for (const [title, cards] of cols) {
+  const slug = title.toLowerCase();
+  const col = document.createElement("div"); col.className = "col";
+  col.innerHTML = `<div class="colh">${title}<button class="add" data-id="add-${slug}" title="Quick create">+</button><span class="sum">${(cards.length*7.5).toFixed(1)}k €</span></div><div class="bar"><i style="width:${30+cards.length*12}%"></i></div>`;
+  for (const name of cards) {
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const c = document.createElement("div"); c.className = "card"; c.dataset.id = `card-${id}`;
+    c.innerHTML = `<b>${name}</b><div class="rev">${(2+(n*1.7)%9).toFixed(2)}k € · ${["Phone call","Email","Meeting"][n%3]}</div><div class="foot"><button class="star" data-id="star-${id}" title="Priority">☆</button><button class="star" data-id="star2-${id}" title="Priority">☆</button><button class="clock" data-id="act-${id}" title="Schedule activity">◷</button><span class="avatar">${["MA","TO","ED"][n%3]}</span></div>`;
+    col.append(c); n++;
+  }
+  board.append(col);
+}
+window.TASKS = [
+  { target: "new", instruction: "the New button that creates a record" },
+  { target: "groupby", instruction: "the Group By button in the search options" },
+  { target: "v-list", instruction: "the switch to the list view" },
+  { target: "star-acme-demo", instruction: "the first priority star on the Acme Demo card" },
+  { target: "act-zz-test-3", instruction: "the schedule-activity clock icon on the Zz Test 3 card" },
+  { target: "add-proposition", instruction: "the + quick create button of the Proposition column" },
+];
+</script></body></html>

@@ -1,0 +1,3124 @@
+{
+  "meta": {
+    "error_px": 120,
+    "repeats": 3,
+    "miss_rate": 0.1,
+    "seed": 42,
+    "margin_px": 40,
+    "min_crop": {
+      "w": 512,
+      "h": 320
+    },
+    "screen": [
+      1440,
+      900
+    ],
+    "heatmap": {
+      "sigmaMin": 96,
+      "roiMass": 0.8
+    },
+    "created_at": "2026-11-08T01:35:49.658Z"
+  },
+  "screens": [
+    {
+      "name": "crm",
+      "file": "screens/crm.png",
+      "width": 1440,
+      "height": 900,
+      "elements": [
+        {
+          "id": "apps",
+          "label": "Apps",
+          "rect": {
+            "x": 14,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "discuss",
+          "label": "💬",
+          "rect": {
+            "x": 1222,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "activities",
+          "label": "⏰",
+          "rect": {
+            "x": 1264,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "user",
+          "label": "MA",
+          "rect": {
+            "x": 1400,
+            "y": 10,
+            "width": 26,
+            "height": 26
+          }
+        },
+        {
+          "id": "new",
+          "label": "New",
+          "rect": {
+            "x": 99.328125,
+            "y": 57,
+            "width": 49.171875,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "generate",
+          "label": "Generate Leads",
+          "rect": {
+            "x": 156.5,
+            "y": 57,
+            "width": 117.640625,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "filters",
+          "label": "Filters",
+          "rect": {
+            "x": 710.140625,
+            "y": 57,
+            "width": 59.078125,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "groupby",
+          "label": "Group By",
+          "rect": {
+            "x": 777.21875,
+            "y": 57,
+            "width": 78.9375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "favorites",
+          "label": "Favorites",
+          "rect": {
+            "x": 864.15625,
+            "y": 57,
+            "width": 77.484375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "v-kanban",
+          "label": "Kanban",
+          "rect": {
+            "x": 1115.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "v-list",
+          "label": "List",
+          "rect": {
+            "x": 1149.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "v-calendar",
+          "label": "Calendar",
+          "rect": {
+            "x": 1183.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "v-pivot",
+          "label": "Pivot",
+          "rect": {
+            "x": 1217.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "v-graph",
+          "label": "Graph",
+          "rect": {
+            "x": 1251.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "v-map",
+          "label": "Map",
+          "rect": {
+            "x": 1285.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "v-activity",
+          "label": "Activity",
+          "rect": {
+            "x": 1319.03125,
+            "y": 58.09375,
+            "width": 32,
+            "height": 28
+          }
+        },
+        {
+          "id": "add-new",
+          "label": "Quick create",
+          "rect": {
+            "x": 51.125,
+            "y": 111.1875,
+            "width": 18.296875,
+            "height": 25.1875
+          }
+        },
+        {
+          "id": "card-acme-demo",
+          "label": "Acme Demo2.00k € · Phone call☆☆◷MA",
+          "rect": {
+            "x": 16,
+            "y": 160.375,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-acme-demo",
+          "label": "Priority",
+          "rect": {
+            "x": 27,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-acme-demo",
+          "label": "Priority",
+          "rect": {
+            "x": 48.453125,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-acme-demo",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 69.90625,
+            "y": 216.953125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-zz-test-1",
+          "label": "Zz Test 13.70k € · Email☆☆◷TO",
+          "rect": {
+            "x": 16,
+            "y": 256.75,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-zz-test-1",
+          "label": "Priority",
+          "rect": {
+            "x": 27,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-zz-test-1",
+          "label": "Priority",
+          "rect": {
+            "x": 48.453125,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-zz-test-1",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 69.90625,
+            "y": 313.328125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-northwind-office",
+          "label": "Northwind Office5.40k € · Meeting☆☆◷ED",
+          "rect": {
+            "x": 16,
+            "y": 353.125,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-northwind-office",
+          "label": "Priority",
+          "rect": {
+            "x": 27,
+            "y": 409,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-northwind-office",
+          "label": "Priority",
+          "rect": {
+            "x": 48.453125,
+            "y": 409,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-northwind-office",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 69.90625,
+            "y": 409.703125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-gemini-furniture",
+          "label": "Gemini Furniture7.10k € · Phone call☆☆◷M",
+          "rect": {
+            "x": 16,
+            "y": 449.5,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-gemini-furniture",
+          "label": "Priority",
+          "rect": {
+            "x": 27,
+            "y": 505.375,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-gemini-furniture",
+          "label": "Priority",
+          "rect": {
+            "x": 48.453125,
+            "y": 505.375,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-gemini-furniture",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 69.90625,
+            "y": 506.078125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "add-qualified",
+          "label": "Quick create",
+          "rect": {
+            "x": 423.59375,
+            "y": 111.1875,
+            "width": 18.296875,
+            "height": 25.1875
+          }
+        },
+        {
+          "id": "card-azure-interior",
+          "label": "Azure Interior8.80k € · Email☆☆◷TO",
+          "rect": {
+            "x": 358,
+            "y": 160.375,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-azure-interior",
+          "label": "Priority",
+          "rect": {
+            "x": 369,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-azure-interior",
+          "label": "Priority",
+          "rect": {
+            "x": 390.453125,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-azure-interior",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 411.90625,
+            "y": 216.953125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-zz-test-2",
+          "label": "Zz Test 210.50k € · Meeting☆☆◷ED",
+          "rect": {
+            "x": 358,
+            "y": 256.75,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-zz-test-2",
+          "label": "Priority",
+          "rect": {
+            "x": 369,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-zz-test-2",
+          "label": "Priority",
+          "rect": {
+            "x": 390.453125,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-zz-test-2",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 411.90625,
+            "y": 313.328125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-deco-addict",
+          "label": "Deco Addict3.20k € · Phone call☆☆◷MA",
+          "rect": {
+            "x": 358,
+            "y": 353.125,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-deco-addict",
+          "label": "Priority",
+          "rect": {
+            "x": 369,
+            "y": 409,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-deco-addict",
+          "label": "Priority",
+          "rect": {
+            "x": 390.453125,
+            "y": 409,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-deco-addict",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 411.90625,
+            "y": 409.703125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "add-proposition",
+          "label": "Quick create",
+          "rect": {
+            "x": 780.765625,
+            "y": 111.1875,
+            "width": 18.296875,
+            "height": 25.1875
+          }
+        },
+        {
+          "id": "card-ready-mat",
+          "label": "Ready Mat4.90k € · Email☆☆◷TO",
+          "rect": {
+            "x": 700,
+            "y": 160.375,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-ready-mat",
+          "label": "Priority",
+          "rect": {
+            "x": 711,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-ready-mat",
+          "label": "Priority",
+          "rect": {
+            "x": 732.453125,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-ready-mat",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 753.90625,
+            "y": 216.953125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-lumber-inc",
+          "label": "Lumber Inc6.60k € · Meeting☆☆◷ED",
+          "rect": {
+            "x": 700,
+            "y": 256.75,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-lumber-inc",
+          "label": "Priority",
+          "rect": {
+            "x": 711,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-lumber-inc",
+          "label": "Priority",
+          "rect": {
+            "x": 732.453125,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-lumber-inc",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 753.90625,
+            "y": 313.328125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-zz-test-3",
+          "label": "Zz Test 38.30k € · Phone call☆☆◷MA",
+          "rect": {
+            "x": 700,
+            "y": 353.125,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-zz-test-3",
+          "label": "Priority",
+          "rect": {
+            "x": 711,
+            "y": 409,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-zz-test-3",
+          "label": "Priority",
+          "rect": {
+            "x": 732.453125,
+            "y": 409,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-zz-test-3",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 753.90625,
+            "y": 409.703125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-wood-corner",
+          "label": "Wood Corner10.00k € · Email☆☆◷TO",
+          "rect": {
+            "x": 700,
+            "y": 449.5,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-wood-corner",
+          "label": "Priority",
+          "rect": {
+            "x": 711,
+            "y": 505.375,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-wood-corner",
+          "label": "Priority",
+          "rect": {
+            "x": 732.453125,
+            "y": 505.375,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-wood-corner",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 753.90625,
+            "y": 506.078125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "add-won",
+          "label": "Quick create",
+          "rect": {
+            "x": 1076.90625,
+            "y": 111.1875,
+            "width": 18.296875,
+            "height": 25.1875
+          }
+        },
+        {
+          "id": "card-acme-corp-renewal",
+          "label": "Acme Corp renewal2.70k € · Meeting☆☆◷ED",
+          "rect": {
+            "x": 1042,
+            "y": 160.375,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-acme-corp-renewal",
+          "label": "Priority",
+          "rect": {
+            "x": 1053,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-acme-corp-renewal",
+          "label": "Priority",
+          "rect": {
+            "x": 1074.453125,
+            "y": 216.25,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-acme-corp-renewal",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 1095.90625,
+            "y": 216.953125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        },
+        {
+          "id": "card-bright-studio",
+          "label": "Bright Studio4.40k € · Phone call☆☆◷MA",
+          "rect": {
+            "x": 1042,
+            "y": 256.75,
+            "width": 330,
+            "height": 88.375
+          }
+        },
+        {
+          "id": "star-bright-studio",
+          "label": "Priority",
+          "rect": {
+            "x": 1053,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "star2-bright-studio",
+          "label": "Priority",
+          "rect": {
+            "x": 1074.453125,
+            "y": 312.625,
+            "width": 17.453125,
+            "height": 21
+          }
+        },
+        {
+          "id": "act-bright-studio",
+          "label": "Schedule activity",
+          "rect": {
+            "x": 1095.90625,
+            "y": 313.328125,
+            "width": 16.21875,
+            "height": 19.59375
+          }
+        }
+      ]
+    },
+    {
+      "name": "invoice",
+      "file": "screens/invoice.png",
+      "width": 1440,
+      "height": 900,
+      "elements": [
+        {
+          "id": "apps",
+          "label": "▦",
+          "rect": {
+            "x": 14,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "discuss",
+          "label": "💬",
+          "rect": {
+            "x": 1316,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "activities",
+          "label": "⏰",
+          "rect": {
+            "x": 1358,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "user",
+          "label": "MA",
+          "rect": {
+            "x": 1400,
+            "y": 10,
+            "width": 26,
+            "height": 26
+          }
+        },
+        {
+          "id": "gear",
+          "label": "⚙",
+          "rect": {
+            "x": 160.390625,
+            "y": 56,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "prev",
+          "label": "‹",
+          "rect": {
+            "x": 1360,
+            "y": 56,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "next",
+          "label": "›",
+          "rect": {
+            "x": 1396,
+            "y": 56,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "confirm",
+          "label": "Confirm",
+          "rect": {
+            "x": 39,
+            "y": 124,
+            "width": 71.46875,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "preview",
+          "label": "Preview",
+          "rect": {
+            "x": 116.46875,
+            "y": 124,
+            "width": 69.296875,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "send",
+          "label": "Send & Print",
+          "rect": {
+            "x": 191.765625,
+            "y": 124,
+            "width": 98.09375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel",
+          "rect": {
+            "x": 295.859375,
+            "y": 124,
+            "width": 62.484375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "tab-lines",
+          "label": "Invoice Lines",
+          "rect": {
+            "x": 39,
+            "y": 268.15625,
+            "width": 100.984375,
+            "height": 29.1875
+          }
+        },
+        {
+          "id": "tab-journal",
+          "label": "Journal Items",
+          "rect": {
+            "x": 141.984375,
+            "y": 268.15625,
+            "width": 103.703125,
+            "height": 29.1875
+          }
+        },
+        {
+          "id": "tab-other",
+          "label": "Other Info",
+          "rect": {
+            "x": 247.6875,
+            "y": 268.15625,
+            "width": 85.75,
+            "height": 29.1875
+          }
+        },
+        {
+          "id": "trash-1",
+          "label": "Delete",
+          "rect": {
+            "x": 961.421875,
+            "y": 346.53125,
+            "width": 11.71875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "trash-2",
+          "label": "Delete",
+          "rect": {
+            "x": 961.421875,
+            "y": 379.71875,
+            "width": 11.71875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "trash-3",
+          "label": "Delete",
+          "rect": {
+            "x": 961.421875,
+            "y": 412.90625,
+            "width": 11.71875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "trash-4",
+          "label": "Delete",
+          "rect": {
+            "x": 961.421875,
+            "y": 446.09375,
+            "width": 11.71875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "trash-5",
+          "label": "Delete",
+          "rect": {
+            "x": 961.421875,
+            "y": 479.28125,
+            "width": 11.71875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "add-line",
+          "label": "Add a line",
+          "rect": {
+            "x": 39,
+            "y": 505.46875,
+            "width": 60.4375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "add-section",
+          "label": "Add a section",
+          "rect": {
+            "x": 102.828125,
+            "y": 505.46875,
+            "width": 82.109375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "add-note",
+          "label": "Add a note",
+          "rect": {
+            "x": 188.328125,
+            "y": 505.46875,
+            "width": 66.28125,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "send-message",
+          "label": "Send message",
+          "rect": {
+            "x": 1057,
+            "y": 120,
+            "width": 99.15625,
+            "height": 48.375
+          }
+        },
+        {
+          "id": "log-note",
+          "label": "Log note",
+          "rect": {
+            "x": 1162.15625,
+            "y": 120,
+            "width": 69.09375,
+            "height": 48.375
+          }
+        },
+        {
+          "id": "chat-activities",
+          "label": "Activities",
+          "rect": {
+            "x": 1237.25,
+            "y": 120,
+            "width": 76.171875,
+            "height": 48.375
+          }
+        },
+        {
+          "id": "attach",
+          "label": "📎",
+          "rect": {
+            "x": 1319.421875,
+            "y": 120,
+            "width": 24.421875,
+            "height": 28
+          }
+        },
+        {
+          "id": "follow",
+          "label": "Follow",
+          "rect": {
+            "x": 1349.84375,
+            "y": 120,
+            "width": 61.15625,
+            "height": 48.375
+          }
+        }
+      ]
+    },
+    {
+      "name": "settings",
+      "file": "screens/settings.png",
+      "width": 1440,
+      "height": 900,
+      "elements": [
+        {
+          "id": "apps",
+          "label": "▦",
+          "rect": {
+            "x": 14,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "discuss",
+          "label": "💬",
+          "rect": {
+            "x": 1316,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "activities",
+          "label": "⏰",
+          "rect": {
+            "x": 1358,
+            "y": 9,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "id": "user",
+          "label": "MA",
+          "rect": {
+            "x": 1400,
+            "y": 10,
+            "width": 26,
+            "height": 26
+          }
+        },
+        {
+          "id": "save",
+          "label": "Save",
+          "rect": {
+            "x": 100.5,
+            "y": 57,
+            "width": 50.375,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "discard",
+          "label": "Discard",
+          "rect": {
+            "x": 158.875,
+            "y": 57,
+            "width": 67.71875,
+            "height": 30.1875
+          }
+        },
+        {
+          "id": "sec-general-settings",
+          "label": "General Settings",
+          "rect": {
+            "x": 0,
+            "y": 107.1875,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-discuss",
+          "label": "Discuss",
+          "rect": {
+            "x": 0,
+            "y": 143.375,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-crm",
+          "label": "CRM",
+          "rect": {
+            "x": 0,
+            "y": 179.5625,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-sales",
+          "label": "Sales",
+          "rect": {
+            "x": 0,
+            "y": 215.75,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-invoicing",
+          "label": "Invoicing",
+          "rect": {
+            "x": 0,
+            "y": 251.9375,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-inventory",
+          "label": "Inventory",
+          "rect": {
+            "x": 0,
+            "y": 288.125,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-purchase",
+          "label": "Purchase",
+          "rect": {
+            "x": 0,
+            "y": 324.3125,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-employees",
+          "label": "Employees",
+          "rect": {
+            "x": 0,
+            "y": 360.5,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-website",
+          "label": "Website",
+          "rect": {
+            "x": 0,
+            "y": 396.6875,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "sec-point-of-sale",
+          "label": "Point of Sale",
+          "rect": {
+            "x": 0,
+            "y": 432.875,
+            "width": 229,
+            "height": 36.1875
+          }
+        },
+        {
+          "id": "chk-invite-users",
+          "label": "",
+          "rect": {
+            "x": 269,
+            "y": 176.578125,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-invite-users",
+          "label": "→ Manage users",
+          "rect": {
+            "x": 295,
+            "y": 210.921875,
+            "width": 102.6875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-access-rights",
+          "label": "",
+          "rect": {
+            "x": 870,
+            "y": 176.578125,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-access-rights",
+          "label": "→ Default access rights",
+          "rect": {
+            "x": 896,
+            "y": 210.921875,
+            "width": 143.046875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-multi-companies",
+          "label": "",
+          "rect": {
+            "x": 269,
+            "y": 264.109375,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-multi-companies",
+          "label": "→ Manage companies",
+          "rect": {
+            "x": 295,
+            "y": 298.453125,
+            "width": 136,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-portal-access",
+          "label": "",
+          "rect": {
+            "x": 870,
+            "y": 264.109375,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "chk-multi-currencies",
+          "label": "",
+          "rect": {
+            "x": 269,
+            "y": 397.03125,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-multi-currencies",
+          "label": "→ Currencies",
+          "rect": {
+            "x": 295,
+            "y": 431.375,
+            "width": 81.640625,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-languages",
+          "label": "",
+          "rect": {
+            "x": 870,
+            "y": 397.03125,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-languages",
+          "label": "→ Manage languages",
+          "rect": {
+            "x": 896,
+            "y": 431.375,
+            "width": 133.0625,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-time-zone",
+          "label": "",
+          "rect": {
+            "x": 269,
+            "y": 484.5625,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "chk-units-of-measure",
+          "label": "",
+          "rect": {
+            "x": 870,
+            "y": 484.5625,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-units-of-measure",
+          "label": "→ Units",
+          "rect": {
+            "x": 896,
+            "y": 518.90625,
+            "width": 48.203125,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-mail-plugin",
+          "label": "",
+          "rect": {
+            "x": 269,
+            "y": 617.484375,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "chk-google-calendar",
+          "label": "",
+          "rect": {
+            "x": 870,
+            "y": 617.484375,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "link-google-calendar",
+          "label": "→ Configure",
+          "rect": {
+            "x": 896,
+            "y": 651.828125,
+            "width": 76.796875,
+            "height": 18.1875
+          }
+        },
+        {
+          "id": "chk-oauth",
+          "label": "",
+          "rect": {
+            "x": 269,
+            "y": 705.015625,
+            "width": 13,
+            "height": 13
+          }
+        },
+        {
+          "id": "chk-recaptcha",
+          "label": "",
+          "rect": {
+            "x": 870,
+            "y": 705.015625,
+            "width": 13,
+            "height": 13
+          }
+        }
+      ]
+    }
+  ],
+  "trials": [
+    {
+      "id": "crm-new-0",
+      "screen": "crm",
+      "target": "new",
+      "instruction": "the New button that creates a record",
+      "target_rect": {
+        "x": 99.328125,
+        "y": 57,
+        "width": 49.171875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 753,
+        "y": 643,
+        "error_px": 850,
+        "miss": true
+      },
+      "sigma": 120,
+      "heat_best": "card-wood-corner",
+      "roi": {
+        "x": 596.4201629232857,
+        "y": 412.37129629591794,
+        "width": 414.6548865398737,
+        "height": 287.07599999999996
+      },
+      "crop": {
+        "x": 548,
+        "y": 372,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": false,
+      "target_centre_in_crop": false
+    },
+    {
+      "id": "crm-new-1",
+      "screen": "crm",
+      "target": "new",
+      "instruction": "the New button that creates a record",
+      "target_rect": {
+        "x": 99.328125,
+        "y": 57,
+        "width": 49.171875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 157,
+        "y": 0,
+        "error_px": 79,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "generate",
+      "roi": {
+        "x": -0.31618732766461477,
+        "y": -56.4,
+        "width": 314.03659102658247,
+        "height": 287.0759999999999
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-new-2",
+      "screen": "crm",
+      "target": "new",
+      "instruction": "the New button that creates a record",
+      "target_rect": {
+        "x": 99.328125,
+        "y": 57,
+        "width": 49.171875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 185,
+        "y": 224,
+        "error_px": 164,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-acme-demo",
+      "roi": {
+        "x": 28.346083407727086,
+        "y": 51.47706431962431,
+        "width": 414.65488653987364,
+        "height": 403.2599999999999
+      },
+      "crop": {
+        "x": 0,
+        "y": 11,
+        "width": 512,
+        "height": 484
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-groupby-0",
+      "screen": "crm",
+      "target": "groupby",
+      "instruction": "the Group By button in the search options",
+      "target_rect": {
+        "x": 777.21875,
+        "y": 57,
+        "width": 78.9375,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 818,
+        "y": 43,
+        "error_px": 29,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-ready-mat",
+      "roi": {
+        "x": 660.914647285547,
+        "y": -13.572662138966372,
+        "width": 314.0365910265824,
+        "height": 287.076
+      },
+      "crop": {
+        "x": 562,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-groupby-1",
+      "screen": "crm",
+      "target": "groupby",
+      "instruction": "the Group By button in the search options",
+      "target_rect": {
+        "x": 777.21875,
+        "y": 57,
+        "width": 78.9375,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 636,
+        "y": 56,
+        "error_px": 181,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-azure-interior",
+      "roi": {
+        "x": 478.99968464571714,
+        "y": -0.3249147522893807,
+        "width": 414.6548865398736,
+        "height": 287.0760000000001
+      },
+      "crop": {
+        "x": 430,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-groupby-2",
+      "screen": "crm",
+      "target": "groupby",
+      "instruction": "the Group By button in the search options",
+      "target_rect": {
+        "x": 777.21875,
+        "y": 57,
+        "width": 78.9375,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 1213,
+        "y": 421,
+        "error_px": 528,
+        "miss": true
+      },
+      "sigma": 120,
+      "heat_best": "card-bright-studio",
+      "roi": {
+        "x": 955.3979689581412,
+        "y": 132.2010613681162,
+        "width": 414.6548865398739,
+        "height": 403.26000000000005
+      },
+      "crop": {
+        "x": 907,
+        "y": 92,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": false,
+      "target_centre_in_crop": false
+    },
+    {
+      "id": "crm-v-list-0",
+      "screen": "crm",
+      "target": "v-list",
+      "instruction": "the switch to the list view",
+      "target_rect": {
+        "x": 1149.03125,
+        "y": 58.09375,
+        "width": 32,
+        "height": 28
+      },
+      "gaze": {
+        "x": 1177,
+        "y": 88,
+        "error_px": 20,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-acme-corp-renewal",
+      "roi": {
+        "x": 1019.5636213400252,
+        "y": -26.51951126218144,
+        "width": 314.03659102658264,
+        "height": 345.168
+      },
+      "crop": {
+        "x": 921,
+        "y": 0,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-v-list-1",
+      "screen": "crm",
+      "target": "v-list",
+      "instruction": "the switch to the list view",
+      "target_rect": {
+        "x": 1149.03125,
+        "y": 58.09375,
+        "width": 32,
+        "height": 28
+      },
+      "gaze": {
+        "x": 1216,
+        "y": 88,
+        "error_px": 53,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-acme-corp-renewal",
+      "roi": {
+        "x": 1058.5934701751003,
+        "y": -26.411567786259923,
+        "width": 314.03659102658276,
+        "height": 345.16799999999995
+      },
+      "crop": {
+        "x": 928,
+        "y": 0,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-v-list-2",
+      "screen": "crm",
+      "target": "v-list",
+      "instruction": "the switch to the list view",
+      "target_rect": {
+        "x": 1149.03125,
+        "y": 58.09375,
+        "width": 32,
+        "height": 28
+      },
+      "gaze": {
+        "x": 1099,
+        "y": 24,
+        "error_px": 82,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "v-kanban",
+      "roi": {
+        "x": 941.5472022397547,
+        "y": -32.241007901661064,
+        "width": 414.6548865398737,
+        "height": 287.07600000000014
+      },
+      "crop": {
+        "x": 893,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-star-acme-demo-0",
+      "screen": "crm",
+      "target": "star-acme-demo",
+      "instruction": "the first priority star on the Acme Demo card",
+      "target_rect": {
+        "x": 27,
+        "y": 216.25,
+        "width": 17.453125,
+        "height": 21
+      },
+      "gaze": {
+        "x": 127,
+        "y": 295,
+        "error_px": 114,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-zz-test-1",
+      "roi": {
+        "x": -29.65245933872861,
+        "y": 122.6655837551788,
+        "width": 414.6548865398736,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 83,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-star-acme-demo-1",
+      "screen": "crm",
+      "target": "star-acme-demo",
+      "instruction": "the first priority star on the Acme Demo card",
+      "target_rect": {
+        "x": 27,
+        "y": 216.25,
+        "width": 17.453125,
+        "height": 21
+      },
+      "gaze": {
+        "x": 68,
+        "y": 264,
+        "error_px": 49,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-acme-demo",
+      "roi": {
+        "x": 11.374488084730281,
+        "y": 91.31975525394344,
+        "width": 314.0365910265824,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 51,
+        "width": 512,
+        "height": 484
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-star-acme-demo-2",
+      "screen": "crm",
+      "target": "star-acme-demo",
+      "instruction": "the first priority star on the Acme Demo card",
+      "target_rect": {
+        "x": 27,
+        "y": 216.25,
+        "width": 17.453125,
+        "height": 21
+      },
+      "gaze": {
+        "x": 80,
+        "y": 194,
+        "error_px": 55,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-acme-demo",
+      "roi": {
+        "x": 23.326356167322906,
+        "y": 21.595286459433744,
+        "width": 213.4182955132913,
+        "height": 403.25999999999993
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-act-zz-test-3-0",
+      "screen": "crm",
+      "target": "act-zz-test-3",
+      "instruction": "the schedule-activity clock icon on the Zz Test 3 card",
+      "target_rect": {
+        "x": 753.90625,
+        "y": 409.703125,
+        "width": 16.21875,
+        "height": 19.59375
+      },
+      "gaze": {
+        "x": 890,
+        "y": 393,
+        "error_px": 130,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-wood-corner",
+      "roi": {
+        "x": 631.9982246923364,
+        "y": 162.2689478453979,
+        "width": 414.6548865398738,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 583,
+        "y": 122,
+        "width": 512,
+        "height": 484
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-act-zz-test-3-1",
+      "screen": "crm",
+      "target": "act-zz-test-3",
+      "instruction": "the schedule-activity clock icon on the Zz Test 3 card",
+      "target_rect": {
+        "x": 753.90625,
+        "y": 409.703125,
+        "width": 16.21875,
+        "height": 19.59375
+      },
+      "gaze": {
+        "x": 760,
+        "y": 443,
+        "error_px": 24,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-wood-corner",
+      "roi": {
+        "x": 602.9462473577865,
+        "y": 212.6115436112706,
+        "width": 414.6548865398737,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 554,
+        "y": 173,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-act-zz-test-3-2",
+      "screen": "crm",
+      "target": "act-zz-test-3",
+      "instruction": "the schedule-activity clock icon on the Zz Test 3 card",
+      "target_rect": {
+        "x": 753.90625,
+        "y": 409.703125,
+        "width": 16.21875,
+        "height": 19.59375
+      },
+      "gaze": {
+        "x": 807,
+        "y": 384,
+        "error_px": 58,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-zz-test-3",
+      "roi": {
+        "x": 549.7332436402561,
+        "y": 153.30568689439113,
+        "width": 515.273182053165,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 510,
+        "y": 113,
+        "width": 595,
+        "height": 484
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-add-proposition-0",
+      "screen": "crm",
+      "target": "add-proposition",
+      "instruction": "the + quick create button of the Proposition column",
+      "target_rect": {
+        "x": 780.765625,
+        "y": 111.1875,
+        "width": 18.296875,
+        "height": 25.1875
+      },
+      "gaze": {
+        "x": 713,
+        "y": 222,
+        "error_px": 125,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-azure-interior",
+      "roi": {
+        "x": 555.7658009601627,
+        "y": 49.62571213843257,
+        "width": 414.6548865398736,
+        "height": 403.26000000000005
+      },
+      "crop": {
+        "x": 507,
+        "y": 10,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-add-proposition-1",
+      "screen": "crm",
+      "target": "add-proposition",
+      "instruction": "the + quick create button of the Proposition column",
+      "target_rect": {
+        "x": 780.765625,
+        "y": 111.1875,
+        "width": 18.296875,
+        "height": 25.1875
+      },
+      "gaze": {
+        "x": 801,
+        "y": 84,
+        "error_px": 42,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "card-ready-mat",
+      "roi": {
+        "x": 643.7376650459172,
+        "y": -30.82674120793314,
+        "width": 314.0365910265824,
+        "height": 345.16799999999995
+      },
+      "crop": {
+        "x": 545,
+        "y": 0,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "crm-add-proposition-2",
+      "screen": "crm",
+      "target": "add-proposition",
+      "instruction": "the + quick create button of the Proposition column",
+      "target_rect": {
+        "x": 780.765625,
+        "y": 111.1875,
+        "width": 18.296875,
+        "height": 25.1875
+      },
+      "gaze": {
+        "x": 683,
+        "y": 0,
+        "error_px": 163,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "filters",
+      "roi": {
+        "x": 526.4730635222284,
+        "y": -56.4,
+        "width": 314.0365910265824,
+        "height": 345.16799999999995
+      },
+      "crop": {
+        "x": 427,
+        "y": 0,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-trash-2-0",
+      "screen": "invoice",
+      "target": "trash-2",
+      "instruction": "the delete (trash) icon on the Chair line",
+      "target_rect": {
+        "x": 961.421875,
+        "y": 379.71875,
+        "width": 11.71875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 992,
+        "y": 379,
+        "error_px": 26,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "trash-1",
+      "roi": {
+        "x": 834.7964821840424,
+        "y": 148.69922649625036,
+        "width": 314.0365910265823,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 736,
+        "y": 109,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-trash-2-1",
+      "screen": "invoice",
+      "target": "trash-2",
+      "instruction": "the delete (trash) icon on the Chair line",
+      "target_rect": {
+        "x": 961.421875,
+        "y": 379.71875,
+        "width": 11.71875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 780,
+        "y": 340,
+        "error_px": 193,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": null,
+      "roi": {
+        "x": 723.699389906615,
+        "y": 167.8366260875272,
+        "width": 314.0365910265824,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 625,
+        "y": 128,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-trash-2-2",
+      "screen": "invoice",
+      "target": "trash-2",
+      "instruction": "the delete (trash) icon on the Chair line",
+      "target_rect": {
+        "x": 961.421875,
+        "y": 379.71875,
+        "width": 11.71875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 866,
+        "y": 526,
+        "error_px": 170,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "trash-5",
+      "roi": {
+        "x": 809.629930798448,
+        "y": 294.8970418918313,
+        "width": 213.41829551329124,
+        "height": 345.16799999999995
+      },
+      "crop": {
+        "x": 660,
+        "y": 255,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-log-note-0",
+      "screen": "invoice",
+      "target": "log-note",
+      "instruction": "the Log note button in the chatter",
+      "target_rect": {
+        "x": 1162.15625,
+        "y": 120,
+        "width": 69.09375,
+        "height": 48.375
+      },
+      "gaze": {
+        "x": 1309,
+        "y": 23,
+        "error_px": 165,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "chat-activities",
+      "roi": {
+        "x": 1151.9875348138194,
+        "y": -33.134541248049636,
+        "width": 314.03659102658276,
+        "height": 287.07599999999996
+      },
+      "crop": {
+        "x": 928,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-log-note-1",
+      "screen": "invoice",
+      "target": "log-note",
+      "instruction": "the Log note button in the chatter",
+      "target_rect": {
+        "x": 1162.15625,
+        "y": 120,
+        "width": 69.09375,
+        "height": 48.375
+      },
+      "gaze": {
+        "x": 1366,
+        "y": 116,
+        "error_px": 171,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "chat-activities",
+      "roi": {
+        "x": 1208.5809506038693,
+        "y": 1.2421141452744848,
+        "width": 213.41829551329147,
+        "height": 287.0759999999999
+      },
+      "crop": {
+        "x": 928,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-log-note-2",
+      "screen": "invoice",
+      "target": "log-note",
+      "instruction": "the Log note button in the chatter",
+      "target_rect": {
+        "x": 1162.15625,
+        "y": 120,
+        "width": 69.09375,
+        "height": 48.375
+      },
+      "gaze": {
+        "x": 1146,
+        "y": 292,
+        "error_px": 156,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "send-message",
+      "roi": {
+        "x": 888.4562506101705,
+        "y": 60.95934589226457,
+        "width": 515.273182053165,
+        "height": 403.26000000000005
+      },
+      "crop": {
+        "x": 845,
+        "y": 21,
+        "width": 595,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-tab-other-0",
+      "screen": "invoice",
+      "target": "tab-other",
+      "instruction": "the Other Info tab",
+      "target_rect": {
+        "x": 247.6875,
+        "y": 268.15625,
+        "width": 85.75,
+        "height": 29.1875
+      },
+      "gaze": {
+        "x": 690,
+        "y": 714,
+        "error_px": 588,
+        "miss": true
+      },
+      "sigma": 120,
+      "heat_best": null,
+      "roi": {
+        "x": 432.3686069547947,
+        "y": 483.03119430382105,
+        "width": 515.2731820531649,
+        "height": 403.2599999999999
+      },
+      "crop": {
+        "x": 392,
+        "y": 417,
+        "width": 596,
+        "height": 483
+      },
+      "target_in_crop": false,
+      "target_centre_in_crop": false
+    },
+    {
+      "id": "invoice-tab-other-1",
+      "screen": "invoice",
+      "target": "tab-other",
+      "instruction": "the Other Info tab",
+      "target_rect": {
+        "x": 247.6875,
+        "y": 268.15625,
+        "width": 85.75,
+        "height": 29.1875
+      },
+      "gaze": {
+        "x": 248,
+        "y": 303,
+        "error_px": 47,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "tab-other",
+      "roi": {
+        "x": -9.925572865202632,
+        "y": 72.53203906548433,
+        "width": 414.6548865398737,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 33,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-tab-other-2",
+      "screen": "invoice",
+      "target": "tab-other",
+      "instruction": "the Other Info tab",
+      "target_rect": {
+        "x": 247.6875,
+        "y": 268.15625,
+        "width": 85.75,
+        "height": 29.1875
+      },
+      "gaze": {
+        "x": 257,
+        "y": 281,
+        "error_px": 33,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "tab-other",
+      "roi": {
+        "x": -0.2666660275910928,
+        "y": 49.98087730206394,
+        "width": 414.6548865398737,
+        "height": 345.168
+      },
+      "crop": {
+        "x": 0,
+        "y": 10,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-add-line-0",
+      "screen": "invoice",
+      "target": "add-line",
+      "instruction": "the Add a line link under the invoice lines",
+      "target_rect": {
+        "x": 39,
+        "y": 505.46875,
+        "width": 60.4375,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 3,
+        "y": 506,
+        "error_px": 67,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "add-line",
+      "roi": {
+        "x": -52.99424044905199,
+        "y": 275.08544550448784,
+        "width": 314.03659102658236,
+        "height": 403.25999999999993
+      },
+      "crop": {
+        "x": 0,
+        "y": 235,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-add-line-1",
+      "screen": "invoice",
+      "target": "add-line",
+      "instruction": "the Add a line link under the invoice lines",
+      "target_rect": {
+        "x": 39,
+        "y": 505.46875,
+        "width": 60.4375,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 34,
+        "y": 547,
+        "error_px": 44,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "add-line",
+      "roi": {
+        "x": -22.633860407361873,
+        "y": 374.3640404941289,
+        "width": 314.0365910265824,
+        "height": 287.07599999999996
+      },
+      "crop": {
+        "x": 0,
+        "y": 334,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-add-line-2",
+      "screen": "invoice",
+      "target": "add-line",
+      "instruction": "the Add a line link under the invoice lines",
+      "target_rect": {
+        "x": 39,
+        "y": 505.46875,
+        "width": 60.4375,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 86,
+        "y": 563,
+        "error_px": 45,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "add-section",
+      "roi": {
+        "x": 29.399445641944034,
+        "y": 390.19748188971613,
+        "width": 314.0365910265824,
+        "height": 287.07599999999996
+      },
+      "crop": {
+        "x": 0,
+        "y": 350,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-confirm-0",
+      "screen": "invoice",
+      "target": "confirm",
+      "instruction": "the Confirm button",
+      "target_rect": {
+        "x": 39,
+        "y": 124,
+        "width": 71.46875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 0,
+        "y": 16,
+        "error_px": 144,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "apps",
+      "roi": {
+        "x": -56.4,
+        "y": -40.092052263963105,
+        "width": 213.4182955132912,
+        "height": 287.0759999999999
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-confirm-1",
+      "screen": "invoice",
+      "target": "confirm",
+      "instruction": "the Confirm button",
+      "target_rect": {
+        "x": 39,
+        "y": 124,
+        "width": 71.46875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 9,
+        "y": 45,
+        "error_px": 115,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "confirm",
+      "roi": {
+        "x": -47.032010292917455,
+        "y": -11.613446888511184,
+        "width": 314.03659102658236,
+        "height": 228.9840000000001
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 320
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-confirm-2",
+      "screen": "invoice",
+      "target": "confirm",
+      "instruction": "the Confirm button",
+      "target_rect": {
+        "x": 39,
+        "y": 124,
+        "width": 71.46875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 148,
+        "y": 0,
+        "error_px": 157,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "gear",
+      "roi": {
+        "x": -8.527358744473169,
+        "y": -56.016074016051896,
+        "width": 314.03659102658247,
+        "height": 287.0759999999999
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-trash-4-0",
+      "screen": "invoice",
+      "target": "trash-4",
+      "instruction": "the delete (trash) icon on the Cabinet line",
+      "target_rect": {
+        "x": 961.421875,
+        "y": 446.09375,
+        "width": 11.71875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 518,
+        "y": 480,
+        "error_px": 450,
+        "miss": true
+      },
+      "sigma": 120,
+      "heat_best": null,
+      "roi": {
+        "x": 259.98878246136076,
+        "y": 249.2655266420148,
+        "width": 414.6548865398737,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 211,
+        "y": 209,
+        "width": 512,
+        "height": 484
+      },
+      "target_in_crop": false,
+      "target_centre_in_crop": false
+    },
+    {
+      "id": "invoice-trash-4-1",
+      "screen": "invoice",
+      "target": "trash-4",
+      "instruction": "the delete (trash) icon on the Cabinet line",
+      "target_rect": {
+        "x": 961.421875,
+        "y": 446.09375,
+        "width": 11.71875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 1143,
+        "y": 528,
+        "error_px": 190,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "trash-5",
+      "roi": {
+        "x": 885.5425207993877,
+        "y": 297.2178566522605,
+        "width": 314.03659102658264,
+        "height": 345.1679999999999
+      },
+      "crop": {
+        "x": 787,
+        "y": 257,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "invoice-trash-4-2",
+      "screen": "invoice",
+      "target": "trash-4",
+      "instruction": "the delete (trash) icon on the Cabinet line",
+      "target_rect": {
+        "x": 961.421875,
+        "y": 446.09375,
+        "width": 11.71875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 1007,
+        "y": 534,
+        "error_px": 88,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "trash-5",
+      "roi": {
+        "x": 849.8849883814111,
+        "y": 303.2970704218442,
+        "width": 213.41829551329135,
+        "height": 345.1679999999999
+      },
+      "crop": {
+        "x": 701,
+        "y": 263,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-chk-multi-currencies-0",
+      "screen": "settings",
+      "target": "chk-multi-currencies",
+      "instruction": "the checkbox to enable Multi-currencies",
+      "target_rect": {
+        "x": 269,
+        "y": 397.03125,
+        "width": 13,
+        "height": 13
+      },
+      "gaze": {
+        "x": 211,
+        "y": 523,
+        "error_px": 136,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "sec-point-of-sale",
+      "roi": {
+        "x": 53.71027105727406,
+        "y": 292.0025898050928,
+        "width": 314.0365910265826,
+        "height": 461.3519999999999
+      },
+      "crop": {
+        "x": 0,
+        "y": 252,
+        "width": 512,
+        "height": 541
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-chk-multi-currencies-1",
+      "screen": "settings",
+      "target": "chk-multi-currencies",
+      "instruction": "the checkbox to enable Multi-currencies",
+      "target_rect": {
+        "x": 269,
+        "y": 397.03125,
+        "width": 13,
+        "height": 13
+      },
+      "gaze": {
+        "x": 429,
+        "y": 593,
+        "error_px": 244,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "chk-mail-plugin",
+      "roi": {
+        "x": 171.68696519784007,
+        "y": 362.64508140845317,
+        "width": 314.0365910265824,
+        "height": 461.35199999999986
+      },
+      "crop": {
+        "x": 73,
+        "y": 323,
+        "width": 512,
+        "height": 541
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-chk-multi-currencies-2",
+      "screen": "settings",
+      "target": "chk-multi-currencies",
+      "instruction": "the checkbox to enable Multi-currencies",
+      "target_rect": {
+        "x": 269,
+        "y": 397.03125,
+        "width": 13,
+        "height": 13
+      },
+      "gaze": {
+        "x": 247,
+        "y": 340,
+        "error_px": 69,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "link-multi-companies",
+      "roi": {
+        "x": -10.362050302366917,
+        "y": 109.72809074947565,
+        "width": 515.2731820531649,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 70,
+        "width": 595,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-link-invite-users-0",
+      "screen": "settings",
+      "target": "link-invite-users",
+      "instruction": "the Manage users link under Invite users",
+      "target_rect": {
+        "x": 295,
+        "y": 210.921875,
+        "width": 102.6875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 346,
+        "y": 183,
+        "error_px": 37,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "link-invite-users",
+      "roi": {
+        "x": 88.5403567290179,
+        "y": 68.28936641130173,
+        "width": 414.65488653987376,
+        "height": 345.16799999999995
+      },
+      "crop": {
+        "x": 40,
+        "y": 28,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-link-invite-users-1",
+      "screen": "settings",
+      "target": "link-invite-users",
+      "instruction": "the Manage users link under Invite users",
+      "target_rect": {
+        "x": 295,
+        "y": 210.921875,
+        "width": 102.6875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 448,
+        "y": 93,
+        "error_px": 163,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "link-invite-users",
+      "roi": {
+        "x": 190.37756469929104,
+        "y": 36.33272818796679,
+        "width": 314.0365910265825,
+        "height": 345.1679999999999
+      },
+      "crop": {
+        "x": 91,
+        "y": 0,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-link-invite-users-2",
+      "screen": "settings",
+      "target": "link-invite-users",
+      "instruction": "the Manage users link under Invite users",
+      "target_rect": {
+        "x": 295,
+        "y": 210.921875,
+        "width": 102.6875,
+        "height": 18.1875
+      },
+      "gaze": {
+        "x": 107,
+        "y": 317,
+        "error_px": 259,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "sec-purchase",
+      "roi": {
+        "x": -50.21243841691484,
+        "y": 86.58758143347009,
+        "width": 314.0365910265826,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 47,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-sec-inventory-0",
+      "screen": "settings",
+      "target": "sec-inventory",
+      "instruction": "the Inventory section in the left menu",
+      "target_rect": {
+        "x": 0,
+        "y": 288.125,
+        "width": 229,
+        "height": 36.1875
+      },
+      "gaze": {
+        "x": 62,
+        "y": 229,
+        "error_px": 94,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "sec-crm",
+      "roi": {
+        "x": 5.578330199716966,
+        "y": 55.9811524078933,
+        "width": 213.4182955132913,
+        "height": 403.2599999999999
+      },
+      "crop": {
+        "x": 0,
+        "y": 16,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-sec-inventory-1",
+      "screen": "settings",
+      "target": "sec-inventory",
+      "instruction": "the Inventory section in the left menu",
+      "target_rect": {
+        "x": 0,
+        "y": 288.125,
+        "width": 229,
+        "height": 36.1875
+      },
+      "gaze": {
+        "x": 144,
+        "y": 237,
+        "error_px": 75,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "sec-sales",
+      "roi": {
+        "x": -13.514497520421465,
+        "y": 64.60716706137308,
+        "width": 414.65488653987364,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 25,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-sec-inventory-2",
+      "screen": "settings",
+      "target": "sec-inventory",
+      "instruction": "the Inventory section in the left menu",
+      "target_rect": {
+        "x": 0,
+        "y": 288.125,
+        "width": 229,
+        "height": 36.1875
+      },
+      "gaze": {
+        "x": 91,
+        "y": 394,
+        "error_px": 91,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "sec-point-of-sale",
+      "roi": {
+        "x": 34.242462726404106,
+        "y": 163.68424038839694,
+        "width": 213.4182955132913,
+        "height": 403.26
+      },
+      "crop": {
+        "x": 0,
+        "y": 124,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-discard-0",
+      "screen": "settings",
+      "target": "discard",
+      "instruction": "the Discard button",
+      "target_rect": {
+        "x": 158.875,
+        "y": 57,
+        "width": 67.71875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 260,
+        "y": 64,
+        "error_px": 68,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "discard",
+      "roi": {
+        "x": 2.313649044132781,
+        "y": -50.81412137033273,
+        "width": 414.6548865398737,
+        "height": 345.16799999999995
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-discard-1",
+      "screen": "settings",
+      "target": "discard",
+      "instruction": "the Discard button",
+      "target_rect": {
+        "x": 158.875,
+        "y": 57,
+        "width": 67.71875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 314,
+        "y": 0,
+        "error_px": 141,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "discard",
+      "roi": {
+        "x": 56.85342492360943,
+        "y": -56.4,
+        "width": 414.65488653987364,
+        "height": 287.076
+      },
+      "crop": {
+        "x": 8,
+        "y": 0,
+        "width": 512,
+        "height": 367
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-discard-2",
+      "screen": "settings",
+      "target": "discard",
+      "instruction": "the Discard button",
+      "target_rect": {
+        "x": 158.875,
+        "y": 57,
+        "width": 67.71875,
+        "height": 30.1875
+      },
+      "gaze": {
+        "x": 121,
+        "y": 184,
+        "error_px": 133,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "sec-discuss",
+      "roi": {
+        "x": -35.67193730741683,
+        "y": 11.503588573297442,
+        "width": 314.03659102658247,
+        "height": 403.25999999999993
+      },
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-chk-google-calendar-0",
+      "screen": "settings",
+      "target": "chk-google-calendar",
+      "instruction": "the checkbox to enable Google calendar",
+      "target_rect": {
+        "x": 870,
+        "y": 617.484375,
+        "width": 13,
+        "height": 13
+      },
+      "gaze": {
+        "x": 999,
+        "y": 613,
+        "error_px": 123,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "link-google-calendar",
+      "roi": {
+        "x": 841.9240857074977,
+        "y": 382.1180218180137,
+        "width": 314.0365910265824,
+        "height": 403.25999999999993
+      },
+      "crop": {
+        "x": 743,
+        "y": 342,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-chk-google-calendar-1",
+      "screen": "settings",
+      "target": "chk-google-calendar",
+      "instruction": "the checkbox to enable Google calendar",
+      "target_rect": {
+        "x": 870,
+        "y": 617.484375,
+        "width": 13,
+        "height": 13
+      },
+      "gaze": {
+        "x": 855,
+        "y": 729,
+        "error_px": 107,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "link-google-calendar",
+      "roi": {
+        "x": 798.4616855438891,
+        "y": 498.5419441580103,
+        "width": 213.41829551329124,
+        "height": 345.168
+      },
+      "crop": {
+        "x": 649,
+        "y": 459,
+        "width": 512,
+        "height": 425
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    },
+    {
+      "id": "settings-chk-google-calendar-2",
+      "screen": "settings",
+      "target": "chk-google-calendar",
+      "instruction": "the checkbox to enable Google calendar",
+      "target_rect": {
+        "x": 870,
+        "y": 617.484375,
+        "width": 13,
+        "height": 13
+      },
+      "gaze": {
+        "x": 1082,
+        "y": 513,
+        "error_px": 234,
+        "miss": false
+      },
+      "sigma": 120,
+      "heat_best": "link-languages",
+      "roi": {
+        "x": 824.6053183734501,
+        "y": 340.5568318290439,
+        "width": 314.03659102658264,
+        "height": 403.26000000000005
+      },
+      "crop": {
+        "x": 726,
+        "y": 301,
+        "width": 512,
+        "height": 483
+      },
+      "target_in_crop": true,
+      "target_centre_in_crop": true
+    }
+  ]
+}

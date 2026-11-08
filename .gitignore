@@ -29,3 +29,6 @@ desktop/smoke-*.png
 
 # vision page: local WebGazer assets (npm run assets)
 heatmap/vendor/
+
+# benchmark dry runs (real runs are committed)
+bench/results/*-dry/
