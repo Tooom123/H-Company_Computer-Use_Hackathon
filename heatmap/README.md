@@ -13,6 +13,26 @@ sampled at 30 Hz like a webcam tracker, with adjustable jitter. The HUD shows th
 the share "looking at nothing", the ROI, and how many clicks were predicted. `?at=x,y` pins a fake gaze
 point, `?seed=n` fixes the layout.
 
+## Vision page: the same honeycomb, driven by the webcam
+
+```bash
+cd heatmap && npm install && npm run vision     # local WebGazer assets, then http://127.0.0.1:5175/vision.html
+```
+
+Édouard's tracker setup (`app/src/lib/webgazer.ts`), in plain JS (`webgazer-tracker.js`): WebGazer 3.5.3 and
+MediaPipe served from `heatmap/vendor/` (no CDN, no face image leaves the browser), ridge regression, nothing
+saved across sessions, never trained on mouse clicks.
+
+1. **Calibration**: 9 dots (Édouard's standard grid). Look at each and click it 5 times; a click only counts when
+   a face was found (otherwise the dot shakes).
+2. **Validation**: 4 other dots, just look. The median distance between dot and gaze (one median per dot) is the
+   accuracy shown, and sizes the honeycomb (`setUncertainty`). Never measured on learnt points.
+3. **Test**: 4 buttons at random places. Looking at one long enough "picks" it (dwell intent full): shown, never
+   clicked. HUD: tracker rate, accuracy, probability and dwell per button, picks, clicks predicted.
+   `R` shuffle, `C` recalibrate, `M` eyes / mouse (same page, for comparison), camera preview on/off.
+
+Pure calibration maths in `gaze-calibration.js` (tested). Camera access needs `localhost` / `127.0.0.1`.
+
 ## Interface
 
 Input is the tracker's existing type (`app/src/lib/types.ts` on `edouard/gaze-desktop`):

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gaze heatmap · vision</title>
+<style>
+  :root{--red:#e3242b;--grey:#7a7a8a;--line:#ebebf1;--ink:#1c1c26;--black:#040405}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#fff;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+  [hidden]{display:none!important}
+  #stage{position:fixed;inset:0}
+  #stage button{position:absolute;padding:14px 26px;border-radius:999px;border:1px solid var(--line);background:#fff;
+    font:600 16px system-ui,sans-serif;color:var(--ink);cursor:pointer;box-shadow:0 6px 20px -12px rgba(0,0,0,.25);transition:box-shadow .2s,transform .2s}
+  #stage button.best{box-shadow:0 0 0 2px rgba(227,36,43,.35),0 6px 20px -12px rgba(0,0,0,.25)}
+  #stage button.picked{transform:scale(1.06);box-shadow:0 0 0 3px var(--red),0 10px 26px -10px rgba(227,36,43,.6)}
+  #heat{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+
+  /* intro / messages */
+  .card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;width:min(520px,calc(100vw - 32px));
+    background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px 26px;box-shadow:0 20px 60px -30px rgba(0,0,0,.35)}
+  .card h1{margin:0 0 8px;font-size:22px;letter-spacing:-.02em}
+  .card p{margin:8px 0;color:#4a4a58;line-height:1.5}
+  .card .small{font-size:13px;color:var(--grey)}
+  .btn{border:0;background:var(--black);color:#fff;border-radius:999px;padding:10px 20px;font:600 15px system-ui,sans-serif;cursor:pointer;margin-top:10px}
+  .btn.ghost{background:#fff;color:var(--black);border:1px solid #d8d8e2;margin-left:6px}
+  .err{color:var(--red)}
+
+  /* calibration */
+  #calib{position:fixed;inset:0;z-index:20;background:#fff}
+  .banner{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:25;background:rgba(20,20,20,.92);color:#fff;
+    border-radius:999px;padding:9px 18px;font:600 14px system-ui,sans-serif;white-space:nowrap}
+  .dot{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;border:0;padding:0;cursor:pointer;
+    background:radial-gradient(circle,var(--red) 0 30%,rgba(227,36,43,.25) 31% 100%);transition:transform .15s}
+  .dot.look{cursor:default;animation:pulse 1s ease-in-out infinite}
+  .dot.miss{animation:shake .25s}
+  @keyframes pulse{50%{transform:scale(.7)}}
+  @keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+
+  /* HUD (same as the mouse test page) */
+  .hud{position:fixed;left:12px;bottom:12px;z-index:10;font:12px/1.5 ui-monospace,"Fira Code",monospace;color:var(--grey);
+    background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:270px}
+  .hud b{color:var(--ink);font-weight:600}
+  .hud label{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .bar{height:4px;background:var(--line);border-radius:2px;margin:2px 0 4px}.bar i{display:block;height:100%;background:var(--red);border-radius:2px}
+  /* WebGazer's own preview, moved out of the way of the buttons */
+  #webgazerVideoContainer{left:auto!important;right:12px!important;top:auto!important;bottom:12px!important;border-radius:10px;overflow:hidden;z-index:40!important}
+</style>
+</head>
+<body>
+<div id="stage" hidden>
+  <button id="save">Save</button>
+  <button id="export">Export</button>
+  <button id="delete">Delete</button>
+  <button id="share">Share</button>
+</div>
+<canvas id="heat"></canvas>
+
+<div class="card" id="intro">
+  <h1>The honeycomb, driven by your eyes</h1>
+  <p>Your webcam replaces the mouse: the red honeycomb follows where you look, and lights up the button you are about to use.</p>
+  <p>First a 1-minute calibration: look at each red dot and click it 5 times, then just look at 4 more dots so we can measure the accuracy.</p>
+  <p class="small">Everything runs in this browser (WebGazer + MediaPipe, local copies). No image of your face leaves this computer. Sit at arm's length, face lit from the front, head fairly still.</p>
+  <button class="btn" id="startBtn">Start the camera</button>
+  <button class="btn ghost" id="mouseBtn">Use the mouse instead</button>
+  <p class="err" id="introErr"></p>
+</div>
+
+<div id="calib" hidden><div class="banner" id="banner"></div></div>
+
+<div class="card" id="result" hidden>
+  <h1 id="resTitle"></h1>
+  <p id="resText"></p>
+  <button class="btn" id="goBtn">Try it on the buttons</button>
+  <button class="btn ghost" id="redoBtn">Recalibrate</button>
+</div>
+
+<div class="hud" id="hud" hidden>
+  <div>signal <b id="signal">—</b></div>
+  <div>accuracy <b id="acc">—</b></div>
+  <div id="out">look at the page…</div>
+  <div>gaze picks <b id="picks">0</b> · clicks predicted <b id="score">0/0</b></div>
+  <label><input type="checkbox" id="preview"> camera preview</label>
+  <label>context <input type="range" id="ctx" min="0" max="10" step="0.5" value="4"> <span id="ctxV"></span></label>
+  <div><b>R</b> shuffle · <b>C</b> recalibrate · <b>M</b> eyes / mouse</div>
+</div>
+<script type="module" src="./vision.js"></script>
+</body>
+</html>

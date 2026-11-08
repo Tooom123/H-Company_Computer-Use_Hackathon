@@ -1,1 +1,13 @@
-{ "name": "gaze-heatmap", "private": true, "type": "module", "scripts": { "test": "node --test" } }
+{
+  "name": "gaze-heatmap",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "assets": "node scripts/copy-webgazer.mjs",
+    "vision": "npm run assets && python3 -m http.server 5175 --bind 127.0.0.1"
+  },
+  "dependencies": {
+    "webgazer": "3.5.3"
+  }
+}

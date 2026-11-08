@@ -125,3 +125,16 @@ test("dwell boost: the same gaze gives more weight to a target with intent", () 
   const boosted = computeHeatmap({ x: 500, y: 500 }, 96, [{ ...button("save", 600, 480), weight: 1 + DEFAULTS.dwellBoost }]);
   assert.ok(boosted.targets[0].p > base.targets[0].p);
 });
+
+test("target probabilities never exceed 1, even with dwell weight and overlapping targets", () => {
+  const rect = { x: 90, y: 90, width: 40, height: 30 };
+  const targets = [
+    { id: "a", rect, weight: 2.5 }, // full dwell boost
+    { id: "b", rect: { ...rect, x: 100 }, weight: 2.5 }, // overlapping the first
+  ];
+  const s = computeHeatmap({ x: 110, y: 105 }, 96, targets, DEFAULTS);
+  const sum = s.targets.reduce((acc, t) => acc + t.p, 0);
+  for (const t of s.targets) assert.ok(t.p >= 0 && t.p <= 1, `${t.id} p=${t.p}`);
+  assert.ok(sum <= 1 + 1e-9, `sum ${sum}`);
+  assert.ok(Math.abs(sum + s.pNone - 1) < 1e-9 || s.pNone === 0);
+});
