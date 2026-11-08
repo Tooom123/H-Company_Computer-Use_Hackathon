@@ -1,6 +1,6 @@
 // H Companion app — renderer. Polls the assistant once a second (that poll is also the app's heartbeat:
 // while it lasts, the on-screen Magnet stays hidden and the setting lives here).
-import { paintBadge, paintTick } from "./sketch.js";
+import { drawMagnet, paintBadge, paintRing } from "./sketch.js";
 import { STATUS_LABEL, duration, isBusy, keyLabel, procedureName, readyBadge, taskLine, when } from "./view.js";
 
 const $ = (id) => document.getElementById(id);
@@ -88,22 +88,16 @@ function go(name) {
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 if (api.platform === "darwin") document.body.classList.add("mac");
 
-// home: autonomy as a multiple-choice question, ticked in red pen ----------------------------------
-const BOX = 20; // px, the black square
-function buildLevels() {
-  const box = $("levels");
+// home: autonomy = Matteo's Magnet, as drawn on screen ----------------------------------------------
+let drawnLevel; // what the Magnet shows (redrawn only on change, the knob loops drawn in like a pencil)
+function buildMagnet() {
+  const hit = $("magnetHit");
   LABELS.forEach((label, i) => {
-    const b = el("button", "opt");
+    const b = el("button", "hit");
     b.setAttribute("role", "radio");
-    const sq = el("span", "box");
-    const tick = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    tick.setAttribute("class", "tick");
-    tick.setAttribute("viewBox", `0 0 ${BOX} ${BOX}`);
-    paintTick(tick, BOX, 5 + i);
-    sq.append(tick);
-    b.append(sq, el("span", "lbl", label));
+    b.setAttribute("aria-label", label);
     b.addEventListener("click", () => setAutonomy(i));
-    box.append(b);
+    hit.append(b);
   });
 }
 
@@ -119,12 +113,16 @@ async function setAutonomy(level) {
 
 function renderAutonomy() {
   const level = pendingAutonomy ?? (status ? status.autonomy : null);
-  $("levels").querySelectorAll(".opt").forEach((b, i) => {
-    const on = i === level;
-    b.classList.toggle("on", on); // CSS draws the tick in, like a pen stroke
-    b.setAttribute("aria-checked", String(on));
+  if (level !== drawnLevel) {
+    const xs = drawMagnet($("magnetSvg"), level, LABELS, { animate: drawnLevel !== undefined });
+    drawnLevel = level;
+    $("magnetHit").querySelectorAll(".hit").forEach((b, i) => (b.style.left = `${xs[i] * 100}%`));
+  }
+  $("magnetHit").querySelectorAll(".hit").forEach((b, i) => {
+    b.setAttribute("aria-checked", String(i === level));
     b.disabled = !status;
   });
+  $("magnet").classList.toggle("off", !status);
 }
 
 // home: ready badge, running task, numbers -------------------------------------------------------
@@ -189,11 +187,14 @@ async function rate(s, value, row) {
   }
 }
 
+// The chosen mark gets circled in red pencil, like a teacher grading a paper.
 function paintRating(row, s) {
-  row.querySelector(".yes").classList.toggle("on", s.useful === true);
-  row.querySelector(".no").classList.toggle("on", s.useful === false);
-  row.querySelector(".yes").setAttribute("aria-pressed", String(s.useful === true));
-  row.querySelector(".no").setAttribute("aria-pressed", String(s.useful === false));
+  for (const [cls, value] of [["yes", true], ["no", false]]) {
+    const b = row.querySelector(`.${cls}`);
+    const on = s.useful === value;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
 }
 
 async function loadSessions() {
@@ -217,6 +218,12 @@ async function loadSessions() {
     const marks = el("div", "rating");
     const yes = el("button", "mark yes", "✓");
     const no = el("button", "mark no", "✗");
+    for (const [b, seed] of [[yes, 3], [no, 9]]) {
+      const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      ring.setAttribute("class", "ring");
+      paintRing(ring, 40, seed);
+      b.append(ring);
+    }
     yes.title = "It helped";
     no.title = "It did not help";
     yes.addEventListener("click", () => rate(s, true, row));
@@ -343,7 +350,7 @@ async function poll() {
   }
 }
 
-buildLevels();
+buildMagnet();
 window.addEventListener("resize", () => renderHome());
 go(["home", "activity", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
 poll();

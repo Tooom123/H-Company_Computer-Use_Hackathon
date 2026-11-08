@@ -105,7 +105,8 @@ body.mac .brand { left: 84px; } /* room for the traffic lights */
 .buddy .shin.b { transform-origin: 30px 47.2px; animation-delay: -1.3s; }
 .buddy .wave { transform-box: view-box; transform-origin: 23.7px 27px; animation: wave 5s ease-in-out infinite; }
 @keyframes swing { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(14deg); } }
-@keyframes wave { 0%, 70%, 100% { transform: rotate(0deg); } 76%, 88% { transform: rotate(-22deg); } 82%, 94% { transform: rotate(6deg); } }
+/* the hand only swings outwards (clockwise, away from the head): it never passes over it */
+@keyframes wave { 0%, 70%, 100% { transform: rotate(0deg); } 76%, 88% { transform: rotate(18deg); } 82%, 94% { transform: rotate(4deg); } }
 
 /* content --------------------------------------------------------------------------------------- */
 main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
@@ -149,23 +150,18 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
 .badge-paper.big { padding: 13px 28px 13px 44px; cursor: default; }
 .badge-paper.big span { font-size: 27px; }
 
-/* autonomy: a multiple-choice question; black square boxes, the red pen ticks the chosen one */
-.qcm { display: flex; flex-direction: column; gap: 2px; }
-.opt {
-  display: flex; align-items: center; gap: 14px;
-  border: 0; background: none; padding: 9px 6px; border-radius: 8px; text-align: left;
-}
-.opt:hover:not(:disabled) { background: var(--grey-200); }
-.opt:disabled { cursor: default; opacity: 0.55; }
-.opt:focus-visible { outline: 2px dashed var(--pencil); outline-offset: 2px; }
-.box { position: relative; width: 20px; height: 20px; flex: none; border: 2px solid var(--black); border-radius: 2px; background: var(--white); }
-.tick { position: absolute; left: -2px; top: -2px; width: 20px; height: 20px; overflow: visible; }
-.tick path { stroke-dasharray: 1; stroke-dashoffset: 1; }
-.opt.on .tick path { animation: tick 0.32s ease-out forwards; }
-.opt.on .tick path + path { animation-delay: 0.06s; }
-@keyframes tick { to { stroke-dashoffset: 0; } }
-.lbl { font-size: 15px; color: var(--grey-700); }
-.opt.on .lbl { color: var(--black); font-weight: 600; }
+/* autonomy: Matteo's Magnet, as on screen (sketch.js drawMagnet) */
+.magnet { position: relative; width: 100%; max-width: 400px; margin: 4px auto 0; } /* ~1.2x the on-screen widget */
+.magnet svg { display: block; width: 100%; height: auto; overflow: visible; }
+.magnet svg .paper { filter: drop-shadow(2px 3px 3px rgba(0, 0, 0, 0.3)); }
+.magnet.off { opacity: 0.55; }
+.magnet-label { font-family: var(--hand); font-size: 19.5px; fill: var(--ink); }
+.magnet path.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.45s ease-out forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.magnet-hit { position: absolute; inset: 0; }
+.hit { position: absolute; top: 45%; height: 50%; width: 31%; transform: translateX(-50%); background: none; border: 0; border-radius: 10px; }
+.hit:disabled { cursor: default; }
+.hit:focus-visible { outline: 2px dashed var(--pencil); outline-offset: -4px; }
 
 .now { border-color: rgba(219, 43, 31, 0.4); }
 .now-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
@@ -197,16 +193,15 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
 .empty { padding: 26px 16px; text-align: center; color: var(--grey-600); }
 .rating { display: flex; gap: 6px; }
 .mark {
-  width: 32px; height: 32px; border-radius: 50%;
-  border: 1px solid var(--grey-300); background: var(--white);
-  font-size: 16px; line-height: 1; color: var(--grey-500);
+  position: relative; width: 34px; height: 34px; border: 0; background: none;
+  font-size: 18px; line-height: 1; color: var(--grey-400);
 }
-.mark.yes { color: #1f9d47; border-color: rgba(31, 157, 71, 0.45); }
-.mark.no { color: var(--red); border-color: rgba(227, 36, 43, 0.45); }
-.mark.yes:hover { border-color: #1f9d47; background: rgba(31, 157, 71, 0.08); }
-.mark.no:hover { border-color: var(--red); background: rgba(227, 36, 43, 0.08); }
-.mark.yes.on { background: #1f9d47; border-color: #1f9d47; color: var(--white); }
-.mark.no.on { background: var(--red); border-color: var(--red); color: var(--white); }
+.mark:hover { color: var(--black); }
+.mark.on { color: var(--black); font-weight: 700; }
+.mark .ring { position: absolute; left: -3px; top: -3px; width: 40px; height: 40px; overflow: visible; pointer-events: none; }
+.mark .ring path { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+.mark.on .ring path { opacity: 1; animation: draw 0.4s ease-out forwards; }
+.mark.on .ring path + path { animation-delay: 0.05s; }
 
 /* voice ------------------------------------------------------------------------------------------- */
 .switch { width: 42px; height: 24px; border-radius: 12px; border: 0; background: var(--grey-300); position: relative; flex: none; padding: 0; }

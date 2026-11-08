@@ -89,23 +89,51 @@ export function paintBadge(svg, w, h, { seed = 11, dot = "on", dotX = 19 } = {})
   }
 }
 
-/** A pen tick for a QCM box of size `s`: starts inside, ends past the top-right corner, like a quick hand. */
-export function tickPoints(s) {
-  return [
-    [s * 0.12, s * 0.5],
-    [s * 0.3, s * 0.72],
-    [s * 0.45, s * 0.92],
-    [s * 0.62, s * 0.55],
-    [s * 0.85, s * 0.12],
-    [s * 1.15, -s * 0.28],
-  ];
+/**
+ * Matteo's Magnet (overlay.py, _MagnetView.drawRect_), drawn exactly as on screen, bottom-left: a 330x80 paper
+ * scrap, a red-pencil rail with three notches, the active notch a filled dot in two scribbled loops, and the
+ * handwritten "Magnet: <level>". AppKit counts y from the bottom, so y here is H - y there.
+ * Returns the x (0..1) of each notch centre, for the click zones.
+ */
+export function drawMagnet(svg, level, labels, { animate = false } = {}) {
+  const W = 330;
+  const H = 80;
+  svg.replaceChildren();
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const r = rng(7);
+  const paper = paperPoints(6, 6, W - 12, H - 12, r);
+  svg.append(node("polygon", { points: paper.map((p) => p.map((v) => v.toFixed(1)).join(",")).join(" "), fill: PAPER, class: "paper" }));
+  const line = (pts, width, jitter, cls = "") => {
+    for (const d of wobble(pts, r, jitter)) {
+      svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": width, "stroke-linecap": "round", "stroke-linejoin": "round", class: cls, pathLength: 1 }));
+    }
+  };
+  const y = H - 22; // rail
+  line([[16, y], [W - 16, y]], 1.6, 1.0);
+  const segW = (W - 24) / 3;
+  const xs = [];
+  for (let i = 0; i < 3; i++) {
+    const cx = 12 + segW * (i + 0.5);
+    xs.push(cx / W);
+    line([[cx, y - 6], [cx, y + 6]], 1.4, 0.8);
+    if (i === level) {
+      svg.append(node("circle", { cx, cy: y, r: 7, fill: INK }));
+      for (let k = 0; k < 2; k++) line(circlePoints(cx, y, 11 - k * 2, 10 - k * 2), 1.6, 1.8, animate ? "draw" : "");
+    }
+  }
+  const t = node("text", { x: 14, y: 30, class: "magnet-label" });
+  t.textContent = `Magnet: ${level === null || level === undefined ? "…" : labels[level]}`;
+  svg.append(t);
+  return xs;
 }
 
-/** Paint the red pen tick into `svg` (box size `s`), two passes like every overlay stroke. */
-export function paintTick(svg, s, seed = 5) {
+/** A loose red-pencil ring around a mark (the teacher's circle), two passes like every overlay stroke. */
+export function paintRing(svg, size, seed = 3) {
   svg.replaceChildren();
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
   const r = rng(seed);
-  for (const d of wobble(tickPoints(s), r, 1.1)) {
-    svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round", pathLength: 1 }));
+  const c = size / 2;
+  for (const d of wobble(circlePoints(c, c, c - 3, c - 4), r, 1.4)) {
+    svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": 1.8, "stroke-linecap": "round", pathLength: 1 }));
   }
 }

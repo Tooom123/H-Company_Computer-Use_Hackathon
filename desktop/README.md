@@ -8,8 +8,8 @@ figure sitting on the edge of the bar, legs swinging:
 
 | Tab | What it does |
 | --- | --- |
-| Home | Idle: Matteo's paper badge "⌘H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy as a multiple-choice question: black square boxes, the chosen one ticked in red pen. This month: tasks, checked, typical time. |
-| Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ (green) / ✗ (red)**: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
+| Home | Idle: Matteo's paper badge "⌘H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy = Matteo's Magnet exactly as drawn on screen (paper scrap, red-pencil rail, scribbled knob, "Magnet: …"), click a notch. This month: tasks, checked, typical time. |
+| Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ / ✗**, the chosen one circled in red pencil like a graded paper: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
 | Voice | Spoken notes on/off, voice (Sarah, Jessica, Bella, Matilda: plain American), speed, test; **push-to-talk key** (⌘H, ⌘J, Right ⌥, F9), applied live. |
 | Vision | **Recalibrate**: opens Édouard's Vision Lab on the calibration screen. |
 
