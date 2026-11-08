@@ -817,3 +817,11 @@ le raccourci choisi par l'utilisateur, **Option droite**, et le moteur rapporte
 ElevenLabs disponible et activé. Aucun scénario Devin n'a été lancé par cette
 recette ; aucun label humain de guidage n'a été ajouté. La visibilité du menu dans
 la barre macOS a été soumise à vérification de l'utilisateur.
+
+L'utilisateur a confirmé avoir vu l'icône avant de la fermer. À sa demande,
+un lanceur natif **`/Applications/H Companion.app`** a ensuite été compilé,
+signé localement et installé avec le même visage. Son ouverture a recréé une
+seule interface Electron et réutilisé le moteur prêt ; le panneau natif affiche
+**Right ⌥: new request**. La vérification de signature passe. Ce bundle est un
+raccourci vers le checkout et l'environnement du Mac, sans secret embarqué,
+pas encore une distribution autonome destinée aux autres équipes.

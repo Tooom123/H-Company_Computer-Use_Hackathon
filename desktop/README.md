@@ -35,6 +35,22 @@ Preset voice, speed and safe key choices are remembered. An explicitly configure
 
 ### Finder / menu-bar launcher for the Devin pilot (macOS)
 
+On the demo Mac, **Applications → H Companion.app** is the Finder/Spotlight entry
+point. It has the companion icon and invokes the same launcher below, reopening
+the existing window or starting the coach as needed. To install that local
+shortcut on another Mac after setting up the dependencies:
+
+```sh
+python3 scripts/install-macos-launcher.py
+# Optional shared Applications folder, if writable:
+python3 scripts/install-macos-launcher.py --destination '/Applications/H Companion.app'
+```
+
+The default destination is `~/Applications/H Companion.app`. The installer refuses
+to overwrite an existing app. It uses the installed Swift compiler and macOS icon
+tools; no credentials are embedded. This shortcut points to this local checkout
+and Python environment: it is not yet a standalone distributable application.
+
 Double-click **`Launch H Companion.command`** at the repository root. This starts
 the native Devin coach on ports 8780/8781 and opens its panel. The small companion
 icon in the macOS menu bar offers **Open H Companion**, **Stop task**,
