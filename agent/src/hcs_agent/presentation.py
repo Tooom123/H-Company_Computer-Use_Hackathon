@@ -3,6 +3,7 @@
 import re
 
 CHECKING_RESULT = "Let me check that for you."
+WORKING_ACKNOWLEDGEMENT = "Give me a moment, I'll check that."
 VERIFIED_RESULT = "I've checked this on screen."
 UNVERIFIED_RESULT = "I couldn't confirm the result yet."
 STOPPED_RESULT = "I've stopped the task."

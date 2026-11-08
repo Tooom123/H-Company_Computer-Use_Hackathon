@@ -21,13 +21,13 @@ class Element {
   setPointerCapture() {}
 }
 const settled = () => new Promise((r) => setImmediate(r));
-async function renderer({ current = null, observeOnly = true, preferences = {}, voice = "configured-custom-voice", stopResponse } = {}) {
+async function renderer({ current = null, observeOnly = true, preferences = {}, voice = "configured-custom-voice", stopResponse, voiceAvailable = true, voiceRejected = false } = {}) {
   const html = await readFile(new URL("../renderer/index.html", import.meta.url), "utf8");
   const ids = new Map([...html.matchAll(/id="([^"]+)"/g)].map((m) => [m[1], new Element()]));
   for (const [id, e] of ids) e.id = id;
   const tabs = [...html.matchAll(/class="tab" data-go="([^"]+)"/g)].map((m) => { const e = new Element("button"); e.dataset.go = m[1]; return e; });
   const calls = [];
-  const status = { current, autonomy: 0, agent: { observe_only: observeOnly }, voice: { ptt_key: "ctrl+shift+h" }, speech: { available: true, enabled: true, provider: "elevenlabs", voice, speed: 1 } };
+  const status = { current, autonomy: 0, agent: { observe_only: observeOnly }, voice: { ptt_key: "ctrl+shift+h" }, speech: { available: voiceAvailable, enabled: voiceAvailable, response_mode: voiceAvailable ? "both" : "text", provider: "elevenlabs", voice, speed: 1 } };
   const feedback = { available: true, saved: false, session_id: "episode-7", comment: "", dictation_armed: false };
   const agent = async (method, path, body) => {
     calls.push({ method, path, body });
@@ -36,6 +36,14 @@ async function renderer({ current = null, observeOnly = true, preferences = {}, 
       return { ok: true, status: 200, data: status };
     }
     if (path === "/stop" && stopResponse) return await stopResponse(status);
+    if (path === "/voice" && method === "POST") {
+      if (voiceRejected) return { ok: false, status: 503, data: { error: "Assistant unavailable" } };
+      if (body.response_mode) {
+        status.speech.response_mode = body.response_mode;
+        status.speech.enabled = body.response_mode !== "text";
+      }
+      return { ok: true, status: 200, data: { ...status.speech } };
+    }
     const data = path === "/status" ? status : path === "/feedback" ? feedback : path === "/sessions" ? { sessions: [] } : {};
     return { ok: true, status: 200, data };
   };
@@ -59,6 +67,38 @@ test("new desktop preserves configured voice and ignores stale Cmd-H preference"
   assert.equal(r.ids.get("voices").querySelector(".configured-voice").children[0].textContent, "Configured voice");
   assert.ok(r.ids.get("pttKeys").children.some((b) => b.dataset.key === "ctrl+shift+h"));
   assert.ok(!r.ids.get("pttKeys").children.some((b) => b.dataset.key === "cmd+h"));
+});
+
+test("response selector applies and remembers Text, Voice and Both without changing autonomy", async () => {
+  const r = await renderer();
+  vm.runInContext('go("voice")', r.context);
+  const buttons = r.ids.get("responseModes").children;
+  for (const mode of ["text", "voice", "both"]) {
+    await buttons.find(b => b.dataset.mode === mode).events.click();
+    assert.equal(r.status.speech.response_mode, mode);
+    assert.equal(r.preferences["hcs.responseMode"], mode);
+    assert.equal(buttons.filter(b => b.attrs["aria-pressed"] === "true").length, 1);
+    assert.equal(buttons.find(b => b.dataset.mode === mode).attrs["aria-pressed"], "true");
+  }
+  assert.ok(!r.calls.some(c => c.path === "/autonomy"));
+  const restarted = await renderer({ preferences: { "hcs.responseMode": "voice", "hcs.tts": "false" } });
+  assert.equal(restarted.status.speech.response_mode, "voice"); // new choice wins over legacy mute
+  const legacy = await renderer({ preferences: { "hcs.tts": "false" } });
+  assert.equal(legacy.status.speech.response_mode, "text");
+});
+
+test("response selector preserves the previous choice on failure and retains text without audio", async () => {
+  const r = await renderer({ voiceRejected: true });
+  vm.runInContext('go("voice")', r.context);
+  await r.ids.get("responseModes").children[0].events.click();
+  assert.equal(r.preferences["hcs.responseMode"], undefined);
+  assert.equal(r.status.speech.response_mode, "both");
+  assert.equal(r.ids.get("responseModeNote").textContent, "Assistant unavailable");
+  const silent = await renderer({ voiceAvailable: false, preferences: { "hcs.responseMode": "voice" } });
+  vm.runInContext('go("voice")', silent.context);
+  assert.equal(silent.status.speech.response_mode, "text");
+  assert.ok(!silent.calls.some(c => c.method === "POST"));
+  assert.deepEqual(silent.ids.get("responseModes").children.map(b => b.disabled), [false, true, true]);
 });
 
 test("observe-only refuses slider keyboard and direct selection without posting autonomy", async () => {

@@ -349,6 +349,8 @@ class _SketchView(AppKit.NSView):
         self.seed = 1
         self.badge = None  # (text, pulsing) or None: the "listening" indicator
         self.compact_idle = False
+        self.text_enabled = True
+        self.shortcut_deadline = time.monotonic() + 10.0
         self.progress = 1.0  # 0..1 reveal of the current scene
         self.stroke_total = 40
         self.held = False  # True while the voice has not started: the scene waits, the badge still shows
@@ -385,7 +387,7 @@ class _SketchView(AppKit.NSView):
             else:
                 placed.append((m.xy[0] - 50, m.xy[1] - 36, 100, 72))
         main_note = None
-        if sc.target is not None:
+        if sc.target is not None and self.text_enabled:
             tx, ty = sc.target
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
             _, _, lw, lh = _measure(label, 19, note_width)
@@ -401,7 +403,7 @@ class _SketchView(AppKit.NSView):
             paper_y = ty + half_h  # above the control (AppKit: y grows upwards)
             px, py = _place(paper_x, paper_y, pw, ph, (W, H), placed)
             main_note = (px + 10, py + 9, pw, ph, right)  # text anchor + paper size
-        elif sc.text:
+        elif sc.text and self.text_enabled:
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
             _, _, lw, lh = _measure(label, 19, note_width)
             pw, ph = lw + 20, lh + 18
@@ -431,11 +433,11 @@ class _SketchView(AppKit.NSView):
                 base_y = my - (bh / 2 + 4 if m.box else 10)
                 _highlight(mx, base_y + 4, width, rnd) if style % 2 else \
                     _stroke([(mx - width / 2 + i * (width / 5), base_y + (2 if i % 2 else -2)) for i in range(0, 6)], rnd, 1.4, 1.2)
-            if m.text and ("!" in m.text or "ttention" in m.text or "Pas " in m.text):
+            if self.text_enabled and m.text and ("!" in m.text or "ttention" in m.text or "Pas " in m.text):
                 _doodle("asterisk", mx - 48, my + 22, rnd)
             elif m.shape == "arrow" and m.to:
                 _arrow(m.xy, m.to, rnd)
-            if m.text and m.shape != "arrow":
+            if self.text_enabled and m.text and m.shape != "arrow":
                 # Small label next to the mark, with a short link stroke.
                 lx = mx + 50 if mx + 300 < W else mx - 50 - 220
                 ly = my + 26
@@ -463,6 +465,9 @@ class _SketchView(AppKit.NSView):
                 _arrow(start, (end_x, end_y), rnd)
             if sc.doodle:
                 _doodle(sc.doodle, nx + w - 14, ny + h - 2, rnd)
+        elif sc.target is not None:
+            # Voice-only still points to the control; it just omits written notes.
+            _frame(*sc.target, rnd, style, box=sc.target_box)
         # Remember how many strokes this scene has, so the next frames reveal them in sequence.
         self.stroke_total = max(self.stroke_total, _REVEAL["index"]) if self.progress < 1 else _REVEAL["index"]
 
@@ -472,7 +477,7 @@ class _SketchView(AppKit.NSView):
         import time
 
         text, pulsing = self.badge
-        if self.compact_idle and is_idle_badge(text, pulsing):
+        if is_idle_badge(text, pulsing) and (self.compact_idle or time.monotonic() >= self.shortcut_deadline):
             return
         bounds = self.bounds()
         rnd = random.Random(11)
@@ -516,6 +521,10 @@ class Overlay:
         self.window.setContentView_(self.view)
         self._seed = 1
         self.hold_reveal: Callable[[], bool] | None = None  # e.g. Speaker.holding: draw when the voice starts
+        # Redraw even while idle, otherwise the expired paper could remain painted.
+        self._hint_timer = threading.Timer(10.0, self.redraw)
+        self._hint_timer.daemon = True
+        self._hint_timer.start()
 
     def _flip(self, xy):
         return None if xy is None else (xy[0], self._screen_h - xy[1])
@@ -565,6 +574,8 @@ class Overlay:
 
     @property
     def reading_duration(self) -> float:
+        if not getattr(self.view, "text_enabled", True):
+            return 0.0
         return sum(self.view.page_seconds) + 1.5  # include the bounded voice/reveal wait
 
     def _advance_page(self) -> None:
@@ -605,6 +616,16 @@ class Overlay:
 
     def redraw(self) -> None:
         _on_main(lambda: self.view.setNeedsDisplay_(True))
+
+    def set_text_enabled(self, enabled: bool) -> None:
+        """Keep the original scene for an immediate, lossless return to written notes."""
+        def apply() -> None:
+            if self.view.text_enabled == bool(enabled):
+                return
+            self.view.text_enabled = bool(enabled)
+            self.view.page_index, self.view.page_started_at = 0, None
+            self.view.setNeedsDisplay_(True)
+        _on_main(apply)
 
     def set_compact(self, compact: bool) -> None:
         """Fold the idle shortcut reminder only; recording, errors and stopping remain visible."""
@@ -654,6 +675,7 @@ class _MagnetView(AppKit.NSView):
         self.on_toggle = None
         self.compact = False
         self.shortcut = "⌃⇧H"
+        self.shortcut_deadline = time.monotonic() + 10.0
         return self
 
     def isOpaque(self):
@@ -686,8 +708,9 @@ class _MagnetView(AppKit.NSView):
             Foundation.NSString.stringWithString_(AUTONOMY_LABELS[self.level]).drawInRect_withAttributes_(
                 ((14, 23), (W - 46, 20)), attrs)
             small = {**attrs, AppKit.NSFontAttributeName: _hand_font(11)}
-            Foundation.NSString.stringWithString_(f"{self.shortcut} · new request").drawInRect_withAttributes_(
-                ((14, 7), (W - 28, 18)), small)
+            if time.monotonic() < self.shortcut_deadline:
+                Foundation.NSString.stringWithString_(f"{self.shortcut} · new request").drawInRect_withAttributes_(
+                    ((14, 7), (W - 28, 18)), small)
             _stroke([(W - 24, 25), (W - 18, 31), (W - 24, 37)], rnd, 1.4, 0.4)
             return
         # The collapse handle is separate from the autonomy rail.
@@ -734,6 +757,9 @@ class MagnetWidget:
         self.view.on_toggle = self.set_compact
         self.view.shortcut = shortcut_label(shortcut or os.environ.get("HCS_PTT_KEY", "ctrl+shift+h"))
         self.view.setToolTip_("Réduire avec − ; cliquer la poignée pour réouvrir les réglages.")
+        self._hint_timer = threading.Timer(10.0, lambda: _on_main(lambda: self.view.setNeedsDisplay_(True)))
+        self._hint_timer.daemon = True
+        self._hint_timer.start()
         self.window.setContentView_(self.view)
         self.window.orderFrontRegardless()
         self.visible = True

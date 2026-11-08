@@ -66,14 +66,18 @@ async function syncPrefs() {
   const voice = pref("voice");
   const speed = pref("speed");
   const enabled = pref("tts");
+  const savedMode = pref("responseMode");
+  const responseMode = ["text", "voice", "both"].includes(savedMode)
+    ? savedMode : enabled === "false" ? "text" : enabled === "true" ? "both" : null;
+  if (sp && responseMode && (sp.available || responseMode === "text")
+      && responseMode !== (sp.response_mode || (sp.enabled ? "both" : "text"))) want.response_mode = responseMode;
   if (sp && sp.available) {
     // A configured/custom voice (e.g. the demo narrator) wins over a stale preset preference.
     if (sp.provider !== "macos" && VOICES.some((v) => v.id === sp.voice)
       && VOICES.some((v) => v.id === voice) && voice !== sp.voice) want.voice = voice;
     if (speed && Number(speed) !== sp.speed) want.speed = Number(speed);
-    if (enabled !== null && (enabled === "true") !== sp.enabled) want.enabled = enabled === "true";
-    if (Object.keys(want).length) await api.agent("POST", "/voice", want);
   }
+  if (Object.keys(want).length) await api.agent("POST", "/voice", want);
   const key = safePttPreference(pref("ptt"));
   if (key && status.voice && status.voice.ptt_key && key !== status.voice.ptt_key) {
     await api.agent("POST", "/ptt", { key });
@@ -453,14 +457,36 @@ $("feedbackSave").addEventListener("click", async () => {
 // voice -----------------------------------------------------------------------------------------
 let speedTouched = 0;
 let pttMsg = null; // feedback after a key change, kept for a few seconds
+let responseModeError = "";
 
 function renderVoice() {
   const sp = (status && status.speech) || null;
   const usable = Boolean(sp && sp.available);
   const localVoice = sp?.provider === "macos";
-  const sw = $("ttsSwitch");
-  sw.setAttribute("aria-checked", String(Boolean(sp && sp.enabled)));
-  sw.disabled = !usable;
+  const modes = $("responseModes");
+  if (!modes.children.length) {
+    for (const [mode, label] of [["text", "Text only"], ["voice", "Voice only"], ["both", "Both"]]) {
+      const b = el("button", "keycap", label);
+      b.dataset.mode = mode;
+      b.addEventListener("click", async () => {
+        const r = await api.agent("POST", "/voice", { response_mode: mode });
+        if (r.ok) {
+          pref("responseMode", r.data.response_mode || mode);
+          pref("tts", (r.data.response_mode || mode) !== "text");
+        }
+        responseModeError = r.ok ? "" : (r.data?.error || "Could not change the response format.");
+        await poll();
+      });
+      modes.append(b);
+    }
+  }
+  const responseMode = sp?.response_mode || (sp?.enabled ? "both" : "text");
+  modes.querySelectorAll("button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.mode === responseMode);
+    b.setAttribute("aria-pressed", String(b.dataset.mode === responseMode));
+    b.disabled = !sp || (!usable && b.dataset.mode !== "text");
+  });
+  $("responseModeNote").textContent = responseModeError || "Voice only hides written notes. Target markers and task status stay visible.";
   const box = $("voices");
   if (!box.children.length) {
     for (const v of (status && status.voices) || VOICES) {
@@ -530,16 +556,9 @@ function renderVoice() {
       : !status
         ? "Start the assistant to change the key."
         : current
-          ? "Applies right away. The badge on screen shows the new key."
+          ? "Applies right away. You can always find the shortcut here after the launch reminder disappears."
           : "Push to talk runs with `hcs-agent talk`.";
 }
-$("ttsSwitch").addEventListener("click", async () => {
-  const on = $("ttsSwitch").getAttribute("aria-checked") !== "true";
-  $("ttsSwitch").setAttribute("aria-checked", String(on));
-  pref("tts", on);
-  await api.agent("POST", "/voice", { enabled: on });
-  poll();
-});
 $("speed").addEventListener("input", () => {
   speedTouched = Date.now();
   $("speedVal").textContent = `${Number($("speed").value).toFixed(2)}×`;
@@ -568,7 +587,7 @@ async function poll() {
   const r = await api.agent("GET", "/status");
   const was = status;
   status = r.ok ? r.data : null;
-  if (status && !was) await syncPrefs();
+  if (status && (!was || status.agent?.pid !== was.agent?.pid)) await syncPrefs();
   renderHome();
   await loadFeedback();
   if (view === "voice") renderVoice();

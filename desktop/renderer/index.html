@@ -157,13 +157,9 @@
       <section class="view" id="view-voice" hidden>
         <div class="view-h"><h1>Voice</h1></div>
         <div class="card">
-          <div class="row">
-            <div>
-              <h2>Read the notes aloud</h2>
-              <p class="muted small">Each note drawn on screen is spoken as it appears. It stops when you act or speak.</p>
-            </div>
-            <button class="switch" id="ttsSwitch" role="switch" aria-checked="false"><i></i></button>
-          </div>
+          <h2>How should I respond?</h2>
+          <div class="keys" id="responseModes" role="group" aria-label="Response format"></div>
+          <p class="muted small" id="responseModeNote">Voice only hides written notes. Target markers and task status stay visible.</p>
           <div class="voices" id="voices"></div>
           <div class="row speed">
             <label for="speed">Speed</label>
@@ -175,7 +171,7 @@
         </div>
         <div class="card">
           <h2>Push to talk</h2>
-          <p class="muted small">Hold the key, say what you need, release. Speaking during a task stops it and starts your new request.</p>
+          <p class="muted small">Hold the key, say what you need, release. Speaking during a task stops it and starts your new request. The on-screen shortcut reminder disappears after the first 10 seconds.</p>
           <div class="keys" id="pttKeys" role="radiogroup" aria-label="Push-to-talk key"></div>
           <p class="muted small" id="pttNote"></p>
         </div>

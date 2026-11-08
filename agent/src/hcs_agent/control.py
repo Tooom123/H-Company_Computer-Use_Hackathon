@@ -314,7 +314,9 @@ class Controller:
                     return 409, {"error": "This step is no longer awaiting your response"}
             return 200, {"accepted": True, "verified": False}
         if method == "POST" and path == "/voice":
-            allowed = {k: body[k] for k in ("enabled", "voice", "speed") if k in body}
+            allowed = {k: body[k] for k in ("enabled", "voice", "speed", "response_mode") if k in body}
+            if "response_mode" in allowed and allowed["response_mode"] not in ("text", "voice", "both"):
+                return 400, {"error": "response_mode must be text, voice or both"}
             if "enabled" in allowed and not isinstance(allowed["enabled"], bool):
                 return 400, {"error": "enabled must be true or false"}
             if "voice" in allowed and allowed["voice"] not in {v["id"] for v in VOICES}:

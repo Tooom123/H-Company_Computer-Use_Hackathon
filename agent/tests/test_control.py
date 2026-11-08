@@ -112,6 +112,14 @@ def test_stop_and_voice(rig):
     assert rig.call("POST", "/voice", {"voice": "someone-else"})[0] == 400
     assert rig.call("POST", "/voice", {"enabled": "yes"})[0] == 400
     assert rig.call("POST", "/voice/test")[1] == {"spoken": True} and rig.tested == 1
+
+
+def test_response_mode_contract(rig):
+    for mode in ("text", "voice", "both"):
+        code, data = rig.call("POST", "/voice", {"response_mode": mode})
+        assert code == 200 and data["response_mode"] == mode
+    for invalid in ("silent", False, None, [], {"text": True}):
+        assert rig.call("POST", "/voice", {"response_mode": invalid})[0] == 400
     assert rig.call("GET", "/nope")[0] == 404
 
 

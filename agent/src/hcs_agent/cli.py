@@ -24,7 +24,7 @@ from .contract import AgentEvent, ApproveCommand, InterventionRequest, Mode, Nex
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 from .desktop_feedback import DesktopFeedback, RunJournal
-from .presentation import CHECKING_RESULT, VERIFIED_RESULT, UNVERIFIED_RESULT, STOPPED_RESULT
+from .presentation import CHECKING_RESULT, VERIFIED_RESULT, UNVERIFIED_RESULT, STOPPED_RESULT, WORKING_ACKNOWLEDGEMENT
 
 
 _LAST_LOOKUP_AT = 0.0
@@ -32,8 +32,9 @@ _LAST_ACTION: dict = {}  # latest agent action (summary, pointer) for on-screen 
 _MAGNET = {"level": int(os.environ.get("HCS_AUTONOMY", "1")), "widget": None, "current": None}
 _VOICE: dict = {"ptt": None, "state": None}  # push-to-talk handle and its last state, visible to the guide loop
 _SPEECH: dict = {"speaker": None, "ready": False}  # ElevenLabs voice reading the on-screen notes aloud
+_PRESENTATION: dict = {"mode": "both", "overlay": None}
 # Notes shown in every session (closing notes, routing feedback): synthesised ahead so they play at once.
-_COMMON_LINES = (CHECKING_RESULT, VERIFIED_RESULT, STOPPED_RESULT, UNVERIFIED_RESULT,
+_COMMON_LINES = (CHECKING_RESULT, VERIFIED_RESULT, STOPPED_RESULT, UNVERIFIED_RESULT, WORKING_ACKNOWLEDGEMENT,
                  "This needs another look.", "I did not get that, please rephrase", "I cannot do that yet")
 
 
@@ -53,6 +54,8 @@ def _speaker():
 def _voice_for(ov) -> None:
     """Tie the overlay to the voice: a note is drawn when its sentence starts being heard."""
     sp = _speaker()
+    _PRESENTATION["overlay"] = ov
+    _apply_response_mode()
     if ov is not None and sp is not None:
         # Through _SPEECH, not a bound method: the app can switch voices, which replaces the speaker.
         ov.hold_reveal = lambda: _SPEECH["speaker"] is not None and _SPEECH["speaker"].holding()
@@ -60,7 +63,7 @@ def _voice_for(ov) -> None:
 
 def _say(*segments: str, interrupt: bool = True) -> None:
     """Read aloud what is about to be written on screen. Call it right BEFORE `show_scene`."""
-    if _voice_input_active():
+    if _voice_input_active() or _PRESENTATION["mode"] == "text":
         return  # an old model response must not start speaking over the user's new request
     sp = _SPEECH["speaker"]
     if sp is not None:
@@ -150,6 +153,7 @@ def _control_status() -> dict:
         "voice": {"state": _VOICE.get("state"), "last_text": _VOICE.get("last_text"),
                   "ptt_key": getattr(ptt, "key_name", None)},
         "speech": {"available": sp is not None, "enabled": bool(sp is not None and not sp.muted),
+                   "response_mode": _response_mode(),
                    "provider": getattr(sp, "provider", None),
                    "voice": getattr(sp, "voice", None) or os.environ.get("HCS_TTS_VOICE") or "EXAVITQu4vr4xnSDxMaL",
                    "speed": getattr(sp, "speed", None) or float(os.environ.get("HCS_TTS_SPEED") or 1.0),
@@ -223,6 +227,18 @@ def _control_next(session_id: str, step_index: int, done: bool) -> bool:
                            note=f"User explicitly reported {report} in desktop app; result not verified.")
 
 
+def _response_mode() -> str:
+    sp = _SPEECH["speaker"]
+    # Never leave the user without a response when speech is unavailable/muted.
+    return _PRESENTATION["mode"] if sp is not None and not sp.muted else "text"
+
+
+def _apply_response_mode() -> None:
+    ov = _PRESENTATION.get("overlay")
+    if ov is not None:
+        ov.set_text_enabled(_response_mode() != "voice")
+
+
 def _control_voice(opts: dict) -> dict:
     sp = _SPEECH["speaker"]
     if "voice" in opts or "speed" in opts:
@@ -244,10 +260,16 @@ def _control_voice(opts: dict) -> dict:
             if old is not None:
                 old.close()
             sp = new
-    if "enabled" in opts and sp is not None:
-        sp.muted = not opts["enabled"]
+    mode = opts.get("response_mode")
+    if mode is None and "enabled" in opts:  # compatibility with older desktop clients
+        mode = "both" if opts["enabled"] else "text"
+    if mode is not None:
+        _PRESENTATION["mode"] = mode
+    if mode is not None and sp is not None:
+        sp.muted = mode == "text"
         if sp.muted:
             sp.stop()
+    _apply_response_mode()
     return _control_status()["speech"]
 
 
@@ -1324,7 +1346,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif it.state.terminal:
             ov.badge(None)
 
-    shown_action: dict = {"id": None, "at": None}
+    shown_action: dict = {"id": None, "at": None, "announced": False}
 
     def narrate() -> None:
         """Takeover: show what the agent is doing, where, as it does it; clear it as soon as it is stale."""
@@ -1337,7 +1359,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
 
             ov.badge("Checking the result…" if it.state is State.verifying else "Taking over…", pulsing=True)
             text = _LAST_ACTION.get("summary") or "Working on the current step…"
-            _say(text, interrupt=False)  # never cut the agent's sentence; the latest one waits its turn
+            # Operational labels belong on screen, not in the spoken conversation.
+            # A single cached acknowledgement avoids repeating filler for every tool call.
+            if not shown_action["announced"]:
+                shown_action["announced"] = True
+                _say(WORKING_ACKNOWLEDGEMENT, interrupt=False)
             ov.show_scene(Scene(text=text, target=_LAST_ACTION.get("pointer")))
             return
         shown_at = shown_action.get("at")

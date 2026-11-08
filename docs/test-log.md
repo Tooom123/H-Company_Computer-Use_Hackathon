@@ -1302,3 +1302,25 @@ talk-loop generation handoff was then rechecked with the spoken-command and
 empty-transcript suites. No real provider cancellation latency or microphone
 interaction is claimed here. An in-flight external action can finish before H
 acknowledges cancellation; a live Option-right interruption trial remains pending.
+
+### Natural speech and response format — 2026-11-08
+
+Takeover tool statuses (including “Preparing the response…”) remain written
+status information. They are no longer read aloud; one cached “Give me a moment,
+I'll check that” acknowledgement is allowed per intervention instead. Guidance
+and final answers keep their normal speech path.
+
+Voice settings now offer Text only / Voice only / Both and retain the choice
+across desktop reloads and agent restarts. Text only stops active speech; Voice
+only hides note text while retaining target markers and operational statuses.
+The original scene and report stay intact. A missing speaker retains written
+output. The floating shortcut reminder expires after 10 seconds, including the
+compact Magnet reminder, and does not reappear after each completed task.
+
+Validation: 138 targeted Python tests and 23 desktop tests passed, covering
+control API validation, mode transitions, mute compatibility, unavailable audio,
+preference restoration, rejected changes, native target rendering, lossless note
+restoration, shortcut expiry, and continued visibility of listening/error states.
+The HTTP control tests required a local listening socket outside the sandbox;
+the initial sandbox-only run could not bind that socket and was rerun successfully.
+These are local software checks, not a new H benchmark or human usefulness label.

@@ -136,3 +136,21 @@ def test_paginated_answer_has_enough_reading_time_but_can_be_interrupted(rig, mo
     monkeypatch.setattr(cli, '_new_request_pending', lambda: False)
     clock[0] += 20
     assert done()
+
+
+def test_takeover_speaks_one_acknowledgement_not_internal_action_labels(rig, monkeypatch):
+    ov, spoken, _ = rig
+    it = intervention()
+    it.state, it.report, it.takeover = State.running, None, True
+    monkeypatch.setattr(cli, "_LAST_ACTION", {})
+    monkeypatch.setattr(cli, "_voice_input_active", lambda: False)
+    def run(done, tick, interval):
+        for index, label in enumerate(("Preparing the response…", "Reading the screen…", "Selecting an on-screen control…")):
+            cli._LAST_ACTION.update(id=str(index), summary=label, pointer=None)
+            tick()
+        it.state, it.report = State.resolved, object()
+        assert done()
+    ov.run_until = run
+    cli._guide_loop(it, auto=False, overlay=True, ov=ov)
+    assert spoken == [("Give me a moment, I'll check that.",)]
+    assert [s.text for s in ov.scenes] == ["Preparing the response…", "Reading the screen…", "Selecting an on-screen control…"]
