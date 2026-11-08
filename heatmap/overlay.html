@@ -38,11 +38,10 @@ const CLICKS_PER_TARGET = 3;
 const api = window.hcsOverlay;
 const $ = (id) => document.getElementById(id);
 const heat = new GazeHeatmap({ canvas: $("heat"), maxAlpha: 0.22 });
-heat.setTargets([]); // a pure gaze cloud, until the browser extension sends the page's buttons (the magnet)
+heat.setTargets([]); // no page here: a pure gaze cloud (the agent adds the screen's controls on its side)
 heat.start();
 api?.onGaze((p) => heat.push(p ? { x: p.x, y: p.y, emittedAt: performance.now() } : null));
 api?.onAccuracy((px) => heat.setUncertainty(px));
-api?.onTargets?.((list) => heat.setTargets(Array.isArray(list) ? list : []));
 api?.onMode((m) => { if (m === "calibrate") calibrate(); });
 
 async function calibrate() {
