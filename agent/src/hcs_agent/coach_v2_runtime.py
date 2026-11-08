@@ -19,7 +19,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from .coach_v2 import CoachClient, CoachDecision, CoachProtocolError, allowed_page
+from .coach_v2 import CoachClient, CoachDecision, CoachProtocolError, allowed_page, sensitive_key_creation
 from .coach_v2_journal import CoachRun
 
 
@@ -33,12 +33,12 @@ class Observation:
 
 
 def observe() -> Observation:
-    from . import a11y
-    page = a11y.foreground_page()
+    from .coach_v2_screen import read_page
+    page = read_page()
     if not page or not page.is_front or not allowed_page(page.url):
         raise CoachProtocolError("Bring H Platform or its documentation to the front, then ask me again.")
     controls, targets, texts = [], {}, []
-    roles = {"AXButton", "AXLink", "AXTextField", "AXSearchField", "AXComboBox", "AXPopUpButton",
+    roles = {"AXButton", "AXLink", "AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXPopUpButton",
              "AXMenuItem", "AXCheckBox", "AXRadioButton", "AXTab", "AXDisclosureTriangle"}
     seen = set()
     # Action controls first; headings and text can then be highlighted for answers.
@@ -129,6 +129,63 @@ def focused_search() -> bool:
     return role == "AXSearchField" or (role in {"AXTextField", "AXComboBox"} and bool(re.search(r"\bsearch\b", label, re.I)))
 
 
+def set_literal_text(target, text: str, desktop) -> None:
+    """Set the exact field, with Unicode/newlines and no pasted keyboard shortcuts.
+
+    AX's acknowledged set-value avoids the system clipboard when supported.
+    The fallback preserves all pasteboard formats and restores them only if no
+    one has since copied something else. Never read field values into a trace.
+    """
+    from . import a11y
+    import ApplicationServices as AS
+    from AppKit import NSWorkspace, NSPasteboard, NSPasteboardItem, NSPasteboardTypeString
+    from Foundation import NSData, NSDate, NSRunLoop
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    app = AS.AXUIElementCreateApplication(front.processIdentifier()) if front else None
+    focused = a11y._attr(app, "AXFocusedUIElement") if app is not None else None
+    ref = getattr(target, "ref", None)
+    if (ref is None or focused is None or not AS.CFEqual(ref, focused)
+            or target.role not in {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"}):
+        raise CoachProtocolError("Please click directly inside the text field and ask again.")
+    result = AS.AXUIElementSetAttributeValue(ref, "AXValue", text)
+    if result == 0:
+        return
+    board = NSPasteboard.generalPasteboard()
+    previous = []
+    for item in board.pasteboardItems() or []:
+        contents = {}
+        for kind in item.types() or []:
+            data = item.dataForType_(kind)
+            if data is not None:
+                contents[str(kind)] = bytes(data)
+        previous.append(contents)
+    board.clearContents()
+    board.setString_forType_(text, NSPasteboardTypeString)
+    owned_count = board.changeCount()
+    try:
+        desktop.hotkey("command", "a")
+        desktop.hotkey("command", "v")
+        # Pump AppKit until the application acknowledges the value, bounded to
+        # avoid a long blocked main loop. This is local evidence, never logged.
+        deadline = time.monotonic() + .65
+        while time.monotonic() < deadline:
+            if str(a11y._attr(ref, "AXValue") or "") == text:
+                return
+            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(.025))
+        raise CoachProtocolError("The text was pasted, but I couldn't confirm the field. Please check it before continuing.")
+    finally:
+        if board.changeCount() == owned_count:
+            board.clearContents()
+            restored = []
+            for contents in previous:
+                item = NSPasteboardItem.alloc().init()
+                for kind, data in contents.items():
+                    item.setData_forType_(NSData.dataWithBytes_length_(data, len(data)), kind)
+                restored.append(item)
+            if restored:
+                board.writeObjects_(restored)
+
+
 def perform(decision: CoachDecision, target, expected_url: str, desktop, viewport=None) -> None:
     """One effect on the page just checked, never an unattended script."""
     if not allowed_page(expected_url) or foreground_url() != expected_url:
@@ -137,13 +194,9 @@ def perform(decision: CoachDecision, target, expected_url: str, desktop, viewpor
         from .a11y import visible_at_point
         if target is None or not visible_at_point(target):
             raise CoachProtocolError("I can't see that control clearly. Bring the page forward and ask again.")
-        if decision.action == "type":
-            # This runner only types literal ASCII; no clipboard or shell access.
-            if not decision.text or not decision.text.isascii():
-                raise CoachProtocolError("Please enter that text yourself, then press Enter.")
         desktop.click(*target.center)
         if decision.action == "type":
-            desktop.write(decision.text, interval=0)
+            set_literal_text(target, decision.text, desktop)
     elif decision.action == "scroll":
         if viewport is None:
             raise CoachProtocolError("Please scroll this page a little, then ask me again.")
@@ -162,7 +215,7 @@ def perform(decision: CoachDecision, target, expected_url: str, desktop, viewpor
 
 
 class Runtime:
-    MAX_STEPS = 8
+    MAX_STEPS = 12
 
     def __init__(self, runs_dir: Path, api_key: str, overlay, speaker, desktop, *, port=8792, ptt_key="alt_r"):
         from .control import Controller, ControlServer
@@ -194,6 +247,10 @@ class Runtime:
         self.history = []
         self.step = 0
         self.pending = None
+        self.tour = None
+        self.requires_confirmation = False
+        self.confirmation_pending = False
+        self.approved_step = None
         self.due = None
         self.busy = False
         self.autonomy = 0
@@ -252,6 +309,10 @@ class Runtime:
     def next_step(self, sid, index, done):
         if not self.current or self.current.session_id != sid or self.step != index or not self.pending:
             return False
+        if self.confirmation_pending:
+            return False
+        if self.requires_confirmation:
+            self.confirmation_pending = True
         self.events.put(("next", sid, index, done))
         return True
 
@@ -262,8 +323,11 @@ class Runtime:
             current = {"session_id": run.session_id, "procedure_id": "h-platform-coach-v2",
                        "goal": run.request.goal, "mode": run.request.mode, "state": run.state.value,
                        "terminal": run.state.terminal, "takeover": run.request.mode == "act", "autonomy": self.autonomy,
-                       "step": {"index": self.step, "instruction": self.pending[0].speech,
-                                "kind": self.pending[0].action, "total": None} if self.pending else None,
+                       "step": {"index": self.step, "instruction": (
+                           "Create this API key? Confirm in H Companion to continue." if self.requires_confirmation
+                           else self.pending[0].speech),
+                                "kind": "confirm" if self.requires_confirmation else self.pending[0].action,
+                                "total": None} if self.pending else None,
                        "cost_usd": None, "started_at": self.started_at,
                        "status": (run.report or {}).get("status"), "verified": False}
         speaker = self.speaker
@@ -301,6 +365,8 @@ class Runtime:
         self.current = CoachRun(self.runs_dir, question, "act" if self.autonomy == 2 else "guide")
         self.feedback.register(self.current)
         self.history, self.step, self.pending, self.due = [], 0, None, None
+        self.tour, self.requires_confirmation, self.confirmation_pending = None, False, False
+        self.approved_step = None
         self.last_text, self.voice_state = question, "ready"
         self.overlay.hide()
         self.request_decision()
@@ -330,6 +396,8 @@ class Runtime:
             observed = observe()
             if generation != self.generation:
                 return
+            from .coach_v2_screen import attach_quota
+            observed.data = attach_quota(observed.data, run.request.goal)
             run.record("observation", observed.data)
             stage = "model"
             client = CoachClient(self.api_key)
@@ -350,7 +418,17 @@ class Runtime:
                 if target is None:
                     self.events.put(("changed", generation))
                     return
-            self.events.put(("decision", generation, decision, fresh, target))
+            if decision.action == "tour":
+                tour_targets = {}
+                for point in decision.points:
+                    rebound = matching_target(observed.targets[point.target], fresh)
+                    if rebound is None:
+                        self.events.put(("changed", generation))
+                        return
+                    tour_targets[point.target] = rebound
+                self.events.put(("decision", generation, decision, fresh, target, tour_targets))
+            else:
+                self.events.put(("decision", generation, decision, fresh, target))
         except Exception as exc:
             diagnostic = {"type": type(exc).__name__, "stage": stage,
                           "category": getattr(exc, "kind", "internal"),
@@ -366,7 +444,7 @@ class Runtime:
             if client:
                 client.close()
 
-    def accept_decision(self, generation, decision, observation, target):
+    def accept_decision(self, generation, decision, observation, target, tour_targets=None):
         if generation != self.generation or not self.current or self.current.state.terminal:
             return
         self.busy = False
@@ -375,7 +453,25 @@ class Runtime:
             self.finish("blocked", "Bring H Platform forward, then ask me again.")
             return
         self.step += 1
-        self.show(decision.speech, target)
+        # The decision's IDs belong to its original frame. Use the freshly
+        # rebound label for the final-action guard, not a reused numeric ID.
+        guard_observation = dict(observation.data)
+        if target is not None:
+            guard_observation["controls"] = [{"id": decision.target, "label": target.name,
+                                              "role": target.role}]
+        needs_confirmation = (self.current.request.mode == "act"
+                              and sensitive_key_creation(decision, guard_observation))
+        if not needs_confirmation:
+            self.show(decision.speech, target)
+        if decision.action == "tour":
+            self.tour = {"points": [(point, (tour_targets or observation.targets)[point.target])
+                                    for point in decision.points],
+                         "url": observation.data["url"], "index": 0, "last_text": decision.speech}
+            self.current.set_running()
+            if self.speaker and self.response_mode != "text":
+                self.speaker.prefetch([p.speech for p in decision.points])
+            self.schedule_tour_advance(decision.speech)
+            return
         if decision.action in {"done", "explain"}:
             self.finish("completed", decision.speech, show=False)
             return
@@ -386,7 +482,12 @@ class Runtime:
             self.finish("blocked", "That control hasn't changed the page yet. Tell me what you see now.")
             return
         self.pending = (decision, target, observation)
-        if self.current.request.mode == "act":
+        self.requires_confirmation = needs_confirmation
+        self.confirmation_pending = False
+        if self.requires_confirmation:
+            self.current.set_waiting()
+            self.show("Create this API key? Confirm in H Companion to continue.", target)
+        elif self.current.request.mode == "act":
             self.current.set_running()
             self.due = (time.monotonic() + 0.25, "act", action)
         else:
@@ -394,11 +495,45 @@ class Runtime:
 
     def finish(self, status, speech, *, show=True):
         self.busy, self.pending, self.due = False, None, None
+        self.tour, self.requires_confirmation, self.confirmation_pending = None, False, False
+        self.approved_step = None
         if self.current:
             self.current.finish(status, speech)
         self.overlay.badge(None)
         if show:
             self.show(speech)
+
+    def schedule_tour_advance(self, speech):
+        # With voice, playback completion gates every point; text-only gets a
+        # bounded reading interval. No new model call for the next explanation.
+        delay = .25 if self.speaker and self.response_mode != "text" else max(2.0, len(speech.split()) / 3.0)
+        self.due = (time.monotonic() + delay, "tour", None)
+
+    def tour_worker(self, run, generation, point, original, url):
+        try:
+            fresh = observe()
+            target = matching_target(original, fresh)
+            if fresh.data["url"] != url or target is None:
+                raise CoachProtocolError("The page changed during the tour.")
+            if generation == self.generation:
+                self.events.put(("tour_point", generation, point, target, url))
+        except Exception as exc:
+            run.record("tour_error", {"type": type(exc).__name__})
+            self.events.put(("error", generation,
+                             "The page changed during the tour. Ask me again on the page you'd like to explore."))
+
+    def approved_action_worker(self, run, generation, step, decision, original, url):
+        try:
+            fresh = observe()
+            target = matching_target(original, fresh) if original else None
+            if fresh.data["url"] != url or (original is not None and target is None):
+                raise CoachProtocolError("The key form changed before confirmation.")
+            if generation == self.generation:
+                self.events.put(("approved_action", generation, step, decision, fresh, target))
+        except Exception as exc:
+            run.record("confirmation_error", {"type": type(exc).__name__})
+            self.events.put(("error", generation,
+                             "The key form changed. Please review it before trying again."))
 
     def user_input(self, event, payload):
         if not self.pending or self.due or self.current.request.mode != "guide":
@@ -431,6 +566,8 @@ class Runtime:
         self.history.append(entry)
         self.current.record("interaction", entry)
         self.pending = None
+        self.requires_confirmation, self.confirmation_pending = False, False
+        self.approved_step = None
         self.overlay.hide()
         self.due = (time.monotonic() + 0.45, "observe", None)
 
@@ -447,6 +584,8 @@ class Runtime:
                 if self.current and not self.current.state.terminal and self.active_generation < args[0]:
                     self.current.finish("stopped", args[1])
                 self.pending, self.due, self.busy = None, None, False
+                self.tour, self.requires_confirmation, self.confirmation_pending = None, False, False
+                self.approved_step = None
                 self.overlay.hide()
                 self.overlay.badge(None)
             elif kind == "voice":
@@ -475,6 +614,29 @@ class Runtime:
                         self.speaker.stop()
             elif kind == "decision":
                 self.accept_decision(*args)
+            elif kind == "tour_point" and args[0] == self.generation and self.tour:
+                _, point, target, url = args
+                if foreground_url() != url:
+                    self.finish("blocked", "Bring H Platform forward, then ask me for the tour again.")
+                    continue
+                self.busy = False
+                self.tour["index"] += 1
+                self.tour["last_text"] = point.speech
+                self.current.record("tour_point", {"index": self.tour["index"], "speech": point.speech,
+                                                   "target_label": target.name, "verified": False})
+                self.show(point.speech, target)
+                self.schedule_tour_advance(point.speech)
+            elif (kind == "approved_action" and args[0] == self.generation and self.pending
+                  and self.step == args[1] and self.confirmation_pending):
+                _, _, decision, fresh, target = args
+                if self.approved_step != self.step:
+                    self.current.record("human_confirmation", {"step": self.step, "action": "create_api_key",
+                                                                "source": "desktop_confirm_button"})
+                self.approved_step = self.step
+                self.pending = (decision, target, fresh)
+                self.requires_confirmation = self.confirmation_pending = False
+                self.current.set_running()
+                self.due = (time.monotonic() + .25, "act", None)
             elif kind == "error" and args[0] == self.generation:
                 self.finish("failed", args[1])
             elif kind == "changed" and args[0] == self.generation:
@@ -483,7 +645,11 @@ class Runtime:
             elif kind == "input":
                 self.user_input(*args)
             elif kind == "next" and self.current and self.current.session_id == args[0] and self.step == args[1]:
-                if args[2]:
+                if args[2] and self.requires_confirmation and self.pending:
+                    decision, target, observed = self.pending
+                    self.pool.submit(self.approved_action_worker, self.current, self.active_generation,
+                                     self.step, decision, target, observed.data["url"])
+                elif args[2]:
                     self.schedule_observation("user_reported_done")
                 else:
                     self.finish("blocked", "Let's try another way. Tell me what you see on the page.")
@@ -494,6 +660,16 @@ class Runtime:
             _, kind, payload = self.due
             if kind == "observe":
                 self.request_decision()
+            elif kind == "tour" and self.tour:
+                if self.speaker and self.response_mode != "text" and self.speaker.speaking:
+                    return
+                if self.tour["index"] >= len(self.tour["points"]):
+                    self.finish("completed", self.tour["last_text"], show=False)
+                else:
+                    point, original = self.tour["points"][self.tour["index"]]
+                    self.due, self.busy = None, True
+                    self.pool.submit(self.tour_worker, self.current, self.active_generation,
+                                     point, original, self.tour["url"])
             elif kind == "act" and self.pending:
                 # Let this short phrase finish before the next one, never queue a narrated report.
                 if self.speaker and self.speaker.speaking:
@@ -502,7 +678,14 @@ class Runtime:
                 try:
                     # Refresh a stale target before actions; old model output is not a license to click later.
                     if time.monotonic() - observed.captured_at > 12:
-                        self.request_decision()
+                        if self.approved_step == self.step:
+                            # Keep this single approval across a slow voice
+                            # response, but recheck the exact same form/control.
+                            self.confirmation_pending, self.busy, self.due = True, True, None
+                            self.pool.submit(self.approved_action_worker, self.current, self.active_generation,
+                                             self.step, decision, target, observed.data["url"])
+                        else:
+                            self.request_decision()
                     else:
                         perform(decision, target, observed.data["url"], self.desktop, observed.viewport)
                         self.schedule_observation("agent_action_executed")

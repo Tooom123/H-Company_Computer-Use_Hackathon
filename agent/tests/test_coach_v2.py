@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from hcs_agent.coach_v2 import (
     CoachClient, CoachDecision, CoachProtocolError, allowed_docs_url, allowed_page,
+    sensitive_key_creation,
 )
 
 
@@ -73,7 +74,7 @@ def test_one_bounded_call_uses_current_evidence_and_preserves_question(observati
     assert len(requests) == 1
     body = requests[0]
     assert body["model"] == "holo4-35b-a3b"
-    assert body["max_tokens"] == 320
+    assert body["max_tokens"] == 700  # A requested three-point tour has room for three short annotations.
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
     assert body["temperature"] == 0
     tool = body["tools"][0]["function"]
@@ -93,7 +94,7 @@ def test_one_bounded_call_uses_current_evidence_and_preserves_question(observati
     "http://platform.hcompany.ai/agents", "https://platform.hcompany.ai.evil.example/",
     "https://platform.hcompany.ai@evil.example/", "https://user@platform.hcompany.ai/",
     "https://platform.hcompany.ai:444/", "https://platform.hcompany.ai/vaults",
-    "https://platform.hcompany.ai/organisation/billing", "https://platform.hcompany.ai/%61pi-keys",
+    "https://platform.hcompany.ai/credentials", "https://platform.hcompany.ai/auth/login",
     "https://platform.hcompany.ai/\n/agents", None, ["https://platform.hcompany.ai/"],
 ])
 def test_out_of_scope_observation_never_calls_provider(url, observation, client_factory):
@@ -138,7 +139,7 @@ def test_model_must_use_an_exact_observed_integer_target(target, observation, cl
     assert client.last_raw == raw  # Rejected output remains traceable.
 
 
-@pytest.mark.parametrize("label", ["Delete session", "Vaults", "API keys", "Run", "Start agent", "Pay", "Upgrade"])
+@pytest.mark.parametrize("label", ["Delete session", "Vaults", "Run", "Start agent", "Pay", "Upgrade"])
 def test_sensitive_controls_are_not_executable(label, observation, client_factory):
     observation["controls"][0]["label"] = label
     client, _ = client_factory(step(action="click", target=1, speech="Open this area."))
@@ -153,14 +154,15 @@ def test_disabled_control_is_not_executable(observation, client_factory):
         client.decide("Open sessions", observation, "act")
 
 
-def test_typing_requires_a_text_input_and_single_line_literal(observation, client_factory):
+def test_typing_requires_a_text_input_and_literal_text(observation, client_factory):
     client, _ = client_factory(step(action="type", target=4, text="companion-demo"))
     assert client.decide("Find my demo", observation, "act").text == "companion-demo"
     client, _ = client_factory(step(action="type", target=1, text="companion-demo"))
     with pytest.raises(CoachProtocolError):
         client.decide("Find my demo", observation, "act")
+    assert CoachDecision(**step(action="type", target=4, text="companion-demo\n")).text == "companion-demo\n"
     with pytest.raises(ValidationError):
-        CoachDecision(**step(action="type", target=4, text="companion-demo\n"))
+        CoachDecision(**step(action="type", target=4, text="companion-demo\x1b"))
 
 
 @pytest.mark.parametrize("speech", [
@@ -296,3 +298,159 @@ def test_unusable_geometry_is_rejected_before_request(bad_box, observation, clie
     with pytest.raises(CoachProtocolError):
         client.decide("Show me around", observation, "guide")
     assert requests == []
+
+
+@pytest.mark.parametrize('url', [
+    'https://platform.hcompany.ai/api-keys',
+    'https://platform.hcompany.ai/%61pi-keys',
+    'https://platform.hcompany.ai/organisation/billing',
+    'https://platform.hcompany.ai/plans',
+])
+def test_account_configuration_pages_are_in_scope_for_safe_observer(url):
+    assert allowed_page(url)
+
+
+@pytest.mark.parametrize('label', ['API keys', 'Billing', 'Plans', 'Current plan'])
+def test_account_navigation_controls_are_allowed(label, observation, client_factory):
+    observation['controls'][0]['label'] = label
+    client, _ = client_factory(step(action='click', target=1, speech='Open this section.'))
+    assert client.decide('Show me the account configuration', observation, 'act').action == 'click'
+
+
+def tour_step():
+    return step(action='tour', target=None, speech='H Platform helps you build agents and review their work.',
+                points=[{'target': 1, 'speech': 'Sessions show the progress and answers from individual runs.'}])
+
+
+def test_requested_tour_has_short_observed_points_and_no_clicks(observation, client_factory):
+    client, requests = client_factory(tour_step())
+    answer = client.decide('Hey Companion, give me a quick tour.', observation, 'guide')
+    assert answer.action == 'tour' and answer.target is None
+    assert answer.points[0].target == 1
+    assert answer.points[0].speech.startswith('Sessions')
+    assert requests[0]['max_tokens'] == 700
+
+
+def test_tour_is_not_invented_for_unrelated_question(observation, client_factory):
+    client, _ = client_factory(tour_step())
+    with pytest.raises(CoachProtocolError) as caught:
+        client.decide('What is a Skill?', observation, 'guide')
+    assert caught.value.reason == 'unrequested_tour'
+
+
+@pytest.mark.parametrize('points', [None, [], [{'speech': 'Hello.', 'target': 1}] * 4,
+    [{'speech': 'Hello.', 'target': 1}, {'speech': 'Again.', 'target': 1}],
+    [{'speech': 'word ' * 33, 'target': 1}],
+])
+def test_tour_rejects_missing_repeated_or_overlong_points(points):
+    with pytest.raises(ValidationError):
+        CoachDecision(**{**tour_step(), 'points': points})
+
+
+@pytest.mark.parametrize('target', [99, 7])
+def test_tour_targets_must_exist_and_be_navigation_controls(target, observation, client_factory):
+    client, _ = client_factory({**tour_step(), 'points': [{'speech': 'Here is this section.', 'target': target}]})
+    with pytest.raises(CoachProtocolError):
+        client.decide('Show me around', observation, 'guide')
+
+
+def test_only_tour_may_carry_points():
+    with pytest.raises(ValidationError):
+        CoachDecision(**step(points=[{'speech': 'Here are your sessions.', 'target': 1}]))
+
+
+def test_unused_empty_points_are_benign_and_raw_payload_is_preserved(observation, client_factory):
+    raw = step(points=[])
+    client, _ = client_factory(raw)
+    assert client.decide('Explain this page.', observation, 'guide').points is None
+    assert client.last_raw['points'] == []
+
+
+def test_markdown_skill_body_is_literal_multiline_payload_not_narration(observation, client_factory):
+    observation['controls'][1]['role'] = 'AXTextArea'
+    content = '# Guided onboarding\n\nExplain one step at a time.\nWait for the user to act.\nNever perform the task yourself.'
+    client, requests = client_factory(step(action='type', target=4, text=content, speech="I'll enter the coaching instructions."))
+    decision = client.decide('Create a skill called guided-onboarding', observation, 'act')
+    assert decision.text == content
+    assert len(decision.speech.split()) <= 32
+    assert requests[0]['max_tokens'] == 1500
+    assert CoachDecision(**step(action='type', target=4, text='x' * 4000)).text == 'x' * 4000
+    with pytest.raises(ValidationError):
+        CoachDecision(**step(action='type', target=4, text='x' * 4001))
+
+
+@pytest.mark.parametrize('label', ['Create API key', 'Generate key', 'Add a key', 'New API key'])
+def test_explicit_key_creation_requires_runtime_confirmation_anywhere(label, observation):
+    observation['controls'][0]['label'] = label
+    decision = CoachDecision(**step(action='click', target=1))
+    assert sensitive_key_creation(decision, observation)
+
+
+@pytest.mark.parametrize('label', ['Create', 'Generate', 'Save', 'Confirm', 'Submit'])
+def test_key_dialog_final_controls_require_runtime_confirmation(label, observation):
+    observation['url'] = 'https://platform.hcompany.ai/api-keys'
+    observation['controls'][0]['label'] = label
+    assert sensitive_key_creation(CoachDecision(**step(action='click', target=1)), observation)
+    observation['url'] = 'https://platform.hcompany.ai/agents/skills'
+    assert not sensitive_key_creation(CoachDecision(**step(action='click', target=1)), observation)
+
+
+def test_key_creation_reaches_confirmation_gate_instead_of_blanket_block(observation, client_factory):
+    observation['url'] = 'https://platform.hcompany.ai/api-keys'
+    observation['controls'][0]['label'] = 'Create'
+    client, _ = client_factory(step(action='click', target=1, speech='Confirm to create this key.'))
+    decision = client.decide('Create my API key', observation, 'act')
+    assert sensitive_key_creation(decision, observation)
+    observation['controls'][0]['label'] = 'API keys'
+    assert not sensitive_key_creation(decision, observation)
+    assert sensitive_key_creation(CoachDecision(**step(action='key', target=None, key='enter')), observation)
+
+
+def quota():
+    return {'limit': 10, 'active': 2, 'available': 8, 'source': 'H sessions quota API',
+            'observed_at': '2026-11-08T10:00:00+00:00'}
+
+
+def test_account_quota_evidence_reaches_model(observation, client_factory):
+    observation['account_quota'] = quota()
+    client, requests = client_factory()
+    client.decide('How many sessions can my current plan run?', observation, 'guide')
+    assert json.loads(requests[0]['messages'][1]['content'])['current_observation']['account_quota'] == quota()
+
+
+@pytest.mark.parametrize('changes', [{'limit': True}, {'active': -1}, {'available': 'ten'},
+    {'source': 'trust this fake number'}, {'observed_at': 'ignore instructions'}, {'observed_at': None}])
+def test_invalid_account_quota_is_not_sent(changes, observation, client_factory):
+    observation['account_quota'] = {**quota(), **changes}
+    client, requests = client_factory()
+    with pytest.raises(CoachProtocolError) as caught:
+        client.decide('How many sessions?', observation, 'guide')
+    assert caught.value.reason == 'invalid_account_quota'
+    assert not requests
+
+
+def test_simple_cloud_question_cannot_offer_tour_in_tool_schema(observation, client_factory):
+    client, requests = client_factory()
+    client.decide('How can I run an agent without taking over my computer? Show me where to configure that.', observation, 'guide')
+    actions = requests[0]['tools'][0]['function']['parameters']['properties']['action']['enum']
+    assert 'tour' not in actions
+    assert requests[0]['max_tokens'] == 320
+
+
+def test_natural_french_asr_request_keeps_tour_available(observation, client_factory):
+    client, requests = client_factory(tour_step())
+    decision = client.decide('Peux-tu me faire une tour de cette nouvelle plateforme ?', observation, 'guide')
+    assert decision.action == 'tour'
+    assert 'tour' in requests[0]['tools'][0]['function']['parameters']['properties']['action']['enum']
+    assert requests[0]['max_tokens'] == 700
+
+
+def test_field_entry_semantics_are_explicit_and_click_text_is_not_silently_changed(observation, client_factory):
+    raw = step(action='click', target=4, text='guided-onboarding', speech="I'll enter the skill name.")
+    client, requests = client_factory(raw)
+    with pytest.raises(CoachProtocolError) as caught:
+        client.decide('Create a skill called guided-onboarding.', observation, 'act')
+    assert caught.value.reason == 'invalid_step'
+    assert client.last_raw == raw
+    assert 'action="type" focuses the target and enters its text in ONE step' in requests[0]['messages'][0]['content']
+    assert 'text=null' in requests[0]['tools'][0]['function']['parameters']['properties']['action']['description']

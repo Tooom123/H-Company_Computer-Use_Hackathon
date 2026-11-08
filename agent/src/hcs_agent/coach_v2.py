@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 import re
 import time
+from datetime import datetime
 from typing import Literal
 from urllib.parse import unquote, urlsplit
 
@@ -40,7 +41,7 @@ class CoachProtocolError(ValueError):
 
 
 def allowed_page(url: str) -> bool:
-    """Exact product/doc origins, with credential and billing pages excluded."""
+    """Exact product/doc origins; account pages require the runtime's safe observer."""
     if not isinstance(url, str) or re.search(r"[\x00-\x20]", url):
         return False
     try:
@@ -51,7 +52,7 @@ def allowed_page(url: str) -> bool:
         if parsed.hostname == "hub.hcompany.ai":
             return True
         path = unquote(parsed.path).casefold()
-        return not re.search(r"(?:^|/)(?:auth|login|signin|signup|vaults?|billing|api[-_]keys|credentials|password)(?:/|$)", path)
+        return not re.search(r"(?:^|/)(?:auth|login|signin|signup|vaults?|credentials|password)(?:/|$)", path)
     except (TypeError, ValueError):
         return False
 
@@ -80,16 +81,35 @@ def concise_speech(value: str) -> str:
     return text
 
 
+class TourPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    speech: str = Field(min_length=1, max_length=MAX_SPEECH_CHARS,
+                        description="One short explanation of this sidebar section, at most 32 words.")
+    target: int = Field(ge=1, description="Exact observed sidebar control ID to highlight, never click.")
+
+    @field_validator("speech")
+    @classmethod
+    def readable(cls, value: str) -> str:
+        result = concise_speech(value)
+        if not result:
+            raise ValueError("A tour point needs an explanation.")
+        return result
+
+
 class CoachDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     speech: str = Field(max_length=MAX_SPEECH_CHARS, description="Plain English, 1–2 sentences, at most 32 words; empty only when done.")
-    action: Literal["explain", "click", "type", "scroll", "key", "open_docs", "done"]
+    action: Literal["explain", "click", "type", "scroll", "key", "open_docs", "tour", "done"] = Field(
+        description="Use type to focus an input AND enter text in one step. Click only activates a control and must have text=null. Tour only presents explicitly requested navigation sections.")
     target: int | None = Field(default=None, ge=1, description="Exact visible control ID; null when not needed.")
-    text: str | None = Field(default=None, max_length=500, description="Literal input text for type, otherwise null.")
+    text: str | None = Field(default=None, max_length=4000, description="Only action=type may carry text. Type focuses its target automatically before filling it; do not emit click with text. Markdown skill bodies may contain line breaks. Null for every other action.")
     direction: Literal["up", "down"] | None = None
     key: Literal["enter", "escape", "tab"] | None = None
     url: str | None = Field(default=None, max_length=2048)
+    points: list[TourPoint] | None = Field(default=None, min_length=1, max_length=3,
+                                         description="Only for a requested tour: one to three observed sidebar controls and brief explanations.")
 
     @model_validator(mode="before")
     @classmethod
@@ -102,8 +122,10 @@ class CoachDecision(BaseModel):
         if not isinstance(value, dict):
             return value
         needed = {"target": {"click", "type"}, "text": {"type"},
-                  "direction": {"scroll"}, "key": {"key"}, "url": {"open_docs"}}
+                  "direction": {"scroll"}, "key": {"key"}, "url": {"open_docs"}, "points": {"tour"}}
         result = value.copy()
+        if value.get("action") != "tour" and result.get("points") == []:
+            result["points"] = None
         for field, actions in needed.items():
             item = result.get(field)
             if (value.get("action") not in actions and isinstance(item, str)
@@ -125,8 +147,8 @@ class CoachDecision(BaseModel):
         if self.action not in {"click", "type", "explain"} and self.target is not None:
             raise ValueError("This action must not carry a target.")
         if self.action == "type":
-            if not self.text or re.search(r"[\x00-\x1f\x7f]", self.text):
-                raise ValueError("Typing requires literal single-line text.")
+            if not self.text or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", self.text):
+                raise ValueError("Typing requires literal text without control commands.")
         elif self.text is not None:
             raise ValueError("Only a typing action may include text.")
         if (self.action == "scroll") != (self.direction is not None):
@@ -138,13 +160,39 @@ class CoachDecision(BaseModel):
                 raise ValueError("Documentation must use the official H Hub origin.")
         elif self.url is not None:
             raise ValueError("Only open_docs may include a URL.")
+        if (self.action == "tour") != (self.points is not None):
+            raise ValueError("Only a tour requires one to three points.")
+        if self.points and len({p.target for p in self.points}) != len(self.points):
+            raise ValueError("A tour must highlight distinct controls.")
         return self
 
 
 _UNSAFE_CONTROL = re.compile(
-    r"\b(?:delete|remove|revoke|purchase|pay|subscribe|upgrade|billing|vaults?|password|credentials|payment)\b|"
-    r"\b(?:api\s*keys?|generate\s+(?:a\s+)?key|create\s+(?:an?\s+)?(?:api\s+)?key)\b|"
+    r"\b(?:delete|remove|revoke|purchase|pay|subscribe|upgrade|vaults?|password|credentials|payment)\b|"
     r"^(?:run|start|launch)(?:\s+(?:agent|session|job|task))?(?:\s|$)", re.I)
+
+
+def tour_requested(question: str) -> bool:
+    """A tour is an explicit presentation request, never a guessed batch of clicks."""
+    return bool(re.search(
+        r"\b(?:give|show|take|walk|offer)\b.{0,70}\b(?:tour|around|overview)\b|"
+        r"\b(?:montre|présente|presente|fais|faire|donne)\b.{0,70}\b(?:tour|visite|autour)\b|"
+        r"^\s*(?:(?:a|quick|welcome|short|brief)\s+)*tour\b", question, re.I))
+
+
+def sensitive_key_creation(decision: CoachDecision, observation: dict) -> bool:
+    """The runtime must pause for the human before these credential-creation effects."""
+    path = unquote(urlsplit(str(observation.get("url", ""))).path).casefold()
+    key_page = bool(re.search(r"(?:^|/)(?:api[-_]?keys?|api[-_]?tokens?)(?:/|$)", path))
+    if decision.action == "key":
+        return key_page and decision.key == "enter"
+    if decision.action != "click":
+        return False
+    label = next((str(c.get("label", "")) for c in observation.get("controls", [])
+                  if c.get("id") == decision.target), "")
+    explicit = re.search(r"\b(?:create|generate|add|new)\b.{0,35}\b(?:api\s*)?(?:key|token)\b", label, re.I)
+    final = re.fullmatch(r"\s*(?:create|generate|add|save|confirm|submit)(?:\s+(?:key|token))?\s*", label, re.I)
+    return bool(explicit or key_page and final)
 
 
 def _observation(raw: dict) -> dict:
@@ -180,10 +228,32 @@ def _observation(raw: dict) -> dict:
         item = item[:remaining]
         text.append(item)
         remaining -= len(item)
-    return {"url": raw["url"], "title": str(raw.get("title", ""))[:250], "controls": controls, "text": text}
+    result = {"url": raw["url"], "title": str(raw.get("title", ""))[:250], "controls": controls, "text": text}
+    quota = raw.get("account_quota")
+    if quota is not None:
+        if (not isinstance(quota, dict) or quota.get("source") != "H sessions quota API"
+                or not all(k in quota and (quota[k] is None or type(quota[k]) is int and quota[k] >= 0)
+                           for k in ("limit", "active", "available"))):
+            raise CoachProtocolError("Invalid account quota observation.", kind="observation", reason="invalid_account_quota")
+        stamp = quota.get("observed_at")
+        try:
+            if not isinstance(stamp, str) or len(stamp) > 64:
+                raise ValueError("Missing timestamp")
+            datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise CoachProtocolError("Invalid quota timestamp.", kind="observation", reason="invalid_account_quota") from exc
+        result["account_quota"] = {k: quota[k] for k in ("limit", "active", "available", "source", "observed_at")}
+    return result
 
 
 def _validate_target(decision: CoachDecision, observation: dict) -> None:
+    if decision.action == "tour":
+        for point in decision.points or []:
+            target = next((c for c in observation["controls"] if c["id"] == point.target), None)
+            if target is None:
+                raise CoachProtocolError("A tour point is not in this observation.", reason="unknown_tour_target")
+            if target["role"] not in {"AXButton", "AXLink", "AXTab", "AXMenuItem"}:
+                raise CoachProtocolError("A tour point must be a visible navigation control.", reason="invalid_tour_target")
     if decision.target is None:
         return
     control = next((c for c in observation["controls"] if c["id"] == decision.target), None)
@@ -243,6 +313,9 @@ class CoachClient:
                 recent.append({k: str(item[k])[:600] for k in ("speech", "action", "observation", "question") if k in item})
         schema = CoachDecision.model_json_schema()
         schema["required"] = list(schema["properties"])
+        requested_tour = tour_requested(question)
+        if not requested_tour:
+            schema["properties"]["action"]["enum"].remove("tour")
         if mode == "guide":
             schema["properties"]["action"]["enum"].remove("open_docs")
             mode_rule = ('Current mode is GUIDE: point to observed controls for the person. '
@@ -250,7 +323,16 @@ class CoachClient:
                          'explain that they can switch to "Do it, I watch" to have you open it.')
         else:
             mode_rule = "Current mode is ACT: choose one next action for the runtime to perform, or answer directly."
-        body = {"model": self.model, "temperature": 0, "max_tokens": 320,
+        mode_rule += (' For a form field, action="type" focuses the target and enters its text in ONE step. '
+                      'Do not click a field as a separate preparation step while including text: '
+                      'action="click" always requires text=null. '
+                      'Use action="tour" only when it is present in the allowed action enum.')
+        # A structured tour has three short speeches; a skill body is payload,
+        # never narration. Give these requested forms room without lengthening voice.
+        drafting_skill = bool(re.search(r"\b(?:skill|compétence)\b", question, re.I)
+                              and re.search(r"\b(?:create|write|draft|crée|créer|rédige)\b", question, re.I))
+        budget = 1500 if drafting_skill else 700 if requested_tour else 320
+        body = {"model": self.model, "temperature": 0, "max_tokens": budget,
                 "chat_template_kwargs": {"enable_thinking": False},
                 "messages": [{"role": "system", "content": self.system_prompt + "\n\n" + mode_rule},
                              {"role": "user", "content": json.dumps({
@@ -282,6 +364,8 @@ class CoachClient:
                 raise CoachProtocolError("Invalid tool arguments.")
             self.last_raw = json.loads(raw)
             decision = CoachDecision.model_validate(self.last_raw)
+            if decision.action == "tour" and not tour_requested(question):
+                raise CoachProtocolError("A tour must be explicitly requested.", kind="policy", reason="unrequested_tour")
             if mode == "guide" and decision.action == "open_docs":
                 raise CoachProtocolError("Opening a new documentation tab requires act mode.", kind="policy", reason="guide_open_docs")
             _validate_target(decision, observed)

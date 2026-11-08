@@ -234,6 +234,9 @@ function renderHome() {
   }
   $("now").hidden = !busy;
   $("stepReply").hidden = !busy || status.current.state !== "awaiting_user" || !status.current.step;
+  const confirmation = busy && status.current.step?.kind === "confirm";
+  $("stepDone").textContent = confirmation ? "Confirm creation" : "J’ai fait l’étape";
+  $("stepStuck").textContent = confirmation ? "Cancel creation" : "Je suis bloqué";
   $("stepDone").disabled = stepReplyPending;
   $("stepStuck").disabled = stepReplyPending;
   if (busy) {

@@ -54,6 +54,9 @@ def rt(tmp_path, monkeypatch):
     obj.current = CoachRun(obj.runs_dir, "Show me my sessions.", "guide")
     obj.history, obj.step, obj.pending, obj.due = [], 0, None, None
     obj.busy = False
+    obj.tour = None
+    obj.requires_confirmation = obj.confirmation_pending = False
+    obj.approved_step = None
     obj.autonomy = 0
     obj.response_mode = "both"
     obj.voice_state, obj.last_text = "ready", ""
@@ -248,15 +251,20 @@ def test_every_effect_requires_the_same_h_foreground_page(action, monkeypatch):
     assert not desktop.mock_calls
 
 
-def test_unsupported_typing_is_rejected_before_clicking(monkeypatch):
+def test_unicode_multiline_typing_uses_literal_field_writer(monkeypatch):
     from hcs_agent import a11y
     monkeypatch.setattr(runtime, "foreground_url", lambda: URL)
     monkeypatch.setattr(a11y, "visible_at_point", lambda _target: True)
+    writer = Mock()
+    monkeypatch.setattr(runtime, "set_literal_text", writer)
     desktop = Mock()
-    decision = CoachDecision(action="type", target=1, text="café", speech="Enter the search term.")
-    with pytest.raises(CoachProtocolError, match="enter that text yourself"):
-        runtime.perform(decision, Target("Search", "AXTextField"), URL, desktop)
-    assert not desktop.mock_calls
+    target = Target("Instructions", "AXTextArea")
+    text = "# Café\nGuide the user, one step at a time."
+    decision = CoachDecision(action="type", target=1, text=text, speech="I'll write the coaching instructions.")
+    runtime.perform(decision, target, URL, desktop)
+    desktop.click.assert_called_once_with(*target.center)
+    writer.assert_called_once_with(target, text, desktop)
+    desktop.write.assert_not_called()
 
 
 def test_act_refreshes_expired_observation_instead_of_clicking(rt, monkeypatch):
@@ -356,3 +364,232 @@ def test_model_failure_records_model_stage_and_safe_reason(rt, monkeypatch):
     error = next(item['payload'] for item in events if item['type'] == 'model_error')
     assert error['stage'] == 'model'
     assert error['reason'] == 'invalid_fields'
+
+
+def tour_decision():
+    return CoachDecision(action='tour', speech='H Platform helps you build and run computer-use agents.',
+                         points=[{'speech': 'Agents define what your assistant does.', 'target': 1},
+                                 {'speech': 'Sessions show its individual runs.', 'target': 2},
+                                 {'speech': 'Skills provide reusable instructions.', 'target': 3}])
+
+
+def test_tour_reads_intro_then_three_fresh_markers_without_clicks_or_recap(rt, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: clock[0])
+    targets = {i: Target(name, box=(10, i * 50, 80, 40))
+               for i, name in enumerate(['Agents', 'Sessions', 'Skills'], 1)}
+    obs = observation(); obs.targets = targets
+    monkeypatch.setattr(runtime, 'observe', lambda: obs)
+    decision = tour_decision()
+    rt.accept_decision(1, decision, obs, None, targets)
+    rt.show.assert_called_once_with(decision.speech, None)
+    rt.speaker.prefetch.assert_called_once()
+    for point in decision.points:
+        clock[0] += 1
+        rt.speaker.speaking = True
+        before = rt.pool.submit.call_count
+        rt.tick()
+        assert rt.pool.submit.call_count == before
+        rt.speaker.speaking = False
+        rt.tick()
+        submitted = rt.pool.submit.call_args.args
+        assert submitted[0] == rt.tour_worker
+        submitted[0](*submitted[1:])
+        rt.tick()
+        assert rt.show.call_args.args == (point.speech, targets[point.target])
+    clock[0] += 1
+    rt.tick()
+    assert rt.current.state.value == 'completed'
+    assert rt.show.call_count == 4  # intro + 3 points, no repeated summary
+    assert rt.tour is None
+    assert not rt.desktop.mock_calls
+
+
+def test_interrupt_drops_late_tour_point(rt, monkeypatch):
+    targets = {i: Target(name) for i, name in enumerate(['Agents', 'Sessions', 'Skills'], 1)}
+    obs = observation(); obs.targets = targets
+    decision = tour_decision()
+    rt.accept_decision(1, decision, obs, None, targets)
+    rt.voice_event('starting')
+    rt.events.put(('tour_point', 1, decision.points[0], targets[1], URL))
+    rt.tick()
+    assert rt.tour is None and rt.current.state.value == 'stopped'
+    assert rt.show.call_count == 1
+    assert not rt.desktop.mock_calls
+
+
+def test_tour_rematches_moved_target_before_highlighting(rt, monkeypatch):
+    point = tour_decision().points[0]
+    original = Target('Agents')
+    moved = Target('Agents', box=(200, 100, 80, 40))
+    fresh = observation(); fresh.targets = {19: moved}
+    monkeypatch.setattr(runtime, 'observe', lambda: fresh)
+    rt.tour_worker(rt.current, 1, point, original, URL)
+    event = rt.events.get_nowait()
+    assert event == ('tour_point', 1, point, moved, URL)
+
+
+def prepare_key_confirmation(rt, monkeypatch):
+    url = 'https://platform.hcompany.ai/api-keys'
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: url)
+    rt.current = CoachRun(rt.runs_dir, 'Create h-hackathon for one day.', 'act')
+    decision = CoachDecision(action='click', target=1, speech="I'll create the API key.")
+    target = Target('Create API key')
+    obs = observation(target, url=url)
+    # The current frame's ID1 is unrelated. Runtime must use rebound target label.
+    obs.data['controls'] = [{'id': 1, 'label': 'Sessions', 'role': 'AXButton'}]
+    rt.accept_decision(1, decision, obs, target)
+    return decision, target, obs
+
+
+def test_key_creation_waits_for_human_confirmation_then_refreshes_before_one_click(rt, monkeypatch):
+    decision, original, obs = prepare_key_confirmation(rt, monkeypatch)
+    assert rt.requires_confirmation and rt.due is None
+    assert rt.current.state.value == 'awaiting_user'
+    rt.show.assert_called_once_with('Create this API key? Confirm in H Companion to continue.', original)
+    assert rt.status()['current']['step']['kind'] == 'confirm'
+    sid = rt.current.session_id
+    assert rt.next_step(sid, rt.step, True)
+    assert not rt.next_step(sid, rt.step, True)
+    rt.tick()
+    submitted = rt.pool.submit.call_args.args
+    assert submitted[0] == rt.approved_action_worker
+    moved = Target('Create API key', box=(200, 300, 80, 40))
+    fresh = observation(moved, url=obs.data['url'])
+    monkeypatch.setattr(runtime, 'observe', lambda: fresh)
+    submitted[0](*submitted[1:])
+    rt.tick()
+    assert not rt.requires_confirmation and rt.pending[1] is moved
+    action = Mock()
+    monkeypatch.setattr(runtime, 'perform', action)
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.0)
+    rt.tick()
+    action.assert_called_once_with(decision, moved, obs.data['url'], rt.desktop, None)
+    rt.tick()
+    assert action.call_count == 1
+    text = (rt.current.runs_dir / 'events.jsonl').read_text()
+    assert 'human_confirmation' in text
+    assert not (rt.current.runs_dir / 'labels.json').exists()
+
+
+def test_key_confirmation_rejects_changed_form(rt, monkeypatch):
+    decision, target, obs = prepare_key_confirmation(rt, monkeypatch)
+    changed = observation(Target('Other button'), url=obs.data['url'])
+    monkeypatch.setattr(runtime, 'observe', lambda: changed)
+    rt.approved_action_worker(rt.current, 1, rt.step, decision, target, obs.data['url'])
+    event = rt.events.get_nowait()
+    assert event[0] == 'error'
+    assert 'form changed' in event[2]
+    assert not rt.desktop.mock_calls
+
+
+def test_delayed_confirmed_key_action_refreshes_without_repeating_approval(rt, monkeypatch):
+    decision, target, obs = prepare_key_confirmation(rt, monkeypatch)
+    rt.next_step(rt.current.session_id, rt.step, True)
+    rt.tick()
+    monkeypatch.setattr(runtime, 'observe', lambda: obs)
+    rt.approved_action_worker(rt.current, 1, rt.step, decision, target, obs.data['url'])
+    rt.tick()
+    assert rt.approved_step == rt.step
+    # Voice playback or a slow app delays the already approved action.
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 120.0)
+    rt.tick()
+    submitted = rt.pool.submit.call_args.args
+    assert submitted[0] == rt.approved_action_worker
+    assert not rt.requires_confirmation
+    fresh = observation(target, captured_at=120.0, url=obs.data['url'])
+    monkeypatch.setattr(runtime, 'observe', lambda: fresh)
+    submitted[0](*submitted[1:])
+    rt.tick()
+    action = Mock()
+    monkeypatch.setattr(runtime, 'perform', action)
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 121.0)
+    rt.tick()
+    action.assert_called_once()
+    import json
+    events = [json.loads(line) for line in (rt.current.runs_dir / 'events.jsonl').read_text().splitlines()]
+    assert sum(item['type'] == 'human_confirmation' for item in events) == 1
+
+
+def test_guide_key_creation_only_watches_the_humans_click(rt, monkeypatch):
+    url = 'https://platform.hcompany.ai/api-keys'
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: url)
+    target = Target('Create API key')
+    decision = CoachDecision(action='click', target=1, speech='Click Create API key when you are ready.')
+    rt.accept_decision(1, decision, observation(target, url=url), target)
+    assert not rt.requires_confirmation
+    assert rt.due is None
+    rt.user_input('click', target.center)
+    assert rt.due[1] == 'observe'
+    assert not rt.desktop.mock_calls
+
+
+def fake_text_frameworks(monkeypatch, *, ax_result=0):
+    import sys
+    from hcs_agent import a11y
+    class Item:
+        def __init__(self, data=None): self.data = data or {}
+        @classmethod
+        def alloc(cls): return cls()
+        def init(self): return self
+        def types(self): return list(self.data)
+        def dataForType_(self, kind): return self.data[kind]
+        def setData_forType_(self, data, kind): self.data[kind] = data
+    class Board:
+        def __init__(self): self.items = [Item({'text': b'old text', 'image': b'old image'})]; self.count = 0
+        def pasteboardItems(self): return self.items
+        def clearContents(self): self.items = []; self.count += 1
+        def setString_forType_(self, text, kind): self.items = [Item({kind: text.encode()})]; self.count += 1
+        def changeCount(self): return self.count
+        def writeObjects_(self, items): self.items = items; self.count += 1
+    board, values = Board(), {'value': ''}
+    setter = Mock(return_value=ax_result)
+    AS = SimpleNamespace(AXUIElementCreateApplication=lambda _: 'app', CFEqual=lambda a, b: a == b,
+                         AXUIElementSetAttributeValue=setter)
+    AppKit = SimpleNamespace(NSWorkspace=SimpleNamespace(sharedWorkspace=lambda: SimpleNamespace(
+        frontmostApplication=lambda: SimpleNamespace(processIdentifier=lambda: 1))),
+        NSPasteboard=SimpleNamespace(generalPasteboard=lambda: board), NSPasteboardItem=Item,
+        NSPasteboardTypeString='text')
+    Foundation = SimpleNamespace(NSData=SimpleNamespace(dataWithBytes_length_=lambda data, _: data),
+        NSDate=SimpleNamespace(dateWithTimeIntervalSinceNow_=lambda _: None),
+        NSRunLoop=SimpleNamespace(currentRunLoop=lambda: SimpleNamespace(runUntilDate_=lambda _: None)))
+    monkeypatch.setitem(sys.modules, 'ApplicationServices', AS)
+    monkeypatch.setitem(sys.modules, 'AppKit', AppKit)
+    monkeypatch.setitem(sys.modules, 'Foundation', Foundation)
+    monkeypatch.setattr(a11y, '_attr', lambda ref, attr: 'field' if attr == 'AXFocusedUIElement' else values['value'])
+    return board, values, setter
+
+
+def test_ax_text_write_preserves_unicode_and_multiline_without_clipboard(monkeypatch):
+    board, _, setter = fake_text_frameworks(monkeypatch)
+    target = Target('Instructions', 'AXTextArea'); target.ref = 'field'
+    desktop = Mock()
+    text = '# Café\nWait for the user.\nDo not click for them.'
+    runtime.set_literal_text(target, text, desktop)
+    setter.assert_called_once_with('field', 'AXValue', text)
+    assert board.count == 0 and not desktop.mock_calls
+
+
+def test_paste_fallback_restores_all_clipboard_formats_after_acknowledgment(monkeypatch):
+    board, values, _ = fake_text_frameworks(monkeypatch, ax_result=-25205)
+    target = Target('Instructions', 'AXTextArea'); target.ref = 'field'
+    text = '# Café\nCoach the user.'
+    def key(*keys):
+        if keys == ('command', 'v'): values['value'] = text
+    desktop = Mock(); desktop.hotkey.side_effect = key
+    runtime.set_literal_text(target, text, desktop)
+    assert board.items[0].data == {'text': b'old text', 'image': b'old image'}
+    assert desktop.hotkey.call_count == 2
+
+
+def test_paste_fallback_does_not_overwrite_a_new_human_copy(monkeypatch):
+    board, values, _ = fake_text_frameworks(monkeypatch, ax_result=-25205)
+    target = Target('Instructions', 'AXTextArea'); target.ref = 'field'
+    text = '# Café\nCoach the user.'
+    def key(*keys):
+        if keys == ('command', 'v'):
+            values['value'] = text
+            board.setString_forType_('new human copy', 'text')
+    desktop = Mock(); desktop.hotkey.side_effect = key
+    runtime.set_literal_text(target, text, desktop)
+    assert board.items[0].data == {'text': b'new human copy'}
