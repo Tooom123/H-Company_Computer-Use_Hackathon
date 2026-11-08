@@ -55,6 +55,43 @@ sans inventer son emplacement. Ces deux parcours restent à exécuter et à note
 
 ## Préparer une séance courte
 
+### Recette courte Devin Desktop — mise à jour du 8 novembre
+
+Les dix cartes C01–C10 ci-dessous concernent surtout des ressources Webapp/Cloud.
+Pour la version native, commencer par ces demandes, une par essai. Ne jamais
+supposer qu'un contrôle de la Webapp existe au même endroit dans Desktop.
+
+| Demande à H-Companion | Résultat à vérifier |
+| --- | --- |
+| “Show me where to open Devin settings. Do not change anything.” | Le menu est visible et ses options sont prises en compte au tour suivant. |
+| “I only want to understand my code. Help me choose the read-only Ask mode, then stop before submitting anything.” | Le mode affiché est Ask ; aucun prompt n'est soumis. Les autres noms de modes dépendent de la version. |
+| “Show me where to choose between a local agent and Devin Cloud. Explain the difference, but do not start a task.” | Le coach identifie les contrôles réellement présents et explique la distinction sans lancer de travail. |
+| “Which model is selected? Show me the available models without changing the selection.” | Le sélecteur est ouvert, la sélection est lue plutôt que devinée. |
+| “Help me find my previous conversations in this workspace, without creating a new one.” | Un historique existant est retrouvé, ou son absence est explicitement annoncée. |
+| “Show me the changed files for this demo session, without accepting or reverting anything.” | Prérequis : session de démo avec changements déjà consultables. Le diff visible correspond à la session désignée. |
+
+Sources natives : [modes](https://docs.devin.ai/desktop/devin-local/modes),
+[modèles](https://docs.devin.ai/desktop/models),
+[conversations locales et cloud](https://docs.devin.ai/desktop/agent-command-center).
+
+Conserver aussi “Where can I redeem a coupon code?” comme test de limite : aucun
+parcours coupon Desktop n'est établi par les sources consultées. Ce pilote reste
+dans la fenêtre native et exclut la facturation. Il doit expliquer cette limite,
+sans inventer un bouton Redeem ni poursuivre dans des menus sans rapport. Un
+blocage correctement expliqué reste distinct d'une tâche accomplie.
+
+Une notification « Screen reader usage detected » peut apparaître pendant la
+lecture d'accessibilité. Sa croix permet de la fermer sans changer de préférence.
+L'activation du mode lecteur d'écran ne constitue pas une réparation garantie du
+coach ; [VS Code documente les effets de ce mode](https://code.visualstudio.com/docs/configure/accessibility/accessibility#screen-reader-mode).
+
+Le lanceur Finder utilise maintenant `--input-language fr-en` : dictée française,
+anglaise ou mixte, transcription dans la langue parlée et réponses du coach en
+anglais. Le changement s'applique au prochain démarrage du moteur. Sur le Mac
+d'Edouard, le raccourci personnalisé actuel est **Option droite** ; le badge de
+l'app indique la combinaison active. Enregistrer après chaque essai un feedback
+distinct sur réussite et utilité ; ne pas en déduire un label de l'arrêt du moteur.
+
 Dépôt prévu : **`Tooom123/hcs-sandbox-fake-crm`**. Les notes de Tom rapportent un
 ancien parcours auto-fix avec sa PR n°1 ; cela ne prouve pas que cette PR soit
 encore ouverte, révisable ou associée à une session accessible aujourd'hui.

@@ -126,6 +126,7 @@ def test_runtime_spawn_is_detached_and_uses_argument_list_with_private_log(launc
     assert command[0] == "/test/python with spaces"
     assert command[-1] == str(launcher.test_private)
     assert "--native-devin" in command and command[command.index("--software") + 1] == "cognition"
+    assert command[command.index("--input-language") + 1] == "fr-en"
 
 
 @pytest.mark.parametrize("failure", ["exit", "timeout"])

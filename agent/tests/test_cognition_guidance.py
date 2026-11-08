@@ -336,6 +336,39 @@ def test_native_repeated_plan_reports_no_progress_not_accessibility_failure(dyna
     assert any('repeated_planner_instruction' in step.summary for step in dynamic.it.steps)
 
 
+def test_repeated_next_instruction_on_changed_pages_is_not_a_stall(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    plans = iter([{'done': False, 'instruction': 'Click Next', 'kind': 'click', 'target': 0}] * 3 +
+                 [{'done': True, 'summary': 'The final page is visible.'}])
+    dynamic.backend.plan_step = lambda *args: next(plans)
+
+    def advance(step):
+        dynamic.shown.append(step)
+        dynamic.info.title = f'Wizard page {len(dynamic.shown) + 1}'
+        return True, 'Observed interaction; next page is visible.'
+
+    dynamic.it._on_guidance = advance
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert len(dynamic.shown) == 4
+    assert not any('repeated_planner_instruction' in step.summary for step in dynamic.it.steps)
+
+
+def test_explicit_planner_blocker_finishes_without_waiting_for_a_click_or_claiming_success(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    dynamic.it._on_guidance = lambda step: pytest.fail('A terminal blocker must not wait for a user click')
+    dynamic.backend.plan_step = lambda *args: {
+        'done': True, 'blocked': True, 'kind': 'click', 'target': 0,
+        'summary': 'This native pilot cannot guide billing in the web app.'}
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert result.declared.blocker == dynamic.shown[-1].instruction
+    assert dynamic.shown[-1].last and dynamic.shown[-1].kind == 'info'
+    assert dynamic.shown[-1].pointer is None
+
+
 @pytest.mark.parametrize('plan', [None, {}, {'instruction': '', 'why': 'private-provider-error-details'}])
 def test_native_planning_failure_is_distinct_from_readable_tree(dynamic, monkeypatch, plan):
     _make_native(dynamic, monkeypatch)

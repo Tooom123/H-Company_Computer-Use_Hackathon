@@ -103,7 +103,8 @@ def start_runtime(python, private=PRIVATE):
     log_path = private / ('runtime-' + stamp + '.log')
     with log_path.open('ab') as log:
         proc = subprocess.Popen([python, '-u', str(ROOT / 'scripts/run-h-company-human.py'),
-                                 '--software', 'cognition', '--native-devin', '--private-root', str(private)],
+                                 '--software', 'cognition', '--native-devin', '--input-language', 'fr-en',
+                                 '--private-root', str(private)],
                                 cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True, close_fds=True)
     deadline = time.monotonic() + 45

@@ -558,6 +558,7 @@ class Intervention:
         history: list[str] = []
         repeats = 0
         last_instruction = ""
+        last_plan_observation = None
         waited_front = 0
         for n in range(max_steps):
             if self._stop.is_set():
@@ -629,6 +630,14 @@ class Intervention:
                     return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
                                           "invalid_planner_response")
                 return None
+            if plan.get("blocked") is True:
+                message = (plan.get("summary") or plan.get("instruction") or
+                           "I cannot complete this request in the current coaching scope.")
+                self._trace("guidance blocked: planner_declared_blocker")
+                self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1,
+                                                     instruction=message, kind="info", last=True))
+                return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
+                                                                        blocker=message, steps_taken=history))
             self._trace(f"planned step {n + 1} in {time.time() - t0:.1f}s: "
                         f"{'done' if plan.get('done') else plan.get('instruction', '')[:70]}")
             if plan.get("done"):
@@ -644,7 +653,9 @@ class Intervention:
                     return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
                                           "empty_planner_instruction")
                 return None
-            if instruction == last_instruction:
+            plan_observation = (getattr(info, "bundle_id", None), info.title, info.url, getattr(info, "viewport", None),
+                                tuple((e.role, e.name, e.box) for e in items))
+            if instruction == last_instruction and plan_observation == last_plan_observation:
                 repeats += 1
                 if repeats >= 2:
                     if native_mode:
@@ -655,6 +666,7 @@ class Intervention:
             else:
                 repeats = 0
             last_instruction = instruction
+            last_plan_observation = plan_observation
             kind = plan.get("kind") if plan.get("kind") in ("click", "type", "info") else "click"
             target_index = plan.get("target")
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None

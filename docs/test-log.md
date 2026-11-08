@@ -872,3 +872,28 @@ désormais la même réutilisation d'adresse que le serveur : un listener actif
 reste refusé, un port en TIME_WAIT peut être repris. **27 tests du lanceur**
 passent, dont une régression avec de vraies connexions TCP. Le moteur a ensuite
 redémarré et annoncé son état prêt ; aucune trace n'a été effacée.
+
+## 2026-11-08 — Dictée mixte et progression native Devin
+
+Les essais humains récents ont exposé trois défauts distincts. Gladia était
+configuré en français seul et a mal transcrit le mot anglais « redeem ». Les
+consignes du coach restaient anglaises. Deux essais coupon se sont arrêtés lors
+de nouvelles dictées, sans crash ; une consigne informative non terminale pouvait
+attendre indéfiniment une interaction. Un parcours d'introduction avec plusieurs
+boutons « Next » successifs pouvait déclencher le garde-fou de répétition, même
+si la page avait changé. Une autre trace avait un catalogue vide ; son origine
+ne peut pas être attribuée à la notification lecteur d'écran sans autre preuve.
+
+Le lanceur Devin utilise désormais `fr-en` : Gladia accepte les deux langues,
+y compris dans une phrase, en direct comme en repli préenregistré. Le texte
+transcrit n'est pas artificiellement traduit ; les réponses restent anglaises.
+Un blocage explicitement déclaré par le planificateur termine le guidage sans
+attendre un clic ni devenir une réussite. La répétition est maintenant évaluée
+sur l'instruction et l'état observé de la page. Les autres garde-fous demeurent.
+
+**180 tests ciblés passent** (guidage Cognition/natif, progression, arrêt final,
+observation seule, voix et lanceur). Les tests Gladia utilisent des requêtes
+simulées, sans micro ni appel payant : la qualité réelle de transcription et de
+guidage reste à mesurer après relance. Les anciens épisodes et leurs labels
+ne sont pas réécrits. Le corpus de scénarios contient maintenant six demandes
+spécifiques à Desktop et distingue le coupon comme test de limite du pilote.

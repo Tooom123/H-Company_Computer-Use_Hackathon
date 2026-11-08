@@ -30,8 +30,8 @@ def main():
     parser.add_argument('--control-port', type=int, default=8780)
     parser.add_argument('--backend-port', type=int, default=8781)
     parser.add_argument('--key', default='ctrl+shift+h')
-    parser.add_argument('--input-language', choices=('en', 'fr'), default='fr',
-                        help='Language spoken by the human; companion responses stay in English.')
+    parser.add_argument('--input-language', choices=('en', 'fr', 'fr-en'), default='fr',
+                        help='Spoken language, or fr-en for mixed French/English; companion responses stay in English.')
     args = parser.parse_args()
     if args.native_devin and args.software != 'cognition':
         parser.error('--native-devin requires --software cognition.')

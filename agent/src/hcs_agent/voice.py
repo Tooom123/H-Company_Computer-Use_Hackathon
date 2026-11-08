@@ -98,6 +98,13 @@ class Recorder:
 # --------------------------------------------------------------------------- transcription
 
 
+def _language_config(language: str) -> dict:
+    """Allow explicit French/English code-switching without translating the transcript."""
+    if language == "fr-en":
+        return {"languages": ["fr", "en"], "code_switching": True}
+    return {"languages": [language], "code_switching": False}
+
+
 class LiveTranscriber:
     """Gladia live transcription: audio streams to Gladia WHILE the user speaks, so the text is ready a few
     hundred milliseconds after the key is released instead of 3-4 s later (the Kosmo lesson).
@@ -150,7 +157,7 @@ class LiveTranscriber:
             body = {
                 "encoding": "wav/pcm", "sample_rate": self.sample_rate, "bit_depth": 16, "channels": 1,
                 "model": "solaria-1",
-                "language_config": {"languages": [self.language], "code_switching": False},
+                "language_config": _language_config(self.language),
                 "messages_config": {"receive_partial_transcripts": True, "receive_final_transcripts": True,
                                     "receive_post_processing_events": False, "receive_acknowledgments": False,
                                     "receive_lifecycle_events": False},
@@ -265,7 +272,7 @@ class Transcriber:
         self.language = language or os.environ.get("HCS_VOICE_LANGUAGE", "fr")
 
     def transcribe(self, wav_path: str, vocabulary: list[str] | None = None) -> str:
-        options: dict = {"model": "solaria-3", "language_config": {"languages": [self.language]}}
+        options: dict = {"model": "solaria-3", "language_config": _language_config(self.language)}
         if vocabulary:
             options["custom_vocabulary"] = True
             # Keep the bias gentle: at high intensity Gladia replaces ordinary words with vocabulary terms
