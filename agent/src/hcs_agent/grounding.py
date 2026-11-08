@@ -150,6 +150,7 @@ class Grounder:
         tool = {"type": "function", "function": {
             "name": "next_step", "description": "The next thing the user should do, or that the goal is reached.",
             "parameters": {"type": "object", "properties": {
+                "observation": {"type": "string", "description": "One short factual sentence naming the current view and whether the EXACT requested record or control is visible; distinguish similarly named records."},
                 "done": {"type": "boolean", "description": "true when the goal is visibly reached on this page"},
                 "blocked": {"type": "boolean", "description": "true if the current coaching scope or unavailable evidence prevents continuing; not success"},
                 "instruction": {"type": "string", "description": "one short English instruction, or a factual answer for kind=info"},
@@ -158,7 +159,7 @@ class Grounder:
                 "target": {"type": "integer", "description": "1-based index of the control to act on; 0 if none"},
                 "text": {"type": "string", "description": "for kind=type: what to type"},
                 "summary": {"type": "string", "description": "when done: what was achieved, one sentence"}},
-                "required": ["done", "instruction", "why", "kind", "target"]}}}
+                "required": ["observation", "done", "instruction", "why", "kind", "target"]}}}
         listing = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(candidates)) or "(no controls listed)"
         hist = "\n".join(f"- {h}" for h in history[-8:]) or "(none yet)"
         prompt = (f"You guide a person using software, one step at a time; they do the clicks.\n"
@@ -175,6 +176,11 @@ class Grounder:
                   "Information-only entries and enabled=False controls are context, never click/type targets. "
                   "enabled=None or selected=None means unknown; selected=True does not mean disabled. "
                   "First check whether the CURRENT visible evidence already answers the question. "
+                  "The current page takes precedence over a documentation recipe: skip steps already achieved. "
+                  "For example, when a CRM pipeline is already open, search its records rather than asking to open CRM again. "
+                  "For an existing record that is not visible, prefer the visible search field or filters; "
+                  "do not create a record. Preserve distinguishing names. If a spoken name is ambiguous, "
+                  "ask for clarification instead of silently substituting a different record. "
                   "For a request to show, list, locate or explain options, the relevant visible labels can be the answer: "
                   "set done=true, kind=info, target=0 and give that factual answer in summary. "
                   "Visible MenuItem entries are already exposed choices; do not ask to reopen their menu just to show them, "
@@ -182,12 +188,16 @@ class Grounder:
                   "Name the observed choices without inventing their behavior. Visibility alone does not prove a choice "
                   "is selected or a requested change has happened. If the goal requires a change, require evidence of that change. "
                   "A button role or label alone does not prove that it opens another view. Use type only on text inputs. "
+                  "A click step must not also request typing: use a separate kind=type step with text for that action. "
                   "When a previous interaction produced no observed change, choose a different evidenced route "
                   "or explain the blocker; do not rephrase the same ineffective action. A metadata change is not proof of goal completion. "
                   "Give the single next step. Point only at a listed control (its index); if the needed control is "
                   "not on this page, choose the listed control that leads to it (a menu, a tab, a link). "
                   "If the goal is reached, set done=true with a summary. If this page is unrelated and nothing "
-                  "listed leads to the goal, kind=info with an instruction telling the person where to go.")
+                  "listed leads to the goal, kind=info with an instruction telling the person where to go.\n"
+                  "Fill observation from CURRENT page evidence before selecting an action. Similar names are not "
+                  "the same record: if the exact requested name is missing, search rather than opening a near match.\n"
+                  f"Request to satisfy now: {goal}\nCurrent view (already open): {page}")
         body = {
             "model": self.model, "messages": [{"role": "user", "content": prompt}],
             "tools": [tool], "tool_choice": "required", "temperature": 0, "max_tokens": 300,

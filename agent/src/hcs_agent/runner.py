@@ -65,6 +65,17 @@ def _catalogue_signature(info, items) -> tuple:
                   for e in items))
 
 
+def _page_state_signature(info, items) -> tuple:
+    """Navigation/state evidence, independent of layout jitter and AX traversal order.
+
+    Keep the exact signature above for stale pointer checks. A moved box alone is
+    not a new page state and must not unlock a click that was already attempted.
+    """
+    return (getattr(info, "bundle_id", None), getattr(info, "is_front", True), info.title, info.url,
+            frozenset((e.role, e.name, getattr(e, "enabled", None), getattr(e, "selected", None))
+                      for e in items))
+
+
 PLAN_FIRST = {x.strip().lower() for x in os.environ.get("HCS_PLAN_FIRST", "hcompany").split(",") if x.strip()}
 """Software guided from the live page for every task (scripts are hints), instead of script-first.
 Script-first stays for software whose scripts were validated live step by step (Odoo)."""
@@ -610,6 +621,7 @@ class Intervention:
         last_instruction = ""
         last_plan_observation = None
         ineffective_targets = set()
+        tried_targets = set()
         rejected_plans = 0
         reobservations = 0
         empty_native_reads = 0
@@ -716,6 +728,8 @@ class Intervention:
                     return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
                                           "invalid_planner_response")
                 return None
+            if isinstance(plan.get("observation"), str) and plan["observation"].strip():
+                self._trace("Planner observation (unverified): " + plan["observation"][:400])
             if plan.get("blocked") is True:
                 message = (plan.get("summary") or plan.get("instruction") or
                            "I cannot complete this request in the current coaching scope.")
@@ -740,6 +754,7 @@ class Intervention:
                                           "empty_planner_instruction")
                 return None
             plan_observation = _catalogue_signature(info, items)
+            page_state = _page_state_signature(info, items)
             if instruction == last_instruction and plan_observation == last_plan_observation:
                 repeats += 1
                 if repeats >= 2:
@@ -757,7 +772,7 @@ class Intervention:
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None
             # Input values/focus are intentionally not observed. Focusing/typing in a field can
             # therefore succeed without changing this catalogue; do not ban a subsequent edit.
-            target_key = ((plan_observation, kind, target.role, target.name, target.box)
+            target_key = ((page_state, kind, target.role, target.name)
                           if target and kind == "click" and target.role not in INPUT_ROLES else None)
             invalid = None
             if kind in ("click", "type"):
@@ -769,6 +784,9 @@ class Intervention:
                     invalid = f"Target '{target.name[:50]}' is not a text input."
                 elif target_key in ineffective_targets:
                     invalid = f"Target '{target.name[:50]}' was already tried with no observed change on this page."
+                elif target_key is not None and target_key in tried_targets:
+                    invalid = (f"Target '{target.name[:50]}' was already clicked in this same visible page state. "
+                               "Returning to an earlier state or moving controls is not progress.")
             if invalid:
                 rejected_plans += 1
                 self._trace(f"guidance action rejected: {invalid}")
@@ -803,11 +821,13 @@ class Intervention:
                                           "user_reported_stuck")
                 return None  # the user is stuck: the caller decides (takeover / agent) from the autonomy level
             history.append(f"Instruction shown: {instruction}. " + (note or "User reported an interaction; result not verified."))
-            change = self._wait_page_change(catalogue, bound, plan_observation)
+            if target_key is not None:
+                tried_targets.add(target_key)
+            change = self._wait_page_change(catalogue, bound, page_state)
             if change == "stopped":
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run", steps_taken=history))
             observation = {
-                "changed": "Visible accessibility metadata changed after the interaction; goal completion is not verified.",
+                "changed": "Visible page labels or states changed after the interaction; goal completion is not verified.",
                 "unchanged": ("No visible accessibility change was observed after the interaction. "
                               + ("Do not repeat the same target on this unchanged page; choose another route or report blocked."
                                  if target_key is not None else
@@ -834,7 +854,7 @@ class Intervention:
             info, items = cat
             if not getattr(info, "is_front", True) or not items:
                 return "unavailable"
-            if _catalogue_signature(info, items) != signature:
+            if _page_state_signature(info, items) != signature:
                 return "changed"
             time.sleep(0.2)
         return "stopped" if self._stop.is_set() else "unchanged"
@@ -920,6 +940,12 @@ class Intervention:
         results: dict[str, bool] = {}
         seen: list[str] = []
         for key, prompt in bound.checks.items():
+            if bound.request.parameters.get("automatic_context"):
+                from .app_context import request_matches_page
+                catalogue = getattr(self.backend, "page_catalogue", lambda _: None)(bound)
+                if catalogue is None or not request_matches_page(bound.request, catalogue[0]):
+                    self._trace("Verification skipped: selected product is no longer in front.")
+                    return VerifyResult(None, "inconclusive", observed="Selected product is not visible; outcome unverified.")
             ok, visible = self._read_visual_check(
                 check, f"{prompt} (look at the exact field or area; answer false if it is not visible)")
             self._trace(f"fast check {key}: {'yes' if ok else 'no'} ({visible[:50]})")
@@ -927,8 +953,6 @@ class Intervention:
             seen.append(visible)
             if not ok:
                 return None  # let the agent verifier navigate and look properly
-        from .backend import VerifyResult
-
         # Direct Models checks do not create an Agents API session. Their
         # observations remain in checks/observed and the per-check step trace.
         return VerifyResult(None, "completed", results, "; ".join(seen)[:400], cost_usd=0.0)

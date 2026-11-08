@@ -379,14 +379,14 @@ def test_native_repeated_plan_reports_no_progress_not_accessibility_failure(dyna
     dynamic.backend.plan_step = lambda *args: calls.append(args) or {
         'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0}
     result = dynamic.it._dynamic_guide(dynamic.bound)
-    assert len(calls) == 3 and len(dynamic.shown) == 3
+    assert len(calls) == 3 and len(dynamic.shown) == 2
     assert result.declared.outcome == 'blocked'
     assert 'same step without confirming progress' in result.declared.blocker
     assert 'accessibility' not in result.declared.blocker.lower()
     assert dynamic.shown[-1].last and dynamic.shown[-1].pointer is None
     assert any('repeated_planner_instruction' in step.summary for step in dynamic.it.steps)
-    assert len(result.declared.steps_taken) == 2
-    assert all('Observed interaction:' in note for note in result.declared.steps_taken)
+    assert any('Observed interaction:' in note for note in result.declared.steps_taken)
+    assert any('Instruction NOT shown:' in note for note in result.declared.steps_taken)
 
 
 def test_opened_menu_choices_reach_next_plan_and_finish_without_an_extra_click(dynamic, monkeypatch):
@@ -566,6 +566,58 @@ def test_no_change_can_recover_through_different_visible_target(dynamic, monkeyp
     assert any('goal completion is not verified' in step.summary for step in dynamic.it.steps)
 
 
+def test_rewording_and_layout_jitter_cannot_repeat_a_clicked_target(dynamic):
+    """Odoo CRM stayed open while geometry/order changes unlocked the same click six times."""
+    from hcs_agent.a11y import Candidate
+    controls = [Candidate('AXMenuItem', 'CRM', (60, 170, 45, 26)),
+                Candidate('AXSearchField', 'Rechercher…', (400, 210, 300, 30))]
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, list(controls))
+    plans = iter([
+        {'instruction': 'Open CRM', 'kind': 'click', 'target': 0},
+        {'instruction': 'Click CRM again', 'kind': 'click', 'target': 1},
+        {'instruction': 'Search for the requested opportunity', 'kind': 'type', 'target': 0, 'text': 'Example'},
+        {'done': True, 'summary': 'The result is visible.'},
+    ])
+    dynamic.backend.plan_step = lambda *args: next(plans)
+
+    def interact(step):
+        dynamic.shown.append(step)
+        if step.where == 'CRM':
+            controls[0].frame = (61, 171, 45, 26)
+            controls.reverse()
+        return True, 'Observed interaction; result not verified.'
+
+    dynamic.it._on_guidance = interact
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert [s.where for s in dynamic.shown if not s.last] == ['CRM', 'Rechercher…']
+    assert any('already clicked in this same visible page state' in s.summary for s in dynamic.it.steps)
+
+
+def test_toggling_between_two_catalogues_does_not_reset_tried_target(dynamic):
+    from hcs_agent.a11y import Candidate
+    controls = [Candidate('AXPopUpButton', 'CRM', (60, 170, 45, 26))]
+    option = Candidate('AXMenuItem', 'Pipeline', (60, 200, 120, 30))
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, list(controls))
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    dynamic.backend.plan_step = lambda *a: {'instruction': f'Open CRM ({len(dynamic.shown)})',
+                                          'kind': 'click', 'target': 0}
+
+    def interact(step):
+        dynamic.shown.append(step)
+        if len(controls) == 1:
+            controls.append(option)
+        else:
+            controls.pop()
+        return True, 'Observed interaction; result not verified.'
+
+    dynamic.it._on_guidance = interact
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert len([s for s in dynamic.shown if s.kind == 'click']) == 2
+    assert dynamic.shown[-1].last
+
+
 def test_unchanged_input_focus_does_not_block_typing_in_the_same_field(dynamic, monkeypatch):
     _, items = dynamic.backend.page_catalogue(None)
     items[0].role = 'AXTextField'
@@ -591,9 +643,9 @@ def test_unchanged_input_focus_does_not_block_typing_in_the_same_field(dynamic, 
 
 @pytest.mark.parametrize('change', ['selection', 'position', 'enabled', 'title'])
 def test_accessibility_change_detects_more_than_label_changes(dynamic, change):
-    from hcs_agent.runner import _catalogue_signature
+    from hcs_agent.runner import _page_state_signature
     info, items = dynamic.backend.page_catalogue(None)
-    before = _catalogue_signature(info, items)
+    before = _page_state_signature(info, items)
     if change == 'selection':
         items[0].selected = True
     elif change == 'position':
@@ -602,14 +654,15 @@ def test_accessibility_change_detects_more_than_label_changes(dynamic, change):
         items[0].enabled = False
     else:
         info.title = 'A new view with the same labels'
-    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == 'changed'
+    expected = 'unchanged' if change == 'position' else 'changed'
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == expected
 
 
 @pytest.mark.parametrize('unavailable', ['missing', 'background', 'empty'])
 def test_lost_page_is_unknown_progress_not_a_change(dynamic, unavailable):
-    from hcs_agent.runner import _catalogue_signature
+    from hcs_agent.runner import _page_state_signature
     info, items = dynamic.backend.page_catalogue(None)
-    before = _catalogue_signature(info, items)
+    before = _page_state_signature(info, items)
     if unavailable == 'background':
         info.is_front = False
     catalogue = lambda _: None if unavailable == 'missing' else (info, [] if unavailable == 'empty' else items)
@@ -617,8 +670,8 @@ def test_lost_page_is_unknown_progress_not_a_change(dynamic, unavailable):
 
 
 def test_unchanged_wait_is_bounded_and_stop_is_preserved(dynamic, monkeypatch):
-    from hcs_agent.runner import _catalogue_signature
-    before = _catalogue_signature(*dynamic.backend.page_catalogue(None))
+    from hcs_agent.runner import _page_state_signature
+    before = _page_state_signature(*dynamic.backend.page_catalogue(None))
     clock = iter([0.0, 0.1, 1.7])
     monkeypatch.setattr('hcs_agent.runner.time.monotonic', lambda: next(clock))
     monkeypatch.setattr('hcs_agent.runner.time.sleep', lambda _: None)

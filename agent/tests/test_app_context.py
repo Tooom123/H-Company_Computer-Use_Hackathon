@@ -134,3 +134,18 @@ def test_running_odoo_guide_blocks_on_missing_or_changed_app(monkeypatch, tmp_pa
     if result is None:
         pytest.fail('Expected an explicit blocked result from the planner loop')
     assert result.declared.outcome == 'blocked'
+
+
+@pytest.mark.parametrize('observation', [None, browser('https://app.devin.ai/'),
+    browser('https://holo-demo.62.83.79.254.sslip.io/web/login')])
+def test_automatic_final_check_never_verifies_a_different_product(monkeypatch, tmp_path, observation):
+    from hcs_agent.backend import MockBackend
+    from hcs_agent.runner import Intervention
+    request, _ = make_request('Find an opportunity', browser(
+        'https://holo-demo.62.83.79.254.sslip.io/odoo/crm'), ProductKnowledge({}))
+    backend = MockBackend()
+    backend.page_catalogue = lambda _: None if observation is None else (observation, [])
+    backend.effect_visible = lambda *a: pytest.fail('Must not send a screenshot of another product')
+    it = Intervention(request, backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    result = it._fast_verify(ProcedureRegistry().for_request(request).bound(request))
+    assert result.status == 'inconclusive' and not result.checks

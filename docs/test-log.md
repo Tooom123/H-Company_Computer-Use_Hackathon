@@ -1047,3 +1047,37 @@ glisser et le clavier, le retour à 0, l'affichage du contexte et le maintien du
 verrouillage historique. **Ces tests simulés ne prouvent pas un parcours vocal
 réussi**. Les huit questions de `demo-eight-questions-2026-11-08.md` restent à
 évaluer en répétition humaine, avec réussite et utilité labellisées séparément.
+
+
+## Odoo auto-context — repeated CRM guidance, 2026-11-08
+
+Human trial `sess_ed829556ca29`, 07:38–07:39 Europe/Paris (about 50 seconds):
+Odoo and two local documentation excerpts were selected correctly. The transcript
+was `Help me. opportunity Maison d'eau.`; it did not retain the full intended
+Maison Aube question. The human reported **« Contexte Odoo, mais guidage incorrect »**.
+Six instructions targeted the CRM header while the pipeline was already open.
+Target clicks were observed, but changes in accessibility metadata kept allowing
+that instruction. The run ended escalated/unverified; no success/usefulness labels
+were fabricated. Original private events and report remain unchanged.
+
+Corrections: track attempted click targets by visible page state independently of
+geometry and AX traversal order; do not retry an earlier state when a menu cycles
+open/closed. Preserve input editing and real navigation. Require the text planner
+to state the current view and distinguish exact record names before choosing its
+next action. Current screen evidence takes precedence over documentation recipes.
+The Odoo knowledge page now explicitly starts at search when Pipeline is already
+open. Final verification stops if automatic context has changed to another product.
+
+Text-only Holo4 development replay, with a small manually transcribed list of
+controls observed in the fictitious demo (not a replay of the complete captured AX
+tree): an intermediate prompt still chose Comptoir Aube instead of Maison Aube.
+With the factual-observation field added, the same request selected Rechercher…
+and explicitly distinguished the names (1.91 s for that one model call). With the
+original imperfect transcript and a prior CRM click, it also selected search
+(1.21 s). These are **planner checks**, not a completed workflow, a speed benchmark,
+or a human usefulness label. Private diagnostic output stays outside Git.
+
+Offline validation: 154 targeted tests passed, including layout jitter, returning
+to an earlier menu state, genuine next-page navigation, continued typing, and
+rejecting verification on a different product. A new live voice/click trial is
+still required; the original incorrect trial must not be counted as a success.
