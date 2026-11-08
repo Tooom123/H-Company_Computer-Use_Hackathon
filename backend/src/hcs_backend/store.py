@@ -128,6 +128,11 @@ class Store:
             )
 
     # fixes ---------------------------------------------------------------------------------------
+    def recent_events(self, limit: int = 30) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute('SELECT event FROM events ORDER BY seq DESC LIMIT ?', (min(200, max(1, limit)),)).fetchall()
+        return [json.loads(row['event']) for row in rows]
+
     def save_fix(self, fix: dict[str, Any]) -> None:
         fix = dict(fix)
         fix.setdefault("created_at", now_iso())

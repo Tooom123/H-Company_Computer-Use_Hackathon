@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass
 
 import httpx
+from . import vision_evidence
 
 H_MODELS_URL = os.environ.get("HAI_MODELS_BASE_URL", "https://api.hcompany.ai/v1")
 GROUNDING_WIDTH = 1024
@@ -104,15 +105,26 @@ class Grounder:
             "max_tokens": 200,
             "chat_template_kwargs": {"enable_thinking": False},
         }
-        for attempt in range(4):
-            r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
-            if r.status_code != 429 or attempt == 3:
-                break
-            # Rate limited (bursts of locate / screen checks during a guide): back off briefly and retry.
-            # Never honour a long Retry-After blindly: the user would see the guide freeze.
-            time.sleep(min(float(r.headers.get("retry-after") or 0) or 1.0 * (attempt + 1), 3.0))
-        r.raise_for_status()
-        msg = r.json()["choices"][0]["message"]
+        record = vision_evidence.begin(img_b64, self.model)
+        started = time.monotonic()
+        try:
+            for attempt in range(4):
+                vision_evidence.update(record, status='sending', attempts=attempt + 1)
+                r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
+                vision_evidence.update(record, http_status=r.status_code)
+                if r.status_code != 429 or attempt == 3:
+                    break
+                time.sleep(min(float(r.headers.get("retry-after") or 0) or 1.0 * (attempt + 1), 3.0))
+            r.raise_for_status()
+            response = r.json()
+            msg = response["choices"][0]["message"]
+            vision_evidence.update(record, status='completed', usage=response.get('usage'),
+                                   provider_request_id=response.get('id'),
+                                   latency_ms=round((time.monotonic() - started) * 1000))
+        except Exception as error:
+            vision_evidence.update(record, status='error', error=type(error).__name__,
+                                   latency_ms=round((time.monotonic() - started) * 1000))
+            raise
         calls = msg.get("tool_calls") or []
         if not calls:
             return None, {}
@@ -157,7 +169,9 @@ class Grounder:
         prompt = (f"{context + ' ' if context else ''}Locate: {description}. Give the tight bounding box of that "
                   "element, coordinates in [0,1000] of the image (x1,y1 top-left; x2,y2 bottom-right). If it is "
                   "really not on this screen, call not_found and describe what is visible instead.")
-        fn, args = self._call(base64.b64encode(buf.getvalue()).decode(), prompt, _TOOLS)
+        with vision_evidence.geometry(kind='crop', purpose='locate', strategy=strategy,
+                                      region=[cx, cy, cw, ch], screen=[sw, sh], target=description):
+            fn, args = self._call(base64.b64encode(buf.getvalue()).decode(), prompt, _TOOLS)
         STATE.stats["last_strategy"] = strategy
         if fn and fn["name"] == "locate" and args.get("is_the_control", True) and all(k2 in args for k2 in ("x1", "y1", "x2", "y2")):
             x1, x2 = sorted((cx + int(args["x1"]) / 1000 * cw, cx + int(args["x2"]) / 1000 * cw))
@@ -188,7 +202,9 @@ class Grounder:
                   "element, coordinates in [0,1000] of the image (x1,y1 top-left; x2,y2 bottom-right).")
         if strict:
             prompt += " If it is really not on this screen, call not_found and describe what is visible instead."
-        fn, args = self._call(img_b64, prompt, _TOOLS if strict else [_POINT])
+        with vision_evidence.geometry(kind='full_screen', purpose='locate',
+                                      region=[0, 0, sw, sh], screen=[sw, sh], target=description):
+            fn, args = self._call(img_b64, prompt, _TOOLS if strict else [_POINT])
         latency = time.time() - t0
         if fn and fn["name"] == "locate" and all(k in args for k in ("x1", "y1", "x2", "y2")):
             # Holo returns coordinates normalised to [0, 1000] on the image it was sent. It always boxes

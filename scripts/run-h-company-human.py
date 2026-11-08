@@ -28,6 +28,8 @@ def main():
                         help='Read the focused Devin Desktop accessibility tree instead of a browser tab.')
     parser.add_argument('--private-root', type=Path)
     parser.add_argument('--env-file', type=Path, help='Existing private provider credentials file; never copied into the app.')
+    parser.add_argument('--record-vision', action='store_true', help='Keep exact Models API JPEG payloads privately for the authenticated live viewer.')
+    parser.add_argument('--visual-grounding-demo', action='store_true', help='Exercise real Holo visual localisation even when AX provides a box; slower than normal AX-only guidance.')
     parser.add_argument('--control-port', type=int, default=8780)
     parser.add_argument('--backend-port', type=int, default=8781)
     parser.add_argument('--key', default='ctrl+shift+h')
@@ -36,6 +38,8 @@ def main():
     args = parser.parse_args()
     if args.native_devin and args.software != 'cognition':
         parser.error('--native-devin requires --software cognition.')
+    if args.native_devin and args.visual_grounding_demo:
+        parser.error('The visual demonstration is for the browser, not native-only coaching.')
     if args.control_port == args.backend_port or not all(1024 <= p <= 65535 for p in (args.control_port, args.backend_port)):
         parser.error('Choose two distinct local ports.')
     for port in (args.control_port, args.backend_port):
@@ -88,6 +92,7 @@ def main():
         HCS_BACKEND_URL=f'http://127.0.0.1:{args.backend_port}', HCS_INGEST_TOKEN=credentials['ingest_token'],
         HCS_SUPPORT_USER=private_name, HCS_SUPPORT_EVENTS='1', HCS_PTT_KEY=args.key,
         HCS_RUNS_DIR=str(runs), HCS_VOICE_LANGUAGE=args.input_language)
+    os.environ['HCS_VISUAL_GROUNDING_DEMO'] = '1' if args.visual_grounding_demo else '0'
     if args.native_devin:
         os.environ['HCS_AX_NATIVE_BUNDLE_ID'] = 'com.exafunction.windsurf'
     else:
@@ -100,6 +105,7 @@ def main():
     from hcs_backend.config import Settings
     import uvicorn
     settings = Settings(db_path=private/'backend.sqlite3', contracts_dir=ROOT/'contracts',
+        vision_evidence_dir=private/'vision-payloads' if args.record_vision else None,
         port=args.backend_port, ingest_token=credentials['ingest_token'],
         dashboard_user=credentials['username'], dashboard_password=credentials['password'],
         fix_auto=False, fix_provider='mock')
@@ -107,6 +113,15 @@ def main():
     server = uvicorn.Server(uvicorn.Config(support, host='127.0.0.1', port=args.backend_port, log_level='warning'))
     threading.Thread(target=server.run, name='human-support', daemon=True).start()
     from hcs_agent import cli
+    from hcs_agent import gaze_crop, vision_evidence
+    support.state.live_status = lambda: dict(cli._control_status(), vision=gaze_crop.STATE.snapshot())
+    support.state.visual_grounding_demo = args.visual_grounding_demo
+    if args.record_vision:
+        def image_session():
+            current = cli._control_status().get('current') or {}
+            return ({'session_id': current['session_id'], 'goal': current['goal']}
+                    if current and not current.get('terminal') else {})
+        vision_evidence.RECORDER = vision_evidence.Recorder(settings.vision_evidence_dir, image_session)
     from pilot.knowledge import LocalMarkdownKnowledge
     docs = private/'knowledge' if args.software == 'cognition' else private.parent/'cloud-pilot/knowledge'
     if docs.is_dir() or args.software == 'cognition':
@@ -161,6 +176,7 @@ def main():
         'backend_port':args.backend_port, 'knowledge_documents':document_count, 'voice':'gladia',
         'raw_microphone_audio_retained':False, 'software':args.software, 'response_language':'en',
         'input_language':args.input_language,
+        'record_vision':args.record_vision, 'visual_grounding_demo':args.visual_grounding_demo,
         'surface':'devin-desktop' if args.native_devin else 'browser',
         'native_bundle_id':os.environ.get('HCS_AX_NATIVE_BUNDLE_ID')})
     print(f'Human coaching control: http://127.0.0.1:{args.control_port}', flush=True)

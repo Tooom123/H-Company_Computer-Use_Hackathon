@@ -974,6 +974,19 @@ class Intervention:
                               where=target.name if target else "", pointer=target.center if target else None,
                               box=target.box if target else None, box_exact=target is not None, kind=kind,
                               keep_clear=_container_of(target, getattr(info, "elements", None), sw, sh))
+            # Opt-in pitch: one real visual localisation per intervention. Normal
+            # AX guidance stays fast, and the payload viewer records any fallback.
+            if (not native and target is not None
+                    and os.environ.get("HCS_VISUAL_GROUNDING_DEMO") == "1"
+                    and not getattr(self, "_visual_demo_observed", False)):
+                self._visual_demo_observed = True
+                loc = self.backend.locate(target.name, f"H Company platform. {instruction}")
+                if self._stop.is_set():
+                    return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                if loc and loc.found and loc.screen_xy:
+                    gs.pointer, gs.box = loc.screen_xy, loc.box
+                    gs.box_exact = loc.box is not None
+                self._trace("Visual localisation demo complete; subsequent steps use accessibility.")
             signature = (info.url, tuple(sorted(e.name for e in items)))
             reply = self._on_guidance(gs)
             if reply is None:

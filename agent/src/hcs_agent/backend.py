@@ -700,7 +700,10 @@ class HBackend:
 
     def locate(self, description: str, context: str = "") -> Located | None:
         hit, ties = self._tree_locate(description)
-        if hit is not None:
+        # Explicit visual demonstration: keep AX planning but exercise Holo's real
+        # crop-first localisation, even when AX already supplies a box.
+        visual_demo = os.environ.get('HCS_VISUAL_GROUNDING_DEMO') == '1'
+        if hit is not None and not visual_demo:
             return hit
         from .a11y import native_target
         if native_target():

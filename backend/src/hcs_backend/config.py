@@ -28,6 +28,7 @@ class Settings:
     contracts_dir: Path = field(default_factory=lambda: REPO_ROOT / "contracts")
     host: str = "127.0.0.1"
     port: int = 8766
+    vision_evidence_dir: Path | None = None  # opt-in local payload viewer; not a screenshot upload service
     # Token the agent sends as "Authorization: Bearer <token>" on POST /cases and /events.
     ingest_token: str = ""
     # HTTP Basic credentials for the support dashboard and case read APIs.

@@ -62,6 +62,8 @@ def test_crop_gaze_only_and_with_controls():
 def _rig(monkeypatch, answer):
     """A Grounder with a fake screen (1440x900 pt, 2x pixels) and a fake Holo returning `answer`."""
     from hcs_agent import grounding
+    from hcs_agent import a11y
+    monkeypatch.setattr(a11y, 'available', lambda: False)  # never inspect the developer's real foreground window
 
     calls = []
     overlay = types.ModuleType("hcs_agent.overlay")

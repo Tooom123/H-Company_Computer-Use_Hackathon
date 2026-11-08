@@ -149,6 +149,17 @@ def test_dynamic_ax_guidance_keeps_scope_language_context_and_observation_proven
     assert "Observed interaction:" in r.calls[1][4][0] and "(user:" not in r.calls[1][4][0]
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_live_demo_localises_first_target_only_when_opted_in(dynamic, monkeypatch, enabled):
+    from hcs_agent.grounding import Located
+    monkeypatch.setenv("HCS_VISUAL_GROUNDING_DEMO", "1" if enabled else "0")
+    calls = []
+    dynamic.backend.locate = lambda *args: calls.append(args) or Located(True, (110, 120), box=(90, 100, 40, 40))
+    dynamic.it._dynamic_guide(dynamic.bound)
+    assert len(calls) == int(enabled)
+    assert tuple(dynamic.shown[0].pointer) == ((110, 120) if enabled else (100, 100))
+
+
 def test_dynamic_ax_restricted_page_blocks_before_planner_or_h_fallback(dynamic):
     dynamic.info.url = "https://app.devin.ai/settings/api-keys"
     result = dynamic.it._dynamic_guide(dynamic.bound)

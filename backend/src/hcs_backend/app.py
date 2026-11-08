@@ -80,6 +80,8 @@ def create_app(settings: Settings | None = None, store: Store | None = None, fix
 
     Agent = Depends(require_agent)
     Support = Depends(require_support)
+    from .live_demo import mount as mount_live_demo
+    mount_live_demo(app, store, settings, require_support)
 
     # helpers -------------------------------------------------------------------------------------
     def groups() -> list[Group]:

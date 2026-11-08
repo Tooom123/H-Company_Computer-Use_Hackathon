@@ -117,6 +117,8 @@ def start_runtime(python, private=None):
                '--input-language', 'fr-en']
     if PROFILE == 'hcompany-vision':
         command += ['--control-port', str(CONTROL_PORT), '--backend-port', str(BACKEND_PORT), '--key', 'alt_r']
+        if read_json(private / 'launcher.json').get('pitch_demo') is True:
+            command += ['--record-vision', '--visual-grounding-demo']
     else:
         command += ['--native-devin']
     env_file = read_json(private / 'launcher.json').get('env_file')
