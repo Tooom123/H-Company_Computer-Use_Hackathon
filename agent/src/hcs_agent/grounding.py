@@ -63,7 +63,12 @@ def grab_screen():
     """
     import pyautogui
 
-    return pyautogui.screenshot()
+    try:
+        from .overlay import hidden_for_capture
+    except Exception:  # noqa: BLE001 - no AppKit (tests, other platforms)
+        return pyautogui.screenshot()
+    with hidden_for_capture():
+        return pyautogui.screenshot()
 
 
 def capture(width: int = GROUNDING_WIDTH) -> tuple[str, tuple[int, int], tuple[float, float]]:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import time
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, Literal
@@ -473,7 +474,10 @@ class Overlay:
         self.window.setBackgroundColor_(AppKit.NSColor.clearColor())
         self.window.setIgnoresMouseEvents_(True)
         self.window.setLevel_(AppKit.NSScreenSaverWindowLevel)
-        self.window.setSharingType_(AppKit.NSWindowSharingNone)  # invisible to screen capture (and to H)
+        # Invisible to screen capture (so H never sees our marks) — unless HCS_OVERLAY_CAPTURE=1 (demo recording):
+        # then recordings see it and our own screenshots hide it for a moment (see `hidden_for_capture`).
+        self.window.setSharingType_(AppKit.NSWindowSharingReadOnly if CAPTURE_VISIBLE else AppKit.NSWindowSharingNone)
+        _ACTIVE_WINDOWS.append(self.window)
         self.window.setCollectionBehavior_(
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces | AppKit.NSWindowCollectionBehaviorStationary)
         self.view = _SketchView.alloc().initWithFrame_(self.window.contentView().bounds())
@@ -664,7 +668,8 @@ class MagnetWidget:
         self.window.setOpaque_(False)
         self.window.setBackgroundColor_(AppKit.NSColor.clearColor())
         self.window.setLevel_(AppKit.NSScreenSaverWindowLevel)
-        self.window.setSharingType_(AppKit.NSWindowSharingNone)
+        self.window.setSharingType_(AppKit.NSWindowSharingReadOnly if CAPTURE_VISIBLE else AppKit.NSWindowSharingNone)
+        _ACTIVE_WINDOWS.append(self.window)
         self.window.setCollectionBehavior_(
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces | AppKit.NSWindowCollectionBehaviorStationary)
         self.view = _MagnetView.alloc().initWithFrame_(((0, 0), (w, h)))
@@ -716,6 +721,29 @@ class MagnetWidget:
     def show(self) -> None:
         self.visible = True
         _on_main(lambda: self.window.orderFrontRegardless())
+
+
+CAPTURE_VISIBLE = os.environ.get("HCS_OVERLAY_CAPTURE", "").lower() in {"1", "true", "yes"}
+_ACTIVE_WINDOWS: list = []  # overlay + widget windows, hidden for a moment while we take our own screenshots
+
+
+class hidden_for_capture:
+    """`with hidden_for_capture(): grab()` — in capture-visible mode, fade our windows out while a screenshot is
+    taken so Holo never reasons about our own marks; no-op otherwise (they are already invisible to capture)."""
+
+    def __enter__(self):
+        self.active = CAPTURE_VISIBLE and bool(_ACTIVE_WINDOWS)
+        if self.active:
+            for w in _ACTIVE_WINDOWS:
+                _on_main(lambda w=w: w.setAlphaValue_(0.0))
+            time.sleep(0.08)  # one frame for the compositor
+        return self
+
+    def __exit__(self, *exc):
+        if self.active:
+            for w in _ACTIVE_WINDOWS:
+                _on_main(lambda w=w: w.setAlphaValue_(1.0))
+        return False
 
 
 def _on_main(fn: Callable[[], None]) -> None:
