@@ -954,3 +954,12 @@ n'est envoyée à Holo. **36 tests desktop/calibration passent**. Dans l'app ré
 le panneau « Check your camera » et la prévisualisation sont disponibles ; le
 bouton de calibration reste désactivé tant que le visage n'est pas détecté.
 La précision du nouveau tracker natif n'est pas validée par ce contrôle.
+
+L'essai suivant expose un défaut de récupération : si la deuxième caméra ne
+s'ouvre pas, le choix de caméra disparaissait avec la prévisualisation. Le choix
+et l'erreur restent maintenant visibles même après cet échec. La caméra intégrée
+est identifiée comme index 0 (Camera 1) ; après relance, le tracker renvoie une
+prévisualisation, un visage détecté et environ 23 images/s. L'état du panneau
+confirme « Check your camera » avec la préparation ouverte. **37 tests passent**,
+dont la régression de récupération après caméra indisponible. Les cibles n'ont
+pas été remplies par l'agent ; la suite reste un essai humain.

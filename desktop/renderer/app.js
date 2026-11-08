@@ -536,7 +536,7 @@ async function loadVision(s) {
   const state = !v.available ? "Not installed" : v.starting ? "Starting camera" : v.checkingCamera ? "Check your camera" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
   $("visionState").textContent = state;
   $("visionState").className = `badge${v.running ? " on" : ""}`;
-  $("visionBtn").textContent = v.running ? (v.builtin ? "Stop tracking" : "Close the lab") : "Recalibrate";
+  $("visionBtn").textContent = v.running ? (v.builtin ? "Stop tracking" : "Close the lab") : v.native ? "Open camera preview" : "Recalibrate";
   $("visionBtn").disabled = !v.available;
   $("visionNote").textContent = v.reason || (v.starting
     ? "Allow the camera in the macOS dialog if asked. The preview opens first; you can cancel with Stop tracking."
@@ -555,11 +555,15 @@ async function loadVision(s) {
       ? "Check the camera first, then calibrate (9 dots + an accuracy check). Esc or Cancel closes calibration."
       : "Opens Édouard's Vision Lab on the calibration screen.");
   $("visionBtn").onclick = async () => loadVision(v.running ? await api.vision.stop() : await api.vision.start());
-  $("cameraCheck").hidden = !v.checkingCamera;
+  // Keep camera selection reachable after a device fails; otherwise retry is stuck on the same camera.
+  $("cameraCheck").hidden = !v.native;
   const preview = $("cameraPreview");
+  preview.hidden = !v.checkingCamera || !v.preview;
   if (v.checkingCamera && v.preview) preview.src = v.preview;
   else preview.removeAttribute("src");
-  $("cameraCheckNote").textContent = v.face ? `Face detected · ${v.fps} fps` : "No face detected yet — look at the camera, or try the other camera.";
+  $("cameraCheckNote").textContent = !v.running ? "Choose a camera and open its preview before calibrating."
+    : v.face ? `Face detected · ${v.fps} fps` : "No face detected yet — look at the camera, or try the other camera.";
+  $("calibrateBtn").hidden = !v.checkingCamera;
   $("calibrateBtn").disabled = !v.checkingCamera || !v.face || v.starting;
   $("calibrateBtn").onclick = async () => loadVision(await api.vision.calibrate());
   $("cameraChoice").value = String(v.cameraIndex ?? 0);

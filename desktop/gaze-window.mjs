@@ -237,7 +237,8 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
 
   async function startNative(epoch) {
     if (!proc || proc.exitCode !== null) {
-      const child = spawn(trackerPython, [trackerScript, "--camera", String(cameraIndex)], { stdio: "ignore" });
+      const child = spawn(trackerPython, [trackerScript, "--camera", String(cameraIndex)], { stdio: ["ignore", "ignore", "pipe"] });
+      child.stderr?.on("data", (data) => console.error(`[gaze camera] ${String(data).slice(0, 2000)}`));
       proc = child;
       child.on("exit", () => { if (proc === child) { proc = null; fail("The camera tracker stopped. You can try Recalibrate again."); } });
       child.on("error", () => { if (proc === child) fail("The camera tracker could not start. Check its Python installation."); });

@@ -58,6 +58,17 @@ test("new desktop preserves configured voice and ignores stale Cmd-H preference"
   assert.ok(!r.ids.get("pttKeys").children.some((b) => b.dataset.key === "cmd+h"));
 });
 
+test("an unavailable camera keeps its error and camera selector visible for recovery", async () => {
+  const r = await renderer();
+  await vm.runInContext('loadVision({available: true, native: true, running: false, cameraIndex: 1, reason: "Camera is unavailable"})', r.context);
+  assert.equal(r.ids.get("cameraCheck").hidden, false);
+  assert.equal(r.ids.get("cameraChoice").value, "1");
+  assert.equal(r.ids.get("visionNote").textContent, "Camera is unavailable");
+  assert.equal(r.ids.get("cameraPreview").hidden, true);
+  assert.equal(r.ids.get("calibrateBtn").hidden, true);
+  assert.equal(r.ids.get("visionBtn").textContent, "Open camera preview");
+});
+
 test("observe-only refuses slider keyboard and direct selection without posting autonomy", async () => {
   const r = await renderer();
   r.ids.get("magnet").events.keydown({ key: "End", preventDefault() {} });
