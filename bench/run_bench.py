@@ -383,7 +383,7 @@ def build_report(rows: list[dict], data: dict, pricing: dict, meta_run: dict) ->
                     pr = [(base_g[x["trial"]], x) for x in vs if x["trial"] in base_g]
                     b2 = sum(1 for g, x in pr if g["success"] and not x["success"])
                     c2 = sum(1 for g, x in pr if x["success"] and not g["success"])
-                    L.append(line(f"G variant `{vname}` · gaze ~{c[4:]} px", vs,
+                    L.append(line(f"G variant `{vname}` · " + (f"gaze ~{c[4:]} px" if c.startswith("gaze") else "looking elsewhere"), vs,
                                   f" {paired(vs, F_by_task)} · vs G: +{c2} / −{b2}, p={mcnemar(b2, c2):.2f} |"))
         if C and "gaze_vs_centre" in mm:
             gv = mm["gaze_vs_centre"]

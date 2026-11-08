@@ -1,0 +1,286 @@
+{
+  "run": {
+    "started_at": "2026-11-08 04:05 UTC",
+    "models": [
+      "holo4-35b-a3b"
+    ],
+    "workers": 3,
+    "f_repeats": 1,
+    "pricing": {
+      "holo3-1-35b-a3b": {
+        "prompt": 2.5e-07,
+        "completion": 1.8e-06
+      },
+      "holo3-122b-a10b": {
+        "prompt": 4e-07,
+        "completion": 3e-06
+      },
+      "holo4-27b": {
+        "prompt": 4e-07,
+        "completion": 3e-06
+      },
+      "holo4-35b-a3b": {
+        "prompt": 3e-07,
+        "completion": 2e-06
+      }
+    },
+    "variants": {
+      "min768plain": [
+        "gaze60",
+        "gaze120",
+        "gaze200",
+        "elsewhere"
+      ]
+    }
+  },
+  "dataset": {
+    "errors_px": [
+      60,
+      120,
+      200
+    ],
+    "draws": 2,
+    "elsewhere": 1,
+    "per_site": 8,
+    "seed": 7,
+    "margin_px": 40,
+    "min_crop": {
+      "w": 512,
+      "h": 320
+    },
+    "screen": [
+      1440,
+      900
+    ],
+    "heatmap": {
+      "sigmaMin": 96,
+      "sigmaMax": 320,
+      "roiMass": 0.8
+    },
+    "created_at": "2026-11-08T04:05:34.185Z"
+  },
+  "models": {
+    "holo4-35b-a3b": {
+      "F \u00b7 full 1024 (today)": {
+        "n": 112,
+        "success": 106,
+        "success_ci": [
+          0.8880283464156127,
+          0.9752193987812767
+        ],
+        "median_latency_s": 1.2546464779952657,
+        "latency_ci": [
+          1.2035016199952224,
+          1.307652435003547
+        ],
+        "mean_prompt_tokens": 1118.544642857143,
+        "mean_cost_usd": 0.0005326526785714285,
+        "median_pixels": 655360.0
+      },
+      "Fn \u00b7 full native": {
+        "n": 112,
+        "success": 108,
+        "success_ci": [
+          0.9117520412990205,
+          0.9860256137057446
+        ],
+        "median_latency_s": 1.523168154501036,
+        "latency_ci": [
+          1.4460421230032807,
+          1.535992876495584
+        ],
+        "mean_prompt_tokens": 1738.544642857143,
+        "mean_cost_usd": 0.0007183133928571428,
+        "median_pixels": 1296000.0
+      },
+      "G \u00b7 gaze ~60 px": {
+        "n": 224,
+        "success": 191,
+        "success_ci": [
+          0.8003275687934991,
+          0.8931366624970115
+        ],
+        "median_latency_s": 1.022009981003066,
+        "latency_ci": [
+          1.0136157650013047,
+          1.0233443010074552
+        ],
+        "mean_prompt_tokens": 803.03125,
+        "mean_cost_usd": 0.00044244508928571426,
+        "median_pixels": 182272.0,
+        "fallbacks": 6,
+        "found_but_wrong": 31,
+        "target_in_crop": 221,
+        "not_found_although_in_crop": 6
+      },
+      "G \u00b7 gaze ~120 px": {
+        "n": 223,
+        "success": 187,
+        "success_ci": [
+          0.7846084352817596,
+          0.8810543003011316
+        ],
+        "median_latency_s": 1.0229651769914199,
+        "latency_ci": [
+          1.0221794710014365,
+          1.0333798299980117
+        ],
+        "mean_prompt_tokens": 842.7085201793722,
+        "mean_cost_usd": 0.00045544932735426004,
+        "median_pixels": 217600,
+        "fallbacks": 7,
+        "found_but_wrong": 34,
+        "target_in_crop": 213,
+        "not_found_although_in_crop": 6
+      },
+      "G \u00b7 gaze ~200 px": {
+        "n": 223,
+        "success": 210,
+        "success_ci": [
+          0.9028285724843326,
+          0.9656188375145389
+        ],
+        "median_latency_s": 1.2216659359983169,
+        "latency_ci": [
+          1.186686954999459,
+          1.2270691189914942
+        ],
+        "mean_prompt_tokens": 1055.8026905829597,
+        "mean_cost_usd": 0.0005221040358744394,
+        "median_pixels": 395620,
+        "fallbacks": 11,
+        "found_but_wrong": 11,
+        "target_in_crop": 213,
+        "not_found_although_in_crop": 9
+      },
+      "G \u00b7 looking elsewhere": {
+        "n": 111,
+        "success": 103,
+        "success_ci": [
+          0.8641960123478968,
+          0.963030358583891
+        ],
+        "median_latency_s": 2.074905312998453,
+        "latency_ci": [
+          2.0024385350043303,
+          2.1341261440102244
+        ],
+        "mean_prompt_tokens": 1872.6756756756756,
+        "mean_cost_usd": 0.0008679648648648648,
+        "median_pixels": 247296,
+        "fallbacks": 104,
+        "found_but_wrong": 3,
+        "target_in_crop": 4,
+        "not_found_although_in_crop": 0
+      },
+      "G \u00b7 mix: fair webcam + 10 % elsewhere": {
+        "n": 248,
+        "success": 209,
+        "success_ci": [
+          0.7922487417038174,
+          0.8827787358852704
+        ],
+        "median_latency_s": 1.0272152799952892,
+        "latency_ci": [
+          1.0226487450054265,
+          1.0971260809892556
+        ],
+        "mean_prompt_tokens": 935.5564516129032,
+        "mean_cost_usd": 0.0004930379032258064,
+        "median_pixels": 217600.0
+      },
+      "C \u00b7 centre crop, no gaze (size of G ~120 px)": {
+        "n": 224,
+        "success": 205,
+        "success_ci": [
+          0.8713292207042087,
+          0.9450274060048733
+        ],
+        "median_latency_s": 2.0066592740040505,
+        "latency_ci": [
+          1.9250307999900542,
+          2.0724414290016284
+        ],
+        "mean_prompt_tokens": 1691.6785714285713,
+        "mean_cost_usd": 0.0007943071428571428,
+        "median_pixels": 217600.0
+      },
+      "gaze_vs_centre": {
+        "n": 223,
+        "only_gaze_right": 11,
+        "only_centre_right": 28,
+        "p": 0.009475304279476404
+      },
+      "G variant `min768plain` \u00b7 gaze ~60 px": {
+        "n": 223,
+        "success": 216,
+        "success_ci": [
+          0.9366345355149315,
+          0.984713224331587
+        ],
+        "median_latency_s": 1.130662505995133,
+        "latency_ci": [
+          1.0413780060043791,
+          1.1740963730044314
+        ],
+        "mean_prompt_tokens": 956.9551569506726,
+        "mean_cost_usd": 0.0004902255605381165,
+        "median_pixels": 368640
+      },
+      "G variant `min768plain` \u00b7 gaze ~120 px": {
+        "n": 224,
+        "success": 211,
+        "success_ci": [
+          0.9032510545508721,
+          0.9657737416233121
+        ],
+        "median_latency_s": 1.1879234805019223,
+        "latency_ci": [
+          1.1214968410022266,
+          1.2253239120000217
+        ],
+        "mean_prompt_tokens": 973.7767857142857,
+        "mean_cost_usd": 0.0004960348214285714,
+        "median_pixels": 368640.0
+      },
+      "G variant `min768plain` \u00b7 gaze ~200 px": {
+        "n": 224,
+        "success": 217,
+        "success_ci": [
+          0.9369111309654315,
+          0.9847818346738547
+        ],
+        "median_latency_s": 1.2267624750020332,
+        "latency_ci": [
+          1.2230970700038597,
+          1.243137174500589
+        ],
+        "mean_prompt_tokens": 1088.236607142857,
+        "mean_cost_usd": 0.0005299888392857143,
+        "median_pixels": 476880.0
+      },
+      "G variant `min768plain` \u00b7 looking elsewhere": {
+        "n": 112,
+        "success": 103,
+        "success_ci": [
+          0.8543029723025655,
+          0.9571499081825106
+        ],
+        "median_latency_s": 2.1269192679974367,
+        "latency_ci": [
+          2.0160795185074676,
+          2.2188664300119854
+        ],
+        "mean_prompt_tokens": 1838.705357142857,
+        "mean_cost_usd": 0.0008614330357142857,
+        "median_pixels": 370944.0
+      },
+      "image_tokens": {
+        "fixed_full_prompt": 538,
+        "fixed_crop_prompt": 648,
+        "F_image": 580.5446428571429,
+        "G_image": 207.16133162612036
+      }
+    }
+  }
+}
