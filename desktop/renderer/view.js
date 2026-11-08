@@ -27,6 +27,9 @@ export function headline(status) {
     return { text: "Agent not running", sub: "The app connects as soon as it runs", tone: "off", pulse: false };
   }
   const v = status.voice || {};
+  if (v.state === "starting") return { text: "Opening microphone…", sub: "Allow microphone access if macOS asks", tone: "live", pulse: true };
+  if (typeof v.state === "string" && v.state.startsWith("error:")) return { text: "Microphone or transcription error", sub: v.state.slice(6).trim(), tone: "warn", pulse: false };
+  if (v.state === "too_short") return { text: "Recording too short", sub: `Hold ${keyLabel(v.ptt_key)} while speaking, then release`, tone: "warn", pulse: false };
   if (v.state === "recording") return { text: "Listening…", sub: "Release the key when you are done", tone: "live", pulse: true };
   if (v.state === "transcribing") return { text: "Transcribing…", sub: v.last_text || "", tone: "live", pulse: true };
   const c = status.current;

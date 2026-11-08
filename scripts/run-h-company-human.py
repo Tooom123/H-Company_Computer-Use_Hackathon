@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--private-root', type=Path, default=Path.home() / 'Library/Application Support/HCompanionResearch/human-h-company')
     parser.add_argument('--control-port', type=int, default=8780)
     parser.add_argument('--backend-port', type=int, default=8781)
-    parser.add_argument('--key', default='cmd+h')
+    parser.add_argument('--key', default='ctrl+shift+h')
     args = parser.parse_args()
     if args.control_port == args.backend_port or not all(1024 <= p <= 65535 for p in (args.control_port, args.backend_port)):
         parser.error('Choose two distinct local ports.')
@@ -57,7 +57,8 @@ def main():
     os.environ.update(HCS_AUTONOMY='0', HCS_GUIDE_OBSERVE_ONLY='1', HCS_AUTO_CLEANUP='0',
         HCS_MODEL='holo4-35b-a3b', HCS_CONTROL_PORT=str(args.control_port),
         HCS_BACKEND_URL=f'http://127.0.0.1:{args.backend_port}', HCS_INGEST_TOKEN=credentials['ingest_token'],
-        HCS_SUPPORT_USER='human-h-company', HCS_SUPPORT_EVENTS='1', HCS_PTT_KEY=args.key)
+        HCS_SUPPORT_USER='human-h-company', HCS_SUPPORT_EVENTS='1', HCS_PTT_KEY=args.key,
+        HCS_RUNS_DIR=str(runs))
     from hcs_backend.app import create_app
     from hcs_backend.config import Settings
     import uvicorn

@@ -162,3 +162,26 @@ def test_missing_visual_check_never_confirms_step():
     runner.backend = SimpleNamespace()
     assert runner._screen_shows("expected") == "no"
     assert runner._ensure_screen(SimpleNamespace(expected_screen="expected")) is False
+
+
+def test_fast_verification_keeps_evidence_without_an_invented_h_session(tmp_path, monkeypatch):
+    backend = MockBackend(step_delay_s=0)
+    observed = "Odoo visibly confirms the requested activity and due date."
+    monkeypatch.setattr(backend, "effect_visible", lambda _: (True, observed))
+    monkeypatch.setattr(backend, "verify", lambda *a: pytest.fail("Unexpected autonomous verifier"))
+    runner = Intervention(_request(), backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    owned_id = "00000000-0000-4000-8000-000000000000"  # offline fixture, never sent to H
+    monkeypatch.setattr(runner, "_scripted_guide", lambda bound: AttemptResult(
+        owned_id, "completed", DeclaredResult(outcome="done")))
+    runner.start()
+    runner.approve(ApproveCommand())
+    runner.wait(3)
+    report = runner.report
+    assert report.status is CaseStatus.resolved
+    assert report.h_session_ids == [owned_id]
+    assert report.verification.performed and report.verification.satisfied
+    assert set(report.verification.checks) == set(runner._bound.checks)
+    assert observed in report.verification.observed
+    assert report.verification.evidence_refs == []
+    for key in runner._bound.checks:
+        assert any(step.summary.startswith(f"fast check {key}: yes") for step in report.steps)

@@ -14,6 +14,15 @@ test("voice states win", () => {
   assert.equal(headline({ ...task({ state: "awaiting_user" }), voice: { state: "recording" } }).text, "Listening…");
 });
 
+test("microphone failures stay visible and the safe shortcut is rendered", () => {
+  const voice = (state) => headline({ ...base, voice: { state, ptt_key: "ctrl+shift+h" } });
+  assert.equal(voice("starting").text, "Opening microphone…");
+  assert.equal(voice("error: microphone PortAudioError: permission denied").tone, "warn");
+  assert.match(voice("error: microphone PortAudioError: permission denied").sub, /permission denied/);
+  assert.match(voice("too_short").sub, /⌃⇧H/);
+  assert.match(voice(null).sub, /⌃⇧H/);
+});
+
 test("guide step, takeover, verification, stopping", () => {
   const step = { index: 2, total: 3, instruction: "Click New" };
   assert.deepEqual(headline(task({ state: "awaiting_user", step })), { text: "Step 2 of 3", sub: "Click New", tone: "live", pulse: false });

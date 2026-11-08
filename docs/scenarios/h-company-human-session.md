@@ -52,13 +52,16 @@ Matteo ; ce n'est pas automatiquement un commentaire attaché à l'étape.
 Lecture du checkout de travail, pas preuve que ce binaire tourne déjà :
 
 - `hcs-agent talk` propose le push-to-talk : maintenir la touche, parler, relâcher.
-  Défaut **⌘H**, configurable par `--key` ou `HCS_PTT_KEY` ; `f9` est un exemple
-  accepté par le CLI. Vérifier le raccourci choisi sur ce Mac avant la séance.
+  Pour cette séance, utiliser **Ctrl+Maj+H**, nouveau défaut du lanceur humain.
+  Le CLI seul conserve son ancien défaut **⌘H** : sur ce Mac, ce raccourci a
+  masqué la fenêtre active et la dictée est restée bloquée. Le remplacer via
+  `--key` ou `HCS_PTT_KEY` avant un lancement direct du CLI. Le premier échange
+  vocal guidé réussi et son feedback restent à vérifier après cette correction.
 - Lancement recommandé depuis `h-companion`, avec le Python de l'environnement
   de test disposant des dépendances. Le lanceur utilise le checkout de travail :
 
   ```bash
-  python3 scripts/run-h-company-human.py --key cmd+h
+  python3 scripts/run-h-company-human.py --key ctrl+shift+h
   ```
 
   Puis, dans un autre terminal, ouvrir la dernière app desktop :

@@ -21,6 +21,11 @@ guidage ; ils ne démontrent pas encore son utilité pour une personne.
   réponses, revues IA et feedback humain. Son style reprend la homepage de Tom.
   L'import Markdown et la recherche lexicale BM25 sont disponibles ; ce n'est
   pas encore une recherche hybride.
+- L'app de coaching H est lancée localement en mode GUIDE : Holo4, onze documents
+  H chargés, transcription Gladia configurée, autonomie zéro et
+  `observe_only=true`. ElevenLabs n'est pas configuré : aucune réponse vocale
+  de synthèse n'est disponible dans cette session. Le premier échange vocal
+  guidé réel et son feedback utilisateur restent à faire.
 
 Sur le Mac d'Edouard : [tour de contrôle](http://127.0.0.1:8771/company/live),
 [sessions](http://127.0.0.1:8771/company/sessions),
@@ -29,7 +34,15 @@ Ces adresses sont locales ; un collègue ne peut pas y accéder à distance avec
 son propre `127.0.0.1`. Le lancement et l'authentification du portail sont décrits
 dans [le mode d'emploi](native-cloud-pilot.md).
 
-## Campagne H — état avant les nouveaux retests
+Le runtime du test humain utilise séparément le contrôle sur `127.0.0.1:8780`
+et le backend sur `127.0.0.1:8781`. Les commandes de lancement et dix questions
+progressives figurent dans le [parcours humain H](scenarios/h-company-human-session.md).
+Le premier essai de dictée a révélé un conflit avec `⌘H`, qui masque la fenêtre
+active sur macOS et a laissé l'enregistrement bloqué. Le lanceur utilise
+désormais **Ctrl+Maj+H** ; le redémarrage et le premier échange guidé complet
+restent à valider. Le défaut historique du CLI seul reste `⌘H`.
+
+## Campagne H — résultats des essais autonomes
 
 Audit des archives privées du 8 novembre : **13 exécutions, dix cartes HC01–HC10**.
 Les six cas documentaires ont été lancés en parallèle ; après une sonde de
@@ -73,15 +86,24 @@ sont donc :
    ne pas prendre l'heure de création pour une durée, ni déduire des tokens d'un
    compteur visuel. Un statut Interrupted peut provenir de notre fermeture après
    réponse et ne démontre pas une panne métier.
-3. **App de l'équipe** : intégrer les avancées desktop/voix/conversation de
-   `main`, puis tester un parcours GUIDE réel avec une personne. Conserver le
-   comportement « vérification indisponible = inconclusif ».
+3. **App de l'équipe** : tester maintenant un parcours GUIDE réel avec une
+   personne, sur la version intégrée. Conserver le comportement
+   « vérification indisponible = inconclusif » et enregistrer séparément son
+   retour sur la réussite et l'utilité de l'aide.
+
+Le dernier `origin/main` de l'équipe, `1f35eef`, a été intégré à notre branche
+par le commit de fusion `b4ad15e`. Le raccordement du coaching humain H est
+commité dans `4626800`. **75 tests ciblés et six tests desktop passent** ; une
+vérification de l'interface avec réponses simulées n'a relevé aucune erreur
+JavaScript. Ces contrôles ne constituent pas un essai vocal humain. Le total
+historique de 838 tests ne doit pas être présenté comme la couverture de cette
+nouvelle fonctionnalité.
 
 La [PR n°4](https://github.com/Tooom123/H-Company_Computer-Use_Hackathon/pull/4)
-regroupe les pilotes et le portail. Au début de cet audit, elle est en brouillon,
-sans revue et en conflit avec les nouveautés de `main`. Il faut résoudre les
-conflits sur la branche, passer les contrôles puis obtenir la revue d'un équipier
-avant fusion, conformément à `AGENTS.md`.
+regroupe les pilotes et le portail. Elle n'est pas fusionnée ; les nouveaux
+commits locaux ne sont pas encore poussés. La résolution locale des conflits
+ne met donc pas encore à jour son état distant. Après publication, obtenir la
+revue d'un équipier avant fusion, conformément à `AGENTS.md`.
 
 ## Passage à SAP et répartition proposée
 
@@ -100,14 +122,15 @@ une modification, réserver un brouillon par essai et laisser Order à l'humain.
   paramètres des cibles et admission des campagnes sans conflit de données.
 - **Matteo** : boucle GUIDE de l'app, une instruction puis attente et contrôle
   visuel ; voix, arrêt et retour explicite en cas de blocage. Autonomie zéro pour
-  le premier essai de coaching, afin d'observer ce que l'utilisateur fait.
-  Cette valeur empêche la reprise automatique de la tâche, mais le vérificateur
-  de secours peut encore naviguer : la promesse « aucun clic de l'agent » exige
-  un contrôle supplémentaire avant une démonstration de guidage strict.
-- **Edouard** : connexion SAP, vérification des données de départ et essais
-  utilisateurs ; feedback oral avec réussite, utilité et compréhension séparées.
-- **Agents de recherche/test** : retests H ciblés, revue des traces et archivage ;
-  avancer en parallèle des essais humains sans prendre le contrôle du Mac.
+  le premier essai de coaching, avec le contrôle `observe_only` actif pour
+  empêcher les actions de l'agent, y compris pendant la vérification. Vérifier
+  ce comportement sur la première trace humaine.
+- **Edouard** : premier parcours vocal H puis feedback oral et labels explicites
+  de réussite et d'utilité ; ensuite connexion SAP et vérification des données
+  de départ. La compréhension reste une appréciation à demander à la personne.
+- **Agents de recherche/test** : revue des traces et archivage en parallèle sans
+  piloter le Mac pendant le test humain. Les retests cloud H ne sont pas la
+  priorité de cette session.
 
 Priorité de démonstration : une tâche GUIDE utile et vérifiée, sa trace dans la
 tour de contrôle, puis le feedback utilisateur. Le fine-tuning vient après la

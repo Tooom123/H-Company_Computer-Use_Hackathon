@@ -94,9 +94,18 @@ class InputHub:
             return event
         from Quartz import (CGEventGetFlags, CGEventGetIntegerValueField, kCGEventFlagMaskAlternate,
                             kCGEventFlagMaskCommand, kCGEventFlagMaskControl, kCGEventFlagMaskShift,
-                            kCGEventKeyDown, kCGEventKeyUp, kCGKeyboardEventKeycode)
+                            kCGEventFlagsChanged, kCGEventKeyDown, kCGEventKeyUp, kCGKeyboardEventKeycode)
 
-        if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
+        if event_type not in (kCGEventKeyDown, kCGEventKeyUp, kCGEventFlagsChanged):
+            return event
+        flags = CGEventGetFlags(event)
+        held = {"cmd": bool(flags & kCGEventFlagMaskCommand), "alt": bool(flags & kCGEventFlagMaskAlternate),
+                "ctrl": bool(flags & kCGEventFlagMaskControl), "shift": bool(flags & kCGEventFlagMaskShift)}
+        if event_type == kCGEventFlagsChanged:
+            # macOS reports modifier releases as flagsChanged, not ordinary keyUp events.
+            if self._combo_down and not all(held.get(m) for m in self._combo_mods):
+                self._combo_down = False
+                self._emit("combo_up", None)
             return event
         keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
         if keycode != self._combo_keycode:
@@ -104,9 +113,6 @@ class InputHub:
                 self._combo_down = False
                 self._emit("combo_up", None)
             return event
-        flags = CGEventGetFlags(event)
-        held = {"cmd": bool(flags & kCGEventFlagMaskCommand), "alt": bool(flags & kCGEventFlagMaskAlternate),
-                "ctrl": bool(flags & kCGEventFlagMaskControl), "shift": bool(flags & kCGEventFlagMaskShift)}
         if not all(held.get(m) for m in self._combo_mods):
             if self._combo_down:
                 self._combo_down = False

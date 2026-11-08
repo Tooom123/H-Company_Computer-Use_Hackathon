@@ -560,3 +560,44 @@ user actually sees when clicking Won. Standard Odoo lets a salesperson mark thei
 block may need a record owned by another salesperson or a custom rule; confirm before relying on it on stage.
 Also worth doing on the demo database: finish or dismiss the Odoo onboarding tour (its pin covers the "New"
 button and column title).
+
+## 2026-11-08 — Coaching H humain : intégration et préparation locale
+
+Le dernier `origin/main` de l'équipe (`1f35eef`) est intégré à notre branche
+par le commit de fusion `b4ad15e`. Le code du parcours humain H est commité
+dans `4626800`. Ces nouveaux commits ne sont pas encore poussés et la PR n°4
+n'est pas fusionnée ; cet état local ne vaut pas validation de la PR distante.
+
+Le runtime réel est lancé avec le contrôle sur `127.0.0.1:8780` et le backend
+sur `127.0.0.1:8781` : mode GUIDE, `observe_only=true`, autonomie zéro,
+Holo4 et onze documents H chargés. Gladia est configuré pour transcrire la
+voix. ElevenLabs n'est pas configuré : pas de synthèse vocale dans cette
+session. Le mode d'emploi est le
+[parcours humain H](scenarios/h-company-human-session.md).
+
+Validation technique : **75 tests ciblés et six tests desktop passent**.
+Une vérification de l'interface avec réponses simulées n'a relevé aucune erreur
+JavaScript. Le total historique de 838 tests ne couvre pas à lui seul ce nouveau
+parcours ; les contrôles ciblés et l'essai simulé restent distincts d'un test
+humain de bout en bout.
+
+**À réaliser : la première demande orale guidée et le feedback réel de la
+personne.** Aucun succès GUIDE, bénéfice utilisateur ni label humain n'est
+déduit du démarrage de l'app ou des tests simulés. Après l'essai, contrôler la
+trace d'observation, les instructions affichées, l'attente des actions humaines
+et l'enregistrement explicite du retour et des labels.
+
+Premier blocage signalé par l'utilisateur pendant la dictée : `⌘H` masque la
+fenêtre active sur macOS et l'enregistrement est resté bloqué. Le défaut du
+lanceur humain est remplacé par **Ctrl+Maj+H** (`--key ctrl+shift+h`) ; le CLI
+direct conserve son ancien défaut `⌘H`. Le redémarrage et la validation vocale
+après correction restent à effectuer. Les tests indiqués ci-dessus précèdent
+cette correction et ne prouvent pas sa réussite en conditions réelles.
+
+Correctif supplémentaire : démarrage/arrêt audio sérialisés hors du callback
+clavier, erreurs de périphérique visibles, relâchement des modificateurs macOS
+reconnu. Les 42 tests ciblés voix/observation et les sept tests desktop passent.
+La vérification directe du modèle conserve ses observations sans ajouter un
+faux identifiant de session H dans l'archive. Les logs du lanceur humain suivent
+désormais le même dossier privé que les épisodes. Aucun nouvel essai H ni retour
+humain n'a été fabriqué pour ces contrôles.

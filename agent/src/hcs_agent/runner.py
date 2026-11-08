@@ -539,7 +539,9 @@ class Intervention:
                 return None  # let the agent verifier navigate and look properly
         from .backend import VerifyResult
 
-        return VerifyResult("holo-screen-check", "completed", results, "; ".join(seen)[:400], cost_usd=0.0)
+        # Direct Models checks do not create an Agents API session. Their
+        # observations remain in checks/observed and the per-check step trace.
+        return VerifyResult(None, "completed", results, "; ".join(seen)[:400], cost_usd=0.0)
 
     @staticmethod
     def _read_visual_check(check, expected: str) -> tuple[bool, str]:
