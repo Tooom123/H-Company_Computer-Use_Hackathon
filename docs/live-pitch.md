@@ -56,4 +56,4 @@ None of these files belong in Git. Webcam images are not recorded by this featur
 - Use Stop task if the coach loops. An interrupted run must remain labelled interrupted, not successful.
 - Keep the portal on the same Mac for this pitch. `hcompanion.help` is the landing page, not this private live dashboard.
 
-Validation: 111 targeted automated checks passed (guidance, gaze cropping, exact image payload persistence, authenticated routes, launcher and backend). A fresh live voice/crop/report rehearsal is still required.
+Validation: 111 targeted automated checks passed (guidance, gaze cropping, exact image payload persistence, authenticated routes, launcher and backend). The first live rehearsal sent a real crop retaining 92.4% of the screen, then fell back to full screen; 13 real events were persisted, but the session still awaited user input. See `docs/test-log.md`. A tighter crop and a complete voice/crop/report rehearsal remain to validate.

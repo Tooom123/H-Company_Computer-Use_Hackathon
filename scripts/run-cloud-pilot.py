@@ -26,6 +26,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--private-root', type=Path, default=Path.home() / 'Library/Application Support/HCompanionResearch/cloud-pilot')
     parser.add_argument('--port', type=int, default=8771)
+    parser.add_argument('--env-file', type=Path, help='Existing private provider environment; not copied into the checkout.')
     parser.add_argument('--max-parallel', type=int, default=2)
     parser.add_argument('--history', type=Path, action='append', default=[])
     parser.add_argument('--human-history', type=Path, action='append', default=[])
@@ -54,9 +55,10 @@ def main():
     from pilot.cloud_server import create_cloud_app
     from pilot.knowledge import LocalMarkdownKnowledge
     import uvicorn
-    key = dotenv_values(ROOT / 'app/.env').get('HAI_API_KEY')
+    env_file = args.env_file.expanduser() if args.env_file else ROOT / 'app/.env'
+    key = dotenv_values(env_file).get('HAI_API_KEY')
     if not key:
-        raise SystemExit('HAI_API_KEY is missing from app/.env.')
+        raise SystemExit('HAI_API_KEY is missing from the configured provider environment.')
     token = secrets.token_urlsafe(32)
     (private / 'pilot-token').write_text(token)
     credentials_path = private / 'company-credentials.json'

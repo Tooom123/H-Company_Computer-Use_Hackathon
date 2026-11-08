@@ -982,3 +982,29 @@ le même PID Electron ainsi que le même moteur H réel, sans deuxième écouteu
 Le panneau affiche « Open camera preview », Camera 1, et le moteur rapporte
 Vision activée. Le tracker est arrêté : aucune nouvelle calibration ni mesure de
 précision n'a été réalisée pendant ce contrôle. Aucun appel Holo de scénario.
+
+### 2026-11-08 — Pitch live : recadrage réellement envoyé, puis repli plein écran
+
+Essai humain « Where can I create an agent? », session `sess_74ff9c698af5`,
+démarré à 14:29:22 Paris. Holo4, Vision active, regard frais, erreur de calibration
+annoncée 254 px. Mode explicite de localisation visuelle du premier contrôle.
+
+Deux requêtes Models API terminées avec HTTP 200, un essai chacune :
+
+| Image | Région (points écran) | JPEG envoyé | Latence requête | Tokens image | Tokens entrée totaux |
+| --- | --- | --- | --- | --- | --- |
+| Recadrage gaze × controls × intent | x=0, y=72, 1470 × 883 | 1024 × 615 | 1 277 ms | 608 | 1 189 |
+| Repli plein écran | x=0, y=0, 1470 × 956 | 1024 × 665 | 1 178 ms | 672 | 1 170 |
+
+Les SHA-256 des JPEG privés correspondent à leurs métadonnées d'envoi ; les
+identifiants de réponse fournisseur sont présents. Le recadrage conserve 92,4 %
+de la surface, et le moteur compte un repli, zéro localisation réussie sur crop.
+La liaison est effective, mais cet essai ne valide ni un recadrage utile, ni une
+économie globale : 1 280 tokens image consommés entre ces deux appels.
+
+Au contrôle, 13 événements réels sont persistés dans le backend SQLite pour cette
+session ; aucun rapport final, état `awaiting_user` à l'étape 2 (« New agent »).
+Les fichiers request/episode/events et l'image locale avant intervention existent.
+L'agent de vérification n'a ni avancé ni arrêté la tâche, ni inventé un label humain.
+Le prochain travail est de resserrer la sélection de région puis de refaire un
+essai complet jusqu'au rapport et au feedback humain. Les images restent privées.
