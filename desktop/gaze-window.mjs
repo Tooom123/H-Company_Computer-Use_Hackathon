@@ -77,6 +77,7 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   let proc = null; // the tracker process
   let poll = null; // gaze polling while tracking
   let trackerState = null;
+  let honeycomb = true; // the user can hide the red honeycomb; the gaze still goes to the agent
   const onFeed = (url, d) => {
     if (url === "/accuracy" && Number.isFinite(d.px) && d.px > 0) {
       errorPx = Math.round(d.px);
@@ -150,7 +151,15 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
       await overlay.loadURL(`http://127.0.0.1:${server.address().port}/overlay.html`);
       overlay.showInactive();
       if (Number.isFinite(errorPx)) overlay.webContents.send("overlay:accuracy", errorPx);
+      overlay.webContents.send("overlay:honeycomb", honeycomb);
     }
+  }
+
+  /** Show or hide the honeycomb (calibration dots stay visible). Tracking and the agent feed are unchanged. */
+  function setHoneycomb(on) {
+    honeycomb = Boolean(on);
+    if (overlay && !overlay.isDestroyed()) overlay.webContents.send("overlay:honeycomb", honeycomb);
+    return honeycomb;
   }
 
   // --- native mode: calibration driven by the overlay page, gaze from the background tracker -------------------
@@ -300,5 +309,5 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     server = null;
   }
 
-  return { status, start, stop, dispose };
+  return { status, start, stop, dispose, setHoneycomb };
 }

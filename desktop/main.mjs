@@ -101,6 +101,7 @@ ipcMain.handle("vision:start", async () => {
   vision.on("exit", () => (vision = null));
   return { ...visionStatus(), running: true };
 });
+ipcMain.handle("vision:honeycomb", (_e, on) => gaze.setHoneycomb(on === true));
 ipcMain.handle("vision:stop", () => {
   if (vision && vision.exitCode === null) vision.kill();
   gaze.stop();

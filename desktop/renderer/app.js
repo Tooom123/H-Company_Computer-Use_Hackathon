@@ -518,6 +518,18 @@ $("visionSwitch").addEventListener("click", async () => {
   renderVisionToggle();
 });
 
+// Honeycomb: shown by default; the choice is kept and applied again at each launch.
+function applyHoneycomb(on) {
+  $("honeycombSwitch").setAttribute("aria-checked", String(on));
+  if (api.vision && api.vision.honeycomb) api.vision.honeycomb(on);
+}
+$("honeycombSwitch").addEventListener("click", () => {
+  const on = $("honeycombSwitch").getAttribute("aria-checked") !== "true";
+  pref("honeycomb", on);
+  applyHoneycomb(on);
+});
+applyHoneycomb(pref("honeycomb") !== "false");
+
 async function loadVision(s) {
   renderVisionToggle();
   const v = s || (await api.vision.status());
@@ -531,7 +543,7 @@ async function loadVision(s) {
       ? v.tracking
         ? `The camera follows your gaze in the background (accuracy ~${v.errorPx ?? "?"} px). Stop it here.`
         : v.native
-          ? "Calibration on screen: look at each red dot and click it 5 times, then just look at 4 more dots."
+          ? "Calibration on screen: look at each red dot and click it 3 times, then just look at 4 more dots."
           : v.browser
           ? "Calibration opened in your browser, full screen: start the camera, click each red dot 5 times, then Start tracking."
           : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
