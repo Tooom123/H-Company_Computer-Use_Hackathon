@@ -86,7 +86,7 @@ class TourPoint(BaseModel):
 
     speech: str = Field(min_length=1, max_length=MAX_SPEECH_CHARS,
                         description="One short explanation of this sidebar section, at most 32 words.")
-    target: int = Field(ge=1, description="Exact observed sidebar control ID to highlight, never click.")
+    target: int = Field(ge=1, description="Exact observed sidebar ID: GUIDE highlights it; ACT opens Agents, Sessions or Skills.")
 
     @field_validator("speech")
     @classmethod

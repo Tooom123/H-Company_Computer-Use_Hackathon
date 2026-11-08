@@ -6,13 +6,13 @@ Pour la vidéo de deux minutes, privilégier **tour → cloud → création de S
 
 ## 1. Welcome tour
 
-**Départ :** une page H Platform dont la sidebar montre Agents, Sessions et Skills. Mode **Show me**.
+**Départ :** une page H Platform dont la sidebar montre Agents, Sessions et Skills. Mode **Do it, I watch** pour visiter les pages; **Show me** pour présenter uniquement leurs boutons.
 
 > Hey Companion, I’m new here. Give me a quick tour.
 
 **Attendu :** une phrase sur H, puis trois repères maximum, successivement sur Agents, Sessions et Skills. Chaque repère a une courte phrase prononcée. Le texte reste au centre; seul le contrôle entouré change. Le tour se termine sans récapitulatif. Aucun clic n’est nécessaire pour avancer.
 
-Le modèle prépare cette séquence dans un seul appel `tour`; le runtime la joue sans navigation. Si seuls deux contrôles sont visibles, deux points suffisent. Interrompre pendant le deuxième point doit arrêter la voix et les points restants.
+Le modèle prépare cette séquence dans un seul appel `tour`. En Do it, le runtime ouvre chaque section, confirme sa sélection ou son titre dans une nouvelle lecture AX, puis la présente. Les coordonnées sont relues avant chaque clic. En Show me, il présente uniquement les boutons sans cliquer. Aucun nouvel appel Holo entre les pages, aucune création de ressource. Si seuls deux contrôles sont visibles, deux points suffisent. Interrompre pendant le deuxième point doit arrêter la voix et les visites restantes.
 
 ## 2. Une clé API temporaire
 

@@ -109,7 +109,10 @@ def _stroke(points, rnd, width=1.5, jitter=1.4):
     i = _REVEAL["index"]
     _REVEAL["index"] = i + 1
     total = max(1, _REVEAL["total"])
-    frac = max(0.0, min(1.0, _REVEAL["progress"] * total - i))
+    # The previous scene supplies the initial stroke estimate. A completed
+    # reveal must include every current stroke, even when this scene adds a
+    # target frame after a shorter, text-only introduction.
+    frac = 1.0 if _REVEAL["progress"] >= 1.0 else max(0.0, min(1.0, _REVEAL["progress"] * total - i))
     if frac <= 0:
         return
     pts = list(points)

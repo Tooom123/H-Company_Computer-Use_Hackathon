@@ -64,6 +64,38 @@ def test_control_box_and_explicit_annotation_arrow_are_preserved(drawing):
     assert drawing.arrows == [((100, 200), (200, 200))]
 
 
+@pytest.mark.parametrize("style,frame_strokes", [(0, 1), (1, 2), (2, 1)])
+def test_first_control_frame_is_drawn_after_unanimated_intro(monkeypatch, style, frame_strokes):
+    from hcs_agent import overlay
+
+    strokes = []
+    monkeypatch.setattr(overlay, "_ink", lambda: SimpleNamespace(setStroke=lambda: None))
+    monkeypatch.setattr(overlay, "_wobble_path", lambda points, *args:
+                        [SimpleNamespace(stroke=lambda: strokes.append(tuple(points)))])
+
+    def note(x, y, text, rnd, **kwargs):
+        # Exercise the real stroke reveal path without drawing AppKit text/paper.
+        overlay._stroke([(x, y), (x + 40, y)], rnd)
+        return x, y, 40, 20
+
+    monkeypatch.setattr(overlay, "_note", note)
+    view = overlay._SketchView.alloc().initWithFrame_(((0, 0), (1470, 956)))
+    view.seed = style
+    view.progress = 1.0  # show_scene(..., animate=False), as used by the tour
+    view.scene = overlay.Scene(text="Welcome to H Platform.")
+    view.drawRect_(view.bounds())
+    assert len(strokes) == view.stroke_total == 1
+
+    strokes.clear()
+    view.scene = overlay.Scene(text="Agents is where you create and manage agents.",
+                               target=(160, 580), target_box=(52, 560, 216, 41))
+    view.drawRect_(view.bounds())
+    # The first frame must be visible immediately, even though this scene has
+    # more strokes than the introduction. Waiting for another scene loses Agents.
+    assert len(strokes) == 1 + frame_strokes
+    assert view.stroke_total == len(strokes)
+
+
 def test_detaching_target_preserves_note_page_and_animation_state(monkeypatch):
     from hcs_agent import overlay
 

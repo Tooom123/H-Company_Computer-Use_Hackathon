@@ -75,6 +75,42 @@ def matching_target(original, fresh: Observation):
     return exact[0] if len(exact) == 1 else None
 
 
+TOUR_SECTIONS = {"Agents", "Sessions", "Skills"}
+
+
+def sidebar_target(original, original_viewport, fresh: Observation):
+    """Resolve a read-only section within its sidebar rail, never a body namesake."""
+    if (original.name not in TOUR_SECTIONS or original.role not in {"AXButton", "AXLink", "AXTab"}
+            or not original_viewport or not fresh.viewport):
+        return None
+    ox, _, ow, _ = original_viewport
+    fx, _, fw, _ = fresh.viewport
+    if min(ow, fw) <= 0:
+        return None
+    rail = (original.box[0] - ox) / ow
+    if not 0 <= rail <= .3 or original.box[2] > ow * .33:
+        return None
+    matches = [c for c in fresh.targets.values()
+               if c.name == original.name and c.role == original.role and c.enabled is not False
+               and abs((c.box[0] - fx) / fw - rail) <= .035
+               and 0 < c.box[2] <= fw * .33 and c.box[3] > 0]
+    return matches[0] if len(matches) == 1 else None
+
+
+def tour_destination_ready(target, fresh: Observation) -> bool:
+    if getattr(target, "selected", None) is True:
+        return True
+    # A label in the sidebar isn't evidence that the corresponding page loaded.
+    return any(c.role == "AXHeading" and c.name.strip() == target.name
+               and c.box[0] > target.box[0] + target.box[2]
+               for c in fresh.targets.values())
+
+
+def same_platform_origin(first, second) -> bool:
+    a, b = urlsplit(first), urlsplit(second)
+    return (a.scheme, a.netloc) == (b.scheme, b.netloc) and b.hostname == "platform.hcompany.ai" and allowed_page(second)
+
+
 def inside(point, box) -> bool:
     x, y = point
     bx, by, width, height = box
@@ -400,16 +436,22 @@ class Runtime:
             from .coach_v2_screen import attach_quota
             observed.data = attach_quota(observed.data, run.request.goal)
             run.record("observation", observed.data)
+            observation_ms = round((time.monotonic() - started) * 1000)
             stage = "model"
             client = CoachClient(self.api_key)
+            model_started = time.monotonic()
             decision = client.decide(run.request.goal, observed.data, run.request.mode, history)
             run.record("model", {"decision": decision.model_dump(), "raw": client.last_raw,
                                  "usage": client.last_usage, "latency_ms": round((time.monotonic() - started) * 1000),
+                                 "observation_ms": observation_ms,
+                                 "model_ms": round((time.monotonic() - model_started) * 1000),
                                  "superseded": generation != self.generation})
             if generation != self.generation:
                 return
             stage = "refresh"
+            refresh_started = time.monotonic()
             fresh = observe()
+            run.record("refresh", {"latency_ms": round((time.monotonic() - refresh_started) * 1000)})
             if fresh.data["url"] != observed.data["url"]:
                 self.events.put(("changed", generation))
                 return
@@ -467,7 +509,9 @@ class Runtime:
         if decision.action == "tour":
             self.tour = {"points": [(point, (tour_targets or observation.targets)[point.target])
                                     for point in decision.points],
-                         "url": observation.data["url"], "index": 0, "last_text": decision.speech}
+                         "url": observation.data["url"], "index": 0, "last_text": decision.speech,
+                         "visit": self.current.request.mode == "act", "viewport": observation.viewport,
+                         "phase": "presenting"}
             self.current.set_running()
             if self.speaker and self.response_mode != "text":
                 self.speaker.prefetch([p.speech for p in decision.points])
@@ -510,18 +554,44 @@ class Runtime:
         delay = .25 if self.speaker and self.response_mode != "text" else max(2.0, len(speech.split()) / 3.0)
         self.due = (time.monotonic() + delay, "tour", None)
 
-    def tour_worker(self, run, generation, point, original, url):
+    def tour_worker(self, run, generation, point, original, url, *, visit=False, viewport=None, index=0):
         try:
             fresh = observe()
-            target = matching_target(original, fresh)
+            target = sidebar_target(original, viewport, fresh) if visit else matching_target(original, fresh)
             if fresh.data["url"] != url or target is None:
                 raise CoachProtocolError("The page changed during the tour.")
             if generation == self.generation:
-                self.events.put(("tour_point", generation, point, target, url))
+                if visit:
+                    self.events.put(("tour_ready", generation, index, point, fresh, target))
+                else:
+                    self.events.put(("tour_point", generation, point, target, url))
         except Exception as exc:
             run.record("tour_error", {"type": type(exc).__name__})
             self.events.put(("error", generation,
                              "The page changed during the tour. Ask me again on the page you'd like to explore."))
+
+    def arrival_worker(self, run, generation, payload):
+        try:
+            fresh = observe()
+            target = sidebar_target(payload["target"], payload["viewport"], fresh)
+            if not same_platform_origin(payload["url"], fresh.data["url"]):
+                raise CoachProtocolError("The tour left H Platform.")
+            ready = target is not None and tour_destination_ready(target, fresh)
+            if generation == self.generation:
+                self.events.put(("tour_arrival", generation, payload, fresh, target, ready))
+        except Exception as exc:
+            run.record("tour_error", {"type": type(exc).__name__})
+            self.events.put(("error", generation, "I couldn't confirm that page opened. Let's pause the tour here."))
+
+    def present_tour_point(self, point, target, url, *, visited=False):
+        self.busy = False
+        self.tour.update(index=self.tour["index"] + 1, last_text=point.speech,
+                         url=url, phase="presenting")
+        self.current.record("tour_point", {"index": self.tour["index"], "speech": point.speech,
+                                          "target_label": target.name, "url": url,
+                                          "navigation_verified": visited, "verified": False})
+        self.show(point.speech, target)
+        self.schedule_tour_advance(point.speech)
 
     def approved_action_worker(self, run, generation, step, decision, original, url):
         try:
@@ -620,13 +690,38 @@ class Runtime:
                 if foreground_url() != url:
                     self.finish("blocked", "Bring H Platform forward, then ask me for the tour again.")
                     continue
-                self.busy = False
-                self.tour["index"] += 1
-                self.tour["last_text"] = point.speech
-                self.current.record("tour_point", {"index": self.tour["index"], "speech": point.speech,
-                                                   "target_label": target.name, "verified": False})
-                self.show(point.speech, target)
-                self.schedule_tour_advance(point.speech)
+                self.present_tour_point(point, target, url)
+            elif (kind == "tour_ready" and args[0] == self.generation and self.tour
+                  and self.tour["visit"] and self.tour["phase"] == "preparing" and args[1] == self.tour["index"]):
+                _, index, point, fresh, target = args
+                try:
+                    if (foreground_url() != fresh.data["url"] or fresh.data["url"] != self.tour["url"]
+                            or time.monotonic() - fresh.captured_at > 3):
+                        raise CoachProtocolError("The tour page changed.")
+                    if tour_destination_ready(target, fresh):
+                        self.present_tour_point(point, target, fresh.data["url"], visited=True)
+                        continue
+                    perform(CoachDecision(action="click", target=point.target, speech=point.speech), target,
+                            fresh.data["url"], self.desktop, fresh.viewport)
+                    self.current.record("tour_navigation", {"index": index + 1, "target_label": target.name,
+                                                            "from_url": fresh.data["url"]})
+                    self.tour["phase"] = "navigating"
+                    payload = {"point": point, "target": target, "viewport": fresh.viewport,
+                               "index": index, "url": fresh.data["url"], "deadline": time.monotonic() + 8}
+                    self.due = (time.monotonic() + .15, "tour_arrival", payload)
+                except Exception:
+                    self.finish("blocked", "I couldn't open that section safely. Let's pause the tour here.")
+            elif (kind == "tour_arrival" and args[0] == self.generation and self.tour
+                  and self.tour["phase"] == "navigating" and args[1]["index"] == self.tour["index"]):
+                _, payload, fresh, target, ready = args
+                if foreground_url() != fresh.data["url"] or time.monotonic() - fresh.captured_at > 3:
+                    self.finish("blocked", "Bring H Platform forward, then ask me for the tour again.")
+                elif ready:
+                    self.present_tour_point(payload["point"], target, fresh.data["url"], visited=True)
+                elif time.monotonic() >= payload["deadline"]:
+                    self.finish("blocked", "That section hasn't appeared yet. Let's pause the tour here.")
+                else:
+                    self.due = (time.monotonic() + .25, "tour_arrival", payload)
             elif (kind == "approved_action" and args[0] == self.generation and self.pending
                   and self.step == args[1] and self.confirmation_pending):
                 _, _, decision, fresh, target = args
@@ -669,8 +764,17 @@ class Runtime:
                 else:
                     point, original = self.tour["points"][self.tour["index"]]
                     self.due, self.busy = None, True
-                    self.pool.submit(self.tour_worker, self.current, self.active_generation,
-                                     point, original, self.tour["url"])
+                    self.tour["phase"] = "preparing"
+                    if self.tour["visit"]:
+                        self.pool.submit(self.tour_worker, self.current, self.active_generation,
+                                         point, original, self.tour["url"], visit=True,
+                                         viewport=self.tour["viewport"], index=self.tour["index"])
+                    else:
+                        self.pool.submit(self.tour_worker, self.current, self.active_generation,
+                                         point, original, self.tour["url"])
+            elif kind == "tour_arrival" and self.tour and self.tour["phase"] == "navigating":
+                self.due = None
+                self.pool.submit(self.arrival_worker, self.current, self.active_generation, payload)
             elif kind == "act" and self.pending:
                 # Let this short phrase finish before the next one, never queue a narrated report.
                 if self.speaker and self.speaker.speaking:
