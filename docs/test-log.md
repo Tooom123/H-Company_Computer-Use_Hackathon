@@ -954,3 +954,29 @@ Validation intégrée après correction de compatibilité de l'affichage final :
 pilot et scripts). Pas de nouvelle mesure de qualité du modèle ni de validation
 humaine déduite de ces tests hors ligne. Le benchmark de routage payant de Matteo
 n'a pas été réexécuté pendant cette correction.
+
+## 2026-11-08 — Devin : catalogue vide au démarrage du guidage
+
+Essai humain `sess_9b610d04645f`, demande transcrite « Show me the available.
+Conversation modes. ». Le pilote reconnaît la fenêtre native au premier plan,
+mais ne retient aucun contrôle. Il termine bloqué avant la planification,
+en 66 ms après approbation. Edouard signale le message d'accessibilité ; aucune
+réussite ni utilité n'est déclarée. Les traces restent dans le dossier privé.
+
+La permission AX a ensuite été vérifiée comme accordée. Un diagnostic local,
+sans H ni lecture de valeurs de champs, retrouve 59 éléments, 53 éligibles et
+49 visibles dans Devin. Le menu des modes s'ouvre via inspection technique,
+sans sélectionner de mode ni démarrer de tâche. Cette vérification ne constitue
+pas une réussite du coaching vocal. Les anciens compteurs ne permettaient pas
+de distinguer une lecture transitoirement vide d'un filtrage de visibilité vide.
+
+Le pilote réessaie désormais jusqu'à trois lectures, avec 150 puis 300 ms
+d'attente interruptible, en revérifiant le focus et le périmètre à chaque fois.
+Le chemin normal n'attend pas. Le journal et `/status` conservent uniquement les
+compteurs et un motif technique (arbre vide, contrôles masqués, fenêtre non
+active, etc.), sans libellé, URL ni valeur saisie. Le message n'attribue plus
+automatiquement un catalogue vide à une permission manquante.
+
+**188 tests ciblés passent**, dont récupération après lectures vides, arrêt
+pendant l'attente, changement de périmètre, cause de filtrage et confidentialité
+des diagnostics. La recette vocale de la version corrigée reste à effectuer.

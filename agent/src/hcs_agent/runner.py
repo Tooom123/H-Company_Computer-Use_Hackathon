@@ -611,6 +611,7 @@ class Intervention:
         ineffective_targets = set()
         rejected_plans = 0
         reobservations = 0
+        empty_native_reads = 0
         waited_front = 0
         for n in range(max_steps):
             if self._stop.is_set():
@@ -653,11 +654,26 @@ class Intervention:
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                       blocker="The visible page is outside the authorized read-only coaching scope."))
             if native and not items:
-                message = "Devin Desktop's accessibility controls are unavailable. I cannot identify a visible target yet."
+                # Electron may expose the focused window before its content is ready.
+                # Do not turn a single short-lived empty/covered read into a permission diagnosis.
+                empty_native_reads += 1
+                diagnostic = getattr(self.backend, "last_catalogue_diagnostic", {}) or {}
+                self._trace(f"native catalogue empty: read={empty_native_reads}/3; "
+                            f"status={diagnostic.get('status', 'unknown')}; "
+                            f"raw={len(info.elements) if hasattr(info, 'elements') else 'unknown'}; "
+                            f"covered={diagnostic.get('covered', 'unknown')}")
+                if empty_native_reads < 3:
+                    self._stop.wait(0.15 * empty_native_reads)
+                    continue  # Recheck focus/scope on every read; never reuse an older target.
+                if diagnostic.get("status") == "controls_covered":
+                    message = "Devin's controls are currently covered. Move other windows or menus aside and ask again."
+                else:
+                    message = "I can see Devin's window, but it has not exposed usable controls yet. Wait for the page to load, then ask again."
                 self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1, instruction=message,
                                                       kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                                                         blocker=message))
+            empty_native_reads = 0
             cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)}); "
                      f"enabled={getattr(e, 'enabled', None)}; selected={getattr(e, 'selected', None)}; "
                      f"{'interactive role' if e.role in INTERACTIVE else 'information only'}" for e in items]

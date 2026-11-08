@@ -631,15 +631,25 @@ class HBackend:
     def page_catalogue(self, bound=None, max_items: int = 90):  # noqa: ARG002 - the mock uses `bound`
         """(PageInfo, [Candidate]) of the browser page in front: the controls a planner may point at.
         None when there is no browser page (or the tree is off)."""
+        # Counters only: keep the reason for an empty catalogue without exposing labels,
+        # URLs, input values or provider exceptions through the desktop control point.
+        diagnostic = {"status": "disabled", "raw": 0, "eligible": 0, "visible": 0,
+                      "covered": 0, "native": False, "is_front": False}
+        self.last_catalogue_diagnostic = diagnostic
         if not self.use_a11y:
             return None
         try:
             from . import a11y, sitemap
 
             info = a11y.page()
+            if info is not None:
+                diagnostic.update(native=bool(getattr(info, "native", False)), is_front=bool(info.is_front),
+                                  raw=len(info.elements))
             if info is None or (not getattr(info, "native", False) and len(info.elements) <= 1):
+                diagnostic["status"] = "unavailable"
                 return None
             if getattr(info, "native", False) and not info.is_front:
+                diagnostic["status"] = "window_not_front"
                 return info, []
             if not getattr(self, "observe_only", False):
                 sitemap.remember(info)
@@ -651,14 +661,20 @@ class HBackend:
                 key = (e.role, e.name.lower())
                 if key in seen or e.frame[2] * e.frame[3] > 500 * 400:
                     continue
+                diagnostic["eligible"] += 1
                 if not a11y.visible_at_point(e):
+                    diagnostic["covered"] += 1
                     continue
                 seen.add(key)
                 items.append(e)
                 if len(items) >= max_items:
                     break
+            diagnostic["visible"] = len(items)
+            diagnostic["status"] = ("ready" if items else "tree_empty" if not info.elements else
+                                    "controls_covered" if diagnostic["covered"] else "no_usable_controls")
             return info, items
         except Exception:  # noqa: BLE001
+            diagnostic["status"] = "read_failed"
             return None
 
     def plan_step(self, goal: str, context: str, page: str, candidates: list[str], history: list[str]) -> dict | None:

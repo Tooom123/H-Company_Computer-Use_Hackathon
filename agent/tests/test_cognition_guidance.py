@@ -255,7 +255,58 @@ def test_native_empty_tree_explains_blocker_without_planner(dynamic, monkeypatch
     result = dynamic.it._dynamic_guide(dynamic.bound)
     assert result.declared.outcome == 'blocked'
     assert dynamic.calls == []
-    assert 'accessibility controls are unavailable' in dynamic.shown[0].instruction
+    assert 'not exposed usable controls yet' in dynamic.shown[0].instruction
+    assert sum('native catalogue empty' in s.summary for s in dynamic.it.steps) == 3
+    assert 'permission' not in dynamic.shown[0].instruction.lower()
+
+
+def test_native_initial_empty_reads_recover_before_showing_a_blocker(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    info, items = dynamic.backend.page_catalogue(None)
+    reads = []
+
+    def catalogue(_):
+        reads.append(True)
+        return info, [] if len(reads) <= 2 else items
+
+    dynamic.backend.page_catalogue = catalogue
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert len(dynamic.calls) == 2  # Empty reads do not trigger extra model calls.
+    assert [step.instruction for step in dynamic.shown] == [
+        'Open Details', 'The session status is visible; code correctness remains unverified.']
+    assert sum('native catalogue empty' in s.summary for s in dynamic.it.steps) == 2
+
+
+def test_native_covered_controls_explain_occlusion_not_missing_permission(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [])
+    dynamic.backend.last_catalogue_diagnostic = {'status': 'controls_covered', 'covered': 12}
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked' and not dynamic.calls
+    assert 'covered' in dynamic.shown[0].instruction
+    assert 'permission' not in dynamic.shown[0].instruction.lower()
+
+
+def test_stop_during_empty_native_retry_prevents_planning(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [])
+    monkeypatch.setattr(dynamic.it._stop, 'wait', lambda _: dynamic.it._stop.set())
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.status == 'interrupted' and result.declared.outcome == 'not_run'
+    assert not dynamic.calls and not dynamic.shown
+
+
+def test_native_retry_rechecks_allowed_page_before_planning(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    restricted = SimpleNamespace(**vars(dynamic.info))
+    restricted.url = 'https://app.devin.ai/login'
+    views = iter([(dynamic.info, []), (restricted, [])])
+    dynamic.backend.page_catalogue = lambda _: next(views)
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked' and not dynamic.calls
+    assert 'outside the authorized' in result.declared.blocker
 
 
 def test_native_focus_switch_while_planning_discards_arrow_and_answer(dynamic, monkeypatch):

@@ -149,6 +149,7 @@ def _control_status() -> dict:
                    "speed": getattr(sp, "speed", None) or float(os.environ.get("HCS_TTS_SPEED") or 1.0),
                    "speaking": bool(sp is not None and sp.speaking)},
         "current": cur,
+        "accessibility": dict(getattr(backend, "last_catalogue_diagnostic", {}) or {}),
     }
 
 
