@@ -305,13 +305,27 @@ def visible_at_point(cand: Candidate, depth: int = 10) -> bool:
     # (Hit-testing has quirks on nested web content; without such evidence, trust the candidate.)
     el = hit
     covering = {"AXMenu", "AXMenuBar", "AXSheet", "AXPopover", "AXDialog", "AXMenuItem", "AXPopUpButton"}
+    ancestors = []  # the candidate's own containers: a dialog that holds it does not cover it
+    up = _attr(cand.ref, "AXParent")
+    for _ in range(25):
+        if up is None:
+            break
+        ancestors.append(up)
+        up = _attr(up, "AXParent")
+
+    def contains_candidate(node) -> bool:
+        try:
+            return any(AS.CFEqual(node, a) for a in ancestors)
+        except Exception:  # noqa: BLE001
+            return False
     for _ in range(8):
         if el is None:
             break
         role = _attr(el, "AXRole") or ""
         sub = _attr(el, "AXSubrole") or ""
         if role in covering or sub in ("AXDialog", "AXSystemDialog", "AXApplicationDialog", "AXModal"):
-            return False
+            # Hit the background of the dialog the control lives in (between an icon and its text): not covered.
+            return contains_candidate(el)
         if role == "AXWindow":
             try:
                 win = _attr(cand.ref, "AXWindow")

@@ -190,3 +190,20 @@ def test_a_label_target_is_moved_to_the_field_it_names(guide):
     guide.backend.plan_step = lambda *a: next(plans)
     guide.it._dynamic_guide(guide.bound)
     assert guide.shown[0].where == "Name *" and guide.shown[0].pointer == (756, 100) and guide.shown[0].kind == "type"
+
+
+def test_label_target_finds_a_field_the_hit_test_dropped(guide):
+    """Live 2026-11-08: the catalogue had the label 'Name' but not the field 'Name *' (dropped by the
+    visibility hit-test): the step was shown without a frame and the guide waited."""
+    label = ctl("AXStaticText", "Name", 465)
+    field = ctl("AXTextField", "Name *", 560)
+    far = ctl("AXTextField", "Name of the vault", 1400)
+    guide.page.items = [ctl("AXHeading", "Build an agent", 700), label, ctl("AXButton", "Next", 1040)]
+    info = SimpleNamespace(is_front=True, title="H Platform", url="https://platform.hcompany.ai/agents",
+                           elements=[*guide.page.items, field, far])
+    guide.backend.page_catalogue = lambda _: (info, list(guide.page.items))
+    plans = iter([{"done": False, "instruction": "Type \"demo-web-reader\" in the Name field.", "kind": "type",
+                   "text": "demo-web-reader", "target": 1}, {"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: next(plans)
+    guide.it._dynamic_guide(guide.bound)
+    assert guide.shown[0].where == "Name *" and guide.shown[0].pointer == (560, 100)

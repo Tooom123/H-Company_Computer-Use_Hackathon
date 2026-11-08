@@ -87,15 +87,24 @@ def _label_matches(label: str, name: str) -> bool:
 _TEXT_ROLES = ("AXHeading", "AXStaticText")
 
 
-def _actionable(target, items):
-    """A label or title chosen as the target -> the control it names, the nearest one (else unchanged)."""
+def _actionable(target, items, page_elements=None):
+    """A label or title chosen as the target -> the control it names, the nearest one (else unchanged).
+    Falls back to the whole page read (page_elements): the visibility hit-test can drop a field while keeping
+    its label (live 2026-11-08: label 'Name' listed, field 'Name *' not); only a control right next to the
+    label is taken from there."""
     if target is None or target.role not in _TEXT_ROLES:
         return target
     tx, ty = target.center
-    named = [e for e in items if e.role not in _TEXT_ROLES and e is not target and _label_matches(target.name, e.name)]
-    if not named:
-        return target
-    return min(named, key=lambda e: (e.center[0] - tx) ** 2 + (e.center[1] - ty) ** 2)
+    dist = lambda e: (e.center[0] - tx) ** 2 + (e.center[1] - ty) ** 2
+    def named(pool):
+        return [e for e in pool or [] if e.role not in _TEXT_ROLES and e is not target
+                and getattr(e, "role", "") not in ("AXGroup", "AXWebArea", "AXWindow")
+                and _label_matches(target.name, e.name)]
+    listed = named(items)
+    if listed:
+        return min(listed, key=dist)
+    near = [e for e in named(page_elements) if dist(e) <= 160 ** 2]
+    return min(near, key=dist) if near else target
 
 
 def _field_state(e) -> str:
@@ -798,7 +807,7 @@ class Intervention:
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None
             if kind in ("click", "type"):
                 # Page text is in the list now: a planner pointing at the label "Name" means the field "Name *".
-                target = _actionable(target, items)
+                target = _actionable(target, items, getattr(info, "elements", None))
             if kind == "click" and target is not None and target.role in ("AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"):
                 kind = "type"  # "click the field" means fill it: the user clicks and types (a click alone would stall)
             # The instruction and the box must name the same control: "Click 'Build'" framed on "Close" sent the
