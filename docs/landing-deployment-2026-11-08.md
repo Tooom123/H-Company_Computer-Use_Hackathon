@@ -36,12 +36,14 @@ Le dossier de tests n'est pas publié.
 
 Dans le conteneur Caddy :
 `/data/hcompanion/landing/releases/<digest>/` ; `current` est un lien vers la
-release courante. Les blocs Caddy pointent directement vers la release immuable.
+release courante. Depuis l'installation de la CD, les blocs Caddy servent
+`/data/hcompanion/landing/current` : une publication bascule ce lien atomiquement,
+sans recharger Caddy.
 Sur l'hôte, ce dossier est dans le volume persistant `dejabu-edge_data`.
 Les sauvegardes de configuration et le manifeste de déploiement restent privés
 sous `/opt/hcompanion/landing/`.
 
-`scripts/deploy-public-landing.py` utilise une liste fermée de fichiers, vérifie
+L'ancien script d'installation `scripts/deploy-public-landing.py` utilise une liste fermée de fichiers, vérifie
 leur digest, refuse une modification concurrente du Caddyfile et valide la
 configuration candidate dans Caddy avant de la charger. Il conserve l'inode du
 Caddyfile monté en lecture seule dans le conteneur, puis recharge Caddy sans
@@ -50,8 +52,9 @@ recréer ni redémarrer les services. Seul le bloc entre
 Le retour arrière en cas d'échec de reload est conditionné à l'absence d'autre
 modification ; il ne restaure pas aveuglément une ancienne configuration.
 
-Pour préparer une nouvelle release, relever le SHA-256 actuel du Caddyfile via
-l'accès SSH privé, puis exécuter d'abord le mode descriptif :
+Ce script a servi à la première installation. **Ne pas le relancer pour une
+publication courante** : il repointerait Caddy vers une release fixe et
+court-circuiterait le lien utilisé par la CD. Sa commande historique était :
 
 ```sh
 python3 scripts/deploy-public-landing.py \
@@ -63,6 +66,56 @@ Ajouter `--apply` pour publier les sept fichiers contrôlés. Le script ne chang
 pas les DNS. Le SHA du Caddyfile immédiatement après cette première publication
 est `52db8bb36f2e564d9de47f1963c655e0e05f787270c60da9f5716f7c9cc1ba6b` ;
 ce n'est pas une valeur à réutiliser sans vérifier l'état courant.
+
+## Déploiement continu après merge
+
+Le workflow `.github/workflows/deploy-landing.yml` publie depuis **main uniquement**,
+après modification de `landing/**`, du client de publication ou du workflow.
+Un lancement manuel est également possible depuis GitHub Actions sur main.
+La règle du dépôt reste PR + revue par un coéquipier avant fusion.
+
+1. Les cinq tests de la homepage doivent passer.
+2. `scripts/landing_cd.py` transmet exclusivement les sept assets autorisés.
+3. Le récepteur vérifie les noms, tailles et SHA-256, crée une release immuable,
+   puis remplace `current` atomiquement. Les anciennes releases sont conservées.
+4. Le client relit les sept fichiers par HTTPS, avec validation TLS, et compare
+   leur contenu octet par octet. Le job échoue si une vérification diffère.
+
+Le compte VPS `hcompanion-deploy` utilise une clé distincte du compte opérateur.
+La clé est enregistrée dans le secret GitHub **LANDING_DEPLOY_KEY** ; la clé
+publique du serveur, vérifiée via l'accès opérateur existant, est épinglée dans
+**LANDING_KNOWN_HOSTS**. Aucun secret ne figure dans le dépôt.
+
+La clé SSH ne permet que la commande `deploy`, sans terminal ni transfert de
+ports. Elle appelle un récepteur Python détenu par root via une entrée sudo
+limitée à cette commande exacte. Elle ne peut modifier ni ce récepteur, ni sa
+propre autorisation, ni Caddy. Le récepteur refuse les fichiers supplémentaires,
+chemins arbitraires, liens symboliques et contenus dont le digest diffère.
+
+L'installation opérateur est `scripts/install_landing_cd.py` : elle exige le
+SHA courant du Caddyfile, une clé **publique**, et l'accès SSH privé de l'opérateur.
+Elle conserve les autres blocs et l'inode du fichier monté dans Caddy. Le SHA
+après installation le 8 novembre est
+`a8d960f386a574f0d57d46a8cba712e13efb09521c869fc37bd5e8e848ead632`.
+Les sauvegardes restent privées sous `/opt/hcompanion/landing-cd/`.
+
+Retour arrière : restaurer les fichiers de la release voulue dans une PR vers
+main, puis fusionner après revue. Le workflow republie ce contenu et réutilise
+sa release si elle existe déjà. En urgence, l'opérateur peut remplacer `current`
+par un lien vers une release existante ; cette opération ne nécessite pas de
+redémarrage de services.
+
+### État de validation de la CD
+
+Installation autorisée par Edouard et réalisée ; secrets GitHub configurés.
+Une publication réelle utilisant la clé restreinte a réussi, avec vérification
+HTTPS des sept fichiers. Une commande libre `id` avec cette même clé est refusée
+(code 1, aucune sortie). Les neuf tests du récepteur et les cinq tests de la
+homepage passent. Les autres blocs Caddy et identifiants de conteneurs sont
+inchangés ; le portail Odoo reste protégé (401 sans identifiants).
+
+**Le déclenchement GitHub après merge reste à constater une fois ce workflow
+intégré à main** ; la publication SSH manuelle ne constitue pas un run Actions.
 
 ## Vérifications effectuées
 

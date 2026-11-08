@@ -1,0 +1,47 @@
+name: Deploy public homepage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing/**'
+      - 'scripts/landing_cd.py'
+      - '.github/workflows/deploy-landing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-homepage
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Test the public homepage
+        run: node --test landing/test/*.test.mjs
+      - name: Deploy allowlisted assets and verify HTTPS
+        env:
+          LANDING_DEPLOY_KEY: ${{ secrets.LANDING_DEPLOY_KEY }}
+          LANDING_KNOWN_HOSTS: ${{ secrets.LANDING_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$LANDING_DEPLOY_KEY"
+          test -n "$LANDING_KNOWN_HOSTS"
+          umask 077
+          deploy_dir=$(mktemp -d)
+          trap 'rm -rf "$deploy_dir"' EXIT
+          printf '%s\n' "$LANDING_DEPLOY_KEY" > "$deploy_dir/key"
+          printf '%s\n' "$LANDING_KNOWN_HOSTS" > "$deploy_dir/known_hosts"
+          python3 scripts/landing_cd.py --identity "$deploy_dir/key" --known-hosts "$deploy_dir/known_hosts"
