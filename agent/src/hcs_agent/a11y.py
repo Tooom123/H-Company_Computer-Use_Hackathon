@@ -463,9 +463,10 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
         elif el.role in INTERACTIVE:
             score += 2
         # a huge element (the whole page, a big container) is rarely the control
-        if el.frame[2] * el.frame[3] > 400 * 300:
+        if el.frame[2] * el.frame[3] > 400 * 300 and el.role not in INPUT_ROLES:  # a text area is big by nature
             score -= 4
-        ranked.append(Candidate(el.role, el.name, el.frame, score, why, el.ref))
+        ranked.append(Candidate(el.role, el.name, el.frame, score, why, el.ref,
+                                value=el.value, required=el.required))  # keep the field's state
     ranked.sort(key=lambda c: (-c.score, c.frame[1], c.frame[0]))
     return ranked
 

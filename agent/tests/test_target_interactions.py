@@ -443,3 +443,22 @@ def test_tracker_page_change_is_a_safety_net_for_missed_clicks():
     assert not t.page_changed()  # not settled yet
     t.page_changed_at -= 2
     assert t.page_changed()
+
+
+@pytest.mark.parametrize("text,is_help", [("And here, what should I do?", True), ("Je fais quoi là ?", True),
+                                          ("I'm stuck", True), ("Show me how to create an API key", False),
+                                          ("Where is the Billing menu?", False)])
+def test_step_questions_do_not_stop_the_task(monkeypatch, text, is_help):
+    import queue
+    q = queue.Queue()
+    q.put(text)
+    monkeypatch.setitem(cli._VOICE, "ptt", SimpleNamespace(transcripts=q))
+    assert (cli._take_step_question() == text) is is_help
+    assert q.empty() is is_help  # a new task stays queued for the router
+
+
+def test_match_keeps_the_field_content_for_the_tracker():
+    from hcs_agent import a11y
+    field = a11y.Candidate("AXTextField", "Name *", (454, 528, 604, 20), value="demo-web-reader", required=True)
+    best = a11y.match("Name *", [a11y.Candidate("AXStaticText", "Name", (445, 495, 40, 17)), field])[0]
+    assert best.name == "Name *" and best.value == "demo-web-reader" and best.required

@@ -300,6 +300,30 @@ def _new_request_pending() -> bool:
     return ptt is not None and not ptt.transcripts.empty()
 
 
+_STEP_HELP = re.compile(
+    r"\b(what (should|do|can) i do|what now|now what|what next|what'?s next|and (here|now)|help( me)?|i'?m stuck|"
+    r"i don'?t (get|understand|know)|repeat|say (it|that) again|where (is it|do i click)|"
+    r"je fais quoi|on fait quoi|et (là|la|maintenant)|aide|je comprends pas|je suis bloqu|répète|repete)\b", re.I)
+
+
+def _take_step_question() -> str | None:
+    """A pending utterance that asks about the step on screen ("and here, what should I do?"): consume and return
+    it. Anything else (a new task) is left for the router, which stops the current task first."""
+    ptt = _VOICE.get("ptt")
+    if ptt is None:
+        return None
+    try:
+        text = ptt.transcripts.queue[0]
+    except (IndexError, AttributeError):
+        return None
+    if not isinstance(text, str) or len(text.split()) > 12 or not _STEP_HELP.search(text):
+        return None
+    try:
+        return ptt.transcripts.get_nowait()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _ensure_magnet(ov=None):
     """Bottom-left autonomy slider; clicks change the running intervention and the default for the next ones."""
     if _MAGNET["widget"] is not None:
@@ -1022,7 +1046,7 @@ class _TargetTracker:
             if not desc:
                 continue
             try:
-                best, ties, info = a11y.find(desc)
+                best, ties, info = self._locate(a11y, desc)
             except Exception:  # noqa: BLE001
                 continue
             if (self.description, self.step) != (desc, step):
@@ -1044,6 +1068,21 @@ class _TargetTracker:
                 self.value, self.value_changed_at = value, time.time()
             if page is not None and page != self.page_now:
                 self.page_now, self.page_changed_at = page, time.time()
+
+    def _locate(self, a11y, desc):
+        """The step's own control first: same name, a control rather than its label, nearest to where it was
+        shown (several elements are called "Instructions" on the wizard). Fuzzy find() otherwise."""
+        info = a11y.page()
+        if info is None or not info.is_front or not info.elements:
+            return None, [], info
+        same = [e for e in info.elements if e.name == desc]
+        if same and self.box:
+            bx, by = self.box[0] + self.box[2] / 2, self.box[1] + self.box[3] / 2
+            text_roles = ("AXStaticText", "AXHeading")
+            best = min(same, key=lambda e: (e.role in text_roles, (e.center[0] - bx) ** 2 + (e.center[1] - by) ** 2))
+            if a11y.visible_at_point(best):
+                return best, [], info
+        return a11y.find(desc, info)
 
     def page_changed(self, settle_s: float = 1.0, min_diff: int = 3) -> bool:
         """The page moved on since the step was shown (navigation, a dialog opened or closed) and has settled:
@@ -1324,6 +1363,13 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
 
     def tick() -> None:
         nonlocal shown_step, shown_key, prompted, guidance_scene_shown
+        if (not interrupted["done"] and _new_request_pending() and it.state is State.awaiting_user and it.guidance
+                and (question := _take_step_question())):
+            # A question about the current step is not a new task: explain the step again, keep guiding.
+            g = it.guidance[-1]
+            print(f"\n  [voice] about this step: \"{question}\" -> repeating step {g.index}", flush=True)
+            _say(g.instruction, (g.why or "")[:300])
+            return
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
             print("\n>> voice received: stopping the current task before routing", flush=True)
