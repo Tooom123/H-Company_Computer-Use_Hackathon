@@ -60,6 +60,8 @@ def _voice_for(ov) -> None:
 
 def _say(*segments: str, interrupt: bool = True) -> None:
     """Read aloud what is about to be written on screen. Call it right BEFORE `show_scene`."""
+    if _voice_input_active():
+        return  # an old model response must not start speaking over the user's new request
     sp = _SPEECH["speaker"]
     if sp is not None:
         sp.say(*segments, interrupt=interrupt)
@@ -304,7 +306,31 @@ def _start_control(runs_dir: Path, command: str, backend) -> None:
 
 def _new_request_pending() -> bool:
     ptt = _VOICE.get("ptt")
-    return ptt is not None and not ptt.transcripts.empty()
+    return _voice_input_active() or (ptt is not None and not ptt.transcripts.empty())
+
+
+def _voice_input_active() -> bool:
+    return _VOICE.get("state") in {"starting", "recording", "transcribing"}
+
+
+def _on_talk_voice_state(state: str, ov=None) -> None:
+    """Interrupt before microphone startup/network transcription, including without an overlay."""
+    if state.startswith("partial: "):
+        if ov is not None and _VOICE.get("state") == "recording":
+            ov.badge(_short(state[9:], 70) or "Listening…", pulsing=True)
+        return
+    _VOICE["state"] = state
+    if state == "starting":
+        _VOICE["generation"] = _VOICE.get("generation", 0) + 1
+        _control_stop(reason="New voice request started; interrupted before transcription")
+        if ov is not None:
+            ov.hide()
+    elif state == "recording":
+        _hush()
+    print(f"  [voice] {state}", flush=True)
+    if ov is not None:
+        label = {"starting": "Opening microphone…", "recording": "Listening…", "transcribing": "Transcribing…"}.get(state)
+        ov.badge(label, pulsing=state in {"starting", "recording"})
 
 
 def _ensure_magnet(ov=None):
@@ -396,8 +422,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_approve: bool = False,
              scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
-             overlay: bool = True, ov=None) -> int:
+             overlay: bool = True, ov=None, voice_generation: int | None = None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
+    if voice_generation is not None and (voice_generation != _VOICE.get("generation", 0) or _new_request_pending()):
+        return 3  # a new key press superseded this request while routing/document lookup was running
     # The Magnet is the authority: 0 = show only, 1 = guide + takeover when stuck, 2 = the agent does it.
     request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else _MAGNET["level"]
     request.mode = Mode.act if request.autonomy >= 2 else Mode.guide
@@ -412,6 +440,12 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
     if ov is not None:
         _prefetch_voice(request)
     it.start()
+    if voice_generation is not None and voice_generation != _VOICE.get("generation", 0):
+        _control_stop(reason="New voice request superseded the plan", intervention=it)
+    if it._stop.is_set():
+        _wait_stopped(it, ov, timeout=20)
+        _notify_run_finished(it)
+        return 3
     if it.state.terminal:
         _notify_run_finished(it)
         return 1
@@ -457,7 +491,8 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         print(json.dumps(it.report.to_support_summary(), indent=2))
         if it.report.timings.stop_latency_s is not None:
             print(f"stop latency: {it.report.timings.stop_latency_s:.2f}s")
-        if ov is not None and not _new_request_pending():
+        if (ov is not None and not _new_request_pending()
+                and (voice_generation is None or voice_generation == _VOICE.get("generation", 0))):
             _show_outcome(ov, it)
         return 0 if it.report.status.value == "resolved" else 3
     return 1
@@ -502,13 +537,15 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
     deadline = time.time() + timeout
     if ov is not None:
         ov.hide()
-        ov.badge("Stopping…", pulsing=True)
+        if not _voice_input_active():
+            ov.badge("Stopping…", pulsing=True)
         try:
             ov.run_until(lambda: (it.state.terminal and it.report is not None) or time.time() > deadline, None, 0.1,
                          hide_at_end=False)
         except KeyboardInterrupt:
             print(">> second Ctrl+C: not waiting for H any longer")
-        ov.badge(None)
+        if not _voice_input_active():
+            ov.badge(None)
     else:
         it.wait(timeout)
     if it.report is None:
@@ -609,7 +646,7 @@ def _follow_target(ov, shown: dict, tracker: "_TargetTracker") -> None:
 
 def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: float = 3.5) -> None:
     """Short on-screen note outside of a task (routing feedback), then back to the listening hint."""
-    if ov is None:
+    if ov is None or _new_request_pending():
         return
     from .overlay import Scene
 
@@ -617,8 +654,9 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
     _say(text, why)
     ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
-    ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
-    ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+    ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
+    if not _new_request_pending():
+        ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
@@ -629,6 +667,8 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     """
     from .overlay import Scene
 
+    if _new_request_pending():
+        return  # do not replace Listening with an old task's closing note
     r = it.report
     doodle = None
     if r.status.value == "resolved":
@@ -689,28 +729,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
         from .overlay import Overlay
 
         ov = Overlay()
-    voice_state = {"s": None}
-
     def on_state(s: str) -> None:
-        if s.startswith("partial: "):
-            if ov is not None and voice_state["s"] == "recording":
-                ov.badge(_short(s[9:], 70) or "Listening…", pulsing=True)  # live words while speaking
-            return
-        voice_state["s"] = s
-        _VOICE["state"] = s
-        print(f"  [voice] {s}", flush=True)
-        if s in {"starting", "recording"}:
-            _hush()  # the user speaks: we stop talking (and the mic does not hear us)
-        if ov is None:
-            return
-        if s == "starting":
-            ov.badge("Opening microphone…", pulsing=True)
-        elif s == "recording":
-            ov.badge("Listening…", pulsing=True)
-        elif s == "transcribing":
-            ov.badge("Transcribing…")
-        else:
-            ov.badge(None)
+        _on_talk_voice_state(s, ov)
 
     if ov is not None:
         _ensure_magnet(ov)
@@ -750,14 +770,16 @@ def cmd_talk(args: argparse.Namespace) -> int:
     if ov is not None:
         ov.badge(f"Hold {_key_label(ptt.key_name)} and say what you need")
 
-    def next_transcript() -> str:
+    def next_transcript() -> tuple[str, int]:
         """Wait for a transcript while keeping the overlay (badge) alive on the main thread."""
-        box: dict[str, str] = {}
+        box: dict = {}
 
         def tick() -> None:
+            generation = _VOICE.get("generation", 0)
             t = ptt.wait_transcript(timeout=0)
             if t is not None:
                 box["text"] = t
+                box["generation"] = generation
 
         if ov is not None:
             ov.run_until(lambda: "text" in box, tick, 0.1, hide_at_end=False)
@@ -765,13 +787,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
             while "text" not in box:
                 tick()
                 time.sleep(0.1)
-        return box["text"]
+        return box["text"], box["generation"]
 
     last_request = None
     history: list[str] = []  # the current clarification conversation (user turns + assistant questions)
     try:
         while True:
-            text = next_transcript()
+            text, voice_generation = next_transcript()
             if not text.strip():
                 # A short key press, silence or a transcription failure can yield an empty final.
                 # Keep the microphone/control server alive; do not consume an armed feedback draft,
@@ -790,7 +812,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 print(f"  -> resuming {request.procedure_id} from the current screen")
                 try:
                     _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                             overlay=not args.no_overlay, ov=ov)
+                             overlay=not args.no_overlay, ov=ov, voice_generation=voice_generation)
                 except Exception:  # noqa: BLE001
                     import traceback
 
@@ -869,7 +891,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     _say("No script for this one, I will work it out from the screen.")
                     try:
                         code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                                        overlay=not args.no_overlay, ov=ov)
+                                        overlay=not args.no_overlay, ov=ov, voice_generation=voice_generation)
                     except Exception:  # noqa: BLE001
                         import traceback
 
@@ -892,7 +914,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     _say("I will work it out from the screen.")
                     try:
                         _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                                 overlay=not args.no_overlay, ov=ov)
+                                 overlay=not args.no_overlay, ov=ov, voice_generation=voice_generation)
                     except Exception:  # noqa: BLE001
                         import traceback
 
@@ -924,7 +946,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                                overlay=not args.no_overlay, ov=ov)
+                                overlay=not args.no_overlay, ov=ov, voice_generation=voice_generation)
             except Exception:  # noqa: BLE001 - never die silently between two requests
                 import traceback
 
@@ -1285,7 +1307,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     def status_badge() -> None:
         if ov is None:
             return
-        if _VOICE.get("state") in ("recording", "transcribing"):
+        if _voice_input_active():
             return  # the voice badge is already shown; do not overwrite it mid-sentence
         if it.state is State.awaiting_user:
             message = None
@@ -1333,7 +1355,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             print("\n>> voice received: stopping the current task before routing", flush=True)
             if ov:
                 ov.hide()
-                ov.badge("Voice received…", pulsing=True)
+                if not _voice_input_active():
+                    ov.badge("Voice received…", pulsing=True)
             _control_stop(reason="Voice input received; stopped before routing", intervention=it)
             return
         if interrupted["done"]:

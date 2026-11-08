@@ -130,6 +130,50 @@ def test_failed_microphone_closes_live_transcription(rig):
     assert ptt._live is None and not ptt._recording
 
 
+def test_start_callback_runs_before_the_microphone_can_block(rig):
+    ptt, recorder, states = rig
+    recorder.release = threading.Event()
+    ptt._on_event('combo_down', None)
+    assert recorder.entered.wait(1)
+    assert states == ['starting']  # the CLI stop callback already ran, without a transcript
+    assert ptt.transcripts.empty()
+    recorder.release.set()
+    drain(ptt)
+
+
+def test_slow_previous_transcript_cannot_replace_a_new_recording(rig, tmp_path):
+    ptt, recorder, states = rig
+    ptt.use_live = False
+    started, release = threading.Event(), threading.Event()
+    def transcribe(*args):
+        started.set()
+        assert release.wait(2)
+        return 'Stale request'
+    ptt._transcriber = SimpleNamespace(transcribe=transcribe)
+    path = tmp_path / 'old.wav'
+    path.write_bytes(b'fake fixture')
+    old = threading.Thread(target=ptt._transcribe, args=(str(path), None, ptt._generation))
+    old.start()
+    assert started.wait(1)
+    ptt.transcripts.put('An already queued old request')
+    ptt._on_event('combo_down', None)
+    drain(ptt)
+    release.set()
+    old.join(2)
+    assert not old.is_alive() and not path.exists()
+    assert ptt.transcripts.empty() and states[-1] == 'recording'
+
+
+def test_current_transcript_is_delivered_normally(rig, tmp_path):
+    ptt, _, states = rig
+    ptt._transcriber = SimpleNamespace(transcribe=lambda *args: 'My new request')
+    path = tmp_path / 'new.wav'
+    path.write_bytes(b'fake fixture')
+    ptt._transcribe(str(path), None, ptt._generation)
+    assert ptt.wait_transcript(0) == 'My new request'
+    assert states[-1].startswith('transcribed') and not path.exists()
+
+
 @pytest.mark.parametrize("mods,flags,remaining", [({"cmd"}, 1, 0), ({"ctrl", "shift"}, 12, 4)])
 def test_modifier_release_stops_chord_before_main_key_release(monkeypatch, mods, flags, remaining):
     quartz = SimpleNamespace(CGEventGetFlags=lambda e: e["flags"],

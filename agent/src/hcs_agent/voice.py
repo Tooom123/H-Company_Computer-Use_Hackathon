@@ -563,6 +563,8 @@ class PushToTalk:
         self._live: LiveTranscriber | None = None
         self.use_live = os.environ.get("HCS_STT_LIVE", "1").lower() not in {"0", "false", "no"}
         self._recording = False
+        self._generation = 0
+        self._generation_lock = threading.Lock()
         self._commands: "queue.Queue[str]" = queue.Queue()
         self._worker: threading.Thread | None = None
 
@@ -607,11 +609,19 @@ class PushToTalk:
 
     def _begin(self) -> None:
         if not self._recording:
+            with self._generation_lock:
+                self._generation += 1
+                generation = self._generation
+                while not self.transcripts.empty():
+                    try:
+                        self.transcripts.get_nowait()
+                    except queue.Empty:
+                        break
             try:
                 self.on_state("starting")
                 if self.use_live:
                     self._live = LiveTranscriber()
-                    self._live.on_partial = lambda t: self.on_state(f"partial: {t}")
+                    self._live.on_partial = lambda t: self._state_if_current(generation, f"partial: {t}")
                     self._live.open(self.vocabulary)
                     self._recorder.on_chunk = self._live.feed
                 else:
@@ -638,28 +648,36 @@ class PushToTalk:
                 self.on_state("too_short")
                 return
             self.on_state("transcribing")
-            threading.Thread(target=self._transcribe, args=(path, live), daemon=True).start()
+            threading.Thread(target=self._transcribe, args=(path, live, self._generation), daemon=True).start()
 
-    def _transcribe(self, path: str, live: "LiveTranscriber | None" = None) -> None:
+    def _state_if_current(self, generation: int, state: str) -> None:
+        with self._generation_lock:
+            if generation == self._generation:
+                self.on_state(state)
+
+    def _transcribe(self, path: str, live: "LiveTranscriber | None" = None, generation: int | None = None) -> None:
+        generation = self._generation if generation is None else generation
         text = None
         try:
             t0 = time.time()
             if live is not None:
                 text = live.finish()
                 if text:
-                    self.on_state(f"transcribed live in {time.time() - t0:.1f}s")
+                    self._state_if_current(generation, f"transcribed live in {time.time() - t0:.1f}s")
             if not text:
                 text = self._transcriber.transcribe(path, self.vocabulary)
-                self.on_state(f"transcribed (pre-recorded fallback) in {time.time() - t0:.1f}s")
+                self._state_if_current(generation, f"transcribed (pre-recorded fallback) in {time.time() - t0:.1f}s")
         except Exception as exc:  # noqa: BLE001
-            self.on_state(f"error: {exc}")
+            self._state_if_current(generation, f"error: {exc}")
             return
         finally:
             try:
                 os.unlink(path)
             except OSError:
                 pass
-        self.transcripts.put(text)
+        with self._generation_lock:
+            if generation == self._generation:
+                self.transcripts.put(text)
 
     def set_key(self, key_name: str) -> None:
         """Change the hotkey live (desktop app). A recording in progress ends with the old key."""

@@ -1279,3 +1279,26 @@ fixture derived from that public section returned a direct 17-word answer in
 not an end-to-end voice timing or a retest of ACT's final narration. Private
 artifacts: human-cognition/diagnostics/docs-scroll. A desktop voice trial and
 the optional down/up preview still need human observation.
+
+### Interrupt on a new push-to-talk press — 2026-11-08
+
+Previously, key-down silenced speech but interrupted the running task only once
+a transcript reached the queue. The microphone's starting callback now invokes
+the normal local stop gate/provider-cancellation path before opening audio or
+waiting for transcription. This works without an overlay and while guiding,
+acting or verifying. Short presses and microphone failures do not resume the
+interrupted task. Its trace and abandoned status are preserved.
+
+Starting, recording and transcribing suppress old speech and closing notes.
+Request generations discard late transcripts, partial messages and routing
+results superseded by a new press, so an earlier question cannot silently
+restart behind the new dictation. A current transcript is still delivered
+normally; human feedback remains separate from task success.
+
+242 targeted offline tests passed, including a simulated actor that observes
+the stop event and saves its report, slow microphone startup, late transcription,
+short presses, microphone failure and guide/ACT/verification states. The small
+talk-loop generation handoff was then rechecked with the spoken-command and
+empty-transcript suites. No real provider cancellation latency or microphone
+interaction is claimed here. An in-flight external action can finish before H
+acknowledges cancellation; a live Option-right interruption trial remains pending.
