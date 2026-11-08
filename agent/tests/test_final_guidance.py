@@ -114,3 +114,17 @@ def test_final_note_survives_active_speech_but_new_request_has_priority(rig, mon
     clock[0] = 100
     monkeypatch.setattr(cli, "_new_request_pending", lambda: True)
     assert done()
+
+
+def test_paginated_answer_has_enough_reading_time_but_can_be_interrupted(rig, monkeypatch):
+    overlay, _, clock = rig
+    overlay.reading_duration = 24
+    cli._show_outcome(overlay, intervention())
+    done = overlay.waits[-1]
+    clock[0] += 6
+    assert not done()
+    monkeypatch.setattr(cli, '_new_request_pending', lambda: True)
+    assert done()
+    monkeypatch.setattr(cli, '_new_request_pending', lambda: False)
+    clock[0] += 20
+    assert done()

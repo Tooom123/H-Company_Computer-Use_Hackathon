@@ -15,7 +15,8 @@ import math
 import os
 import random
 import threading
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 from typing import Callable, Literal
 
 import AppKit
@@ -24,6 +25,7 @@ import objc
 from Quartz import CGEventCreate, CGEventGetLocation
 
 from .overlay_layout import is_idle_badge, magnet_hit, magnet_rect, magnet_size, shortcut_label
+from .presentation import paginate_text, reading_seconds
 
 GRAPHITE = (0.86, 0.17, 0.12, 0.92)  # red pencil: readable on light and dark backgrounds
 PAPER = (1.0, 1.0, 0.985, 0.93)
@@ -254,13 +256,41 @@ def _draw_paper(x, y, w, h, rnd, color=PAPER):
 
 
 def _measure(text, size, max_w):
-    attrs = {AppKit.NSFontAttributeName: _hand_font(size), AppKit.NSForegroundColorAttributeName: _ink()}
+    paragraph = AppKit.NSMutableParagraphStyle.alloc().init()
+    paragraph.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping)
+    attrs = {AppKit.NSFontAttributeName: _hand_font(size), AppKit.NSForegroundColorAttributeName: _ink(),
+             AppKit.NSParagraphStyleAttributeName: paragraph}
     s = Foundation.NSString.stringWithString_(text)
-    bound = s.boundingRectWithSize_options_attributes_((max_w, 400), 1 << 0, attrs).size
-    return attrs, s, min(bound.width, max_w) + 4, bound.height + 6
+    bound = s.boundingRectWithSize_options_attributes_((max_w, 100000), 3, attrs).size
+    return attrs, s, min(math.ceil(bound.width) + 4, max_w), math.ceil(bound.height) + 6
 
 
 _INSETS = {"left": 0.0, "bottom": 0.0, "right": 0.0, "top": 0.0}  # screen areas papers must avoid (menu bar, Dock)
+
+
+def _note_width(screen_width, preferred=480):
+    return max(40, min(preferred, screen_width - _INSETS["left"] - _INSETS["right"] - 52))
+
+
+def _scene_pages(scene: Scene, width: float, height: float) -> tuple[list[Scene], list[float]]:
+    """Measure once per new note, preserve the entire text and keep each page on screen."""
+    usable_h = height - _INSETS["top"] - _INSETS["bottom"] - 60
+    main_h, why_h = min(300, usable_h * .55), min(140, usable_h * .3)
+    prefix = f"{scene.step}. " if scene.step else ""
+    main = paginate_text(scene.text, lambda t: _measure(prefix + t, 19, _note_width(width))[3] <= main_h)
+    # Leave room for the page indicator under the explanatory note.
+    why = paginate_text(scene.why, lambda t: _measure(t, 14, _note_width(width, 420))[3] <= why_h - 35)
+    count = max(len(main), len(why))
+    pages, durations = [], []
+    for i in range(count):
+        text = main[min(i, len(main) - 1)]
+        explanation = why[i] if i < len(why) else ""
+        if count > 1:
+            footer = f"{i + 1}/{count}" + (" · continues automatically" if i < count - 1 else " · final page")
+            explanation = explanation.rstrip() + ("\n" if explanation.strip() else "") + footer
+        pages.append(replace(scene, text=text, why=explanation))
+        durations.append(reading_seconds(text + " " + explanation))
+    return pages, durations
 
 
 def _clamp(x, y, w, h, W, H, margin=14):
@@ -304,7 +334,7 @@ def _note(x, y, text, rnd, size=19, max_w=480, color=PAPER, underline=True, boun
         x, y = px + pad_x, py + pad_y
     _draw_paper(px, py, pw, ph, rnd, color)
     _ink().setStroke()
-    s.drawInRect_withAttributes_(((x, y), (tw, th)), attrs)  # text block exactly centred in the paper
+    s.drawWithRect_options_attributes_(((x, y), (tw, th)), 3, attrs)  # same wrapping options as measurement
     if underline:
         _stroke([(x + i * (tw / 6), y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)], rnd, 1.0, 1.0)
     return px, py, pw, ph
@@ -322,6 +352,10 @@ class _SketchView(AppKit.NSView):
         self.progress = 1.0  # 0..1 reveal of the current scene
         self.stroke_total = 40
         self.held = False  # True while the voice has not started: the scene waits, the badge still shows
+        self.page_scenes = []
+        self.page_seconds = []
+        self.page_index = 0
+        self.page_started_at = None
         return self
 
     def isOpaque(self):
@@ -330,12 +364,13 @@ class _SketchView(AppKit.NSView):
     def drawRect_(self, rect):
         if self.badge is not None:
             self._draw_badge()
-        sc = self.scene
+        sc = self.page_scenes[self.page_index] if self.scene is not None and self.page_scenes else self.scene
         if sc is None or self.held or (not sc.text and sc.target is None and not sc.marks):
             return
         rnd = random.Random(self.seed)
         bounds = self.bounds()
         W, H = bounds.size.width, bounds.size.height
+        note_width, why_width = _note_width(W), _note_width(W, 420)
         _ink().setStroke()
         _REVEAL["progress"] = self.progress
         _REVEAL["index"] = 0
@@ -353,7 +388,7 @@ class _SketchView(AppKit.NSView):
         if sc.target is not None:
             tx, ty = sc.target
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
-            _, _, lw, lh = _measure(label, 19, 480)
+            _, _, lw, lh = _measure(label, 19, note_width)
             pw, ph = lw + 20, lh + 18  # paper size
             half_w = (sc.target_box[2] / 2 + 14) if sc.target_box else 52
             half_h = (sc.target_box[3] / 2 + 14) if sc.target_box else 44
@@ -367,13 +402,14 @@ class _SketchView(AppKit.NSView):
             px, py = _place(paper_x, paper_y, pw, ph, (W, H), placed)
             main_note = (px + 10, py + 9, pw, ph, right)  # text anchor + paper size
         elif sc.text:
-            _, _, lw, lh = _measure(sc.text, 19, 480)
+            label = f"{sc.step}. {sc.text}" if sc.step else sc.text
+            _, _, lw, lh = _measure(label, 19, note_width)
             pw, ph = lw + 20, lh + 18
             px, py = _place(W / 2 - pw / 2, H - 130, pw, ph, (W, H), placed)
             main_note = (px + 10, py + 9, pw, ph, True)
         why_rect = None
         if sc.why and main_note:
-            _, _, ww, wh = _measure(sc.why, 14, 420)
+            _, _, ww, wh = _measure(sc.why, 14, why_width)
             pw2, ph2 = ww + 20, wh + 18
             px2, py2 = _place(main_note[0] - 10 + 6, main_note[1] - 9 - 10 - ph2, pw2, ph2, (W, H), placed)
             why_rect = (px2 + 10, py2 + 9)
@@ -410,9 +446,9 @@ class _SketchView(AppKit.NSView):
         if main_note:
             nx, ny, w, h, right = main_note
             label = (f"{sc.step}. {sc.text}" if sc.step else sc.text)
-            _note(nx, ny, label, rnd)
+            _note(nx, ny, label, rnd, max_w=note_width)
             if why_rect:
-                _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=420, color=PAPER_SOFT, underline=False)
+                _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=why_width, color=PAPER_SOFT, underline=False)
             if sc.target is not None:
                 tx, ty = sc.target
                 _frame(tx, ty, rnd, style, box=sc.target_box)
@@ -498,13 +534,21 @@ class Overlay:
         if animate:
             self._seed += 1
         flipped = Scene(
-            text=scene.text[:110], target=self._flip(scene.target), why=scene.why[:160], step=scene.step,
+            text=scene.text, target=self._flip(scene.target), why=scene.why, step=scene.step,
             marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to), self._flip_box(m.box))
                    for m in scene.marks],
             doodle=scene.doodle, target_box=self._flip_box(scene.target_box),
         )
 
         def apply() -> None:
+            previous = self.view.scene
+            same_text = previous is not None and (previous.text, previous.why, previous.step) == (flipped.text, flipped.why, flipped.step)
+            if same_text and not animate:
+                self.view.page_scenes = [replace(flipped, text=p.text, why=p.why) for p in self.view.page_scenes]
+            else:
+                bounds = self.view.bounds().size
+                self.view.page_scenes, self.view.page_seconds = _scene_pages(flipped, bounds.width, bounds.height)
+                self.view.page_index, self.view.page_started_at = 0, None
             self.view.scene = flipped
             self.view.seed = self._seed
             if animate:
@@ -518,6 +562,22 @@ class Overlay:
             self.window.orderFrontRegardless()
 
         _on_main(apply)
+
+    @property
+    def reading_duration(self) -> float:
+        return sum(self.view.page_seconds) + 1.5  # include the bounded voice/reveal wait
+
+    def _advance_page(self) -> None:
+        if self.view.scene is None or self.view.held or not self.view.page_scenes:
+            return
+        now = time.monotonic()
+        if self.view.page_started_at is None:
+            self.view.page_started_at = now
+        elif (self.view.page_index < len(self.view.page_scenes) - 1
+              and now - self.view.page_started_at >= self.view.page_seconds[self.view.page_index]):
+            self.view.page_index += 1
+            self.view.page_started_at = now
+            self.view.setNeedsDisplay_(True)
 
     def show(self, text: str, target: tuple[float, float] | None = None) -> None:
         """Back-compat: a note, optionally circling `target` (screen points, top-left origin)."""
@@ -564,6 +624,7 @@ class Overlay:
             if held != self.view.held:
                 self.view.held = held  # the voice started (or the wait timed out): draw now
                 self.view.setNeedsDisplay_(True)
+            self._advance_page()
             if self.view.progress < 1.0 and not held:
                 self.view.progress = min(1.0, self.view.progress + 0.08)  # ~0.6 s to draw a scene
                 self.view.setNeedsDisplay_(True)

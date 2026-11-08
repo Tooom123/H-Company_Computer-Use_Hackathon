@@ -1198,3 +1198,28 @@ the complete Interrupted/answer question returned a direct factual summary
 These are planner-only timings, not voice or end-to-end benchmark results.
 Private replay: human-cognition/diagnostics/h-terminal-answer-replay-20261108.json.
 The live voice retest remains pending; no human success label is inferred.
+
+### Overlay readability and internal action narration — 2026-11-08
+
+The human supplied a photo showing a clipped `write_desktop(...)` call in the
+pencil note. Private trial `sess_5c2aaa849845` confirms that the active condition
+was ACT / autonomy 2 and that a provider tool-call string reached narration.
+This is an interface defect, not a new success/usefulness label for the trial.
+
+The native overlay silently sliced its main note to 110 characters. Main and
+explanatory text now retain their complete content, measured with the actual
+font and available width. Long notes use numbered automatic pages, preferring
+sentence boundaries; terminal notes remain visible long enough to read all
+pages. Moving a tracked target does not restart pagination. Short annotation
+labels and the live-transcription badge retain their existing compact format.
+Planner instructions now request short plain-English guidance.
+
+User-facing ACT narration uses local English descriptions of the tool type;
+raw calls and arguments stay in the original trace, not in the voice, pencil
+note or desktop status. No extra model call is needed for these transformations.
+
+153 targeted offline tests passed. Native font metrics were checked at
+1470×956, 800×600 and 600×500. Offscreen AppKit renders of the first and final
+pages at 800×600 were visually inspected: text and the page indicator fit,
+and the last sentence is retained. These renders are synthetic UI fixtures,
+not screenshots of a successful human task. A live user retry remains pending.

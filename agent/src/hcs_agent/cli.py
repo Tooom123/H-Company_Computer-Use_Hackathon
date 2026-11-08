@@ -85,7 +85,7 @@ def _prefetch_voice(request: InterventionRequest) -> None:
     for st in script:
         texts.append(st.instruction)
         if st.why and (verbose or st.action in ("info", "wait")):
-            texts.append(_short(st.why, 90))
+            texts.append(st.why)
     sp.prefetch(texts + list(_COMMON_LINES))
 
 
@@ -346,8 +346,10 @@ def _print_event(e: AgentEvent) -> None:
     if e.type == "knowledge":
         _LAST_LOOKUP_AT = time.time()
     if e.type == "step" and e.data["step"]["kind"] == "action" and e.data["step"].get("detail", {}).get("tools"):
+        from .presentation import action_narration
+
         det = e.data["step"]["detail"]
-        _LAST_ACTION.update(summary=e.message, pointer=det.get("pointer"), element=det.get("element"),
+        _LAST_ACTION.update(summary=action_narration(det["tools"]), pointer=det.get("pointer"),
                             at=time.time(), id=e.event_id)
     elif e.type == "step" and e.data["step"]["kind"] == "observation":
         # The agent took a new screenshot: the page may have changed, marks for the previous action are stale.
@@ -539,10 +541,11 @@ def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
     from .overlay import Scene
 
     ov.badge(None)
-    ov.show_scene(Scene(text=_short(answer, 110), why=f"Source: {source}"[:120]))
+    ov.show_scene(Scene(text=answer, why=f"Source: {source}"))
     t0 = time.time()
     try:
-        ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
+        ov.run_until(lambda: time.time() - t0 > max(seconds, getattr(ov, "reading_duration", 0))
+                     or _new_request_pending(), None, 0.1)
     except KeyboardInterrupt:
         ov.hide()
     ov.badge(f"{_key_label(getattr(_VOICE.get('ptt'), 'key_name', None))}: new request")
@@ -643,10 +646,10 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         ov.show_scene(Scene(text=final.instruction, target=final.pointer, target_box=final.box,
                             why=text, step=final.index, doodle=doodle))
     else:
-        _say(text, why[:120])
-        ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
+        _say(text, why)
+        ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
-    hold = 2.5 if r.status.value == "abandoned" else seconds
+    hold = 2.5 if r.status.value == "abandoned" else max(seconds, getattr(ov, "reading_duration", 0))
     try:
         def finished():
             if _new_request_pending():
@@ -1307,11 +1310,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             shown_action["at"] = time.time()
             from .overlay import Scene
 
-            ov.badge("Taking over…", pulsing=True)
-            text = _short(_LAST_ACTION.get("summary") or "", 110)
-            why = _LAST_ACTION.get("element") or ""
+            ov.badge("Checking the result…" if it.state is State.verifying else "Taking over…", pulsing=True)
+            text = _LAST_ACTION.get("summary") or "Working on the current step…"
             _say(text, interrupt=False)  # never cut the agent's sentence; the latest one waits its turn
-            ov.show_scene(Scene(text=text, why=why[:60], target=_LAST_ACTION.get("pointer")))
+            ov.show_scene(Scene(text=text, target=_LAST_ACTION.get("pointer")))
             return
         shown_at = shown_action.get("at")
         if shown_at and ov.view.scene is not None:
@@ -1358,10 +1360,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     if not same_step:
-                        _say(g.instruction, _short(why, 90))
+                        _say(g.instruction, why)
                     shown["text"] = g.instruction
                     scene = Scene(
-                        text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
+                        text=g.instruction, target=g.pointer, target_box=g.box, why=why, step=g.index,
                         doodle="question" if "can't see" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
                                     None, a.box)
