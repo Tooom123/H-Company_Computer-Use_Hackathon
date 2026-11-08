@@ -123,24 +123,28 @@ def _next_page_note(notes, shown, info, items):
             continue
         if n.get("url") and str(n["url"]) not in url:
             continue
+        if not n.get("text"):
+            continue
         if n.get("has") and not all(_find_label([h], items) is not None for h in n["has"]):
             continue
         if not n.get("step") and not n.get("url") and not n.get("has"):
             continue
-        at = _find_label(n["at"], items)
+        at = _find_label(n["at"], items, prefer=n.get("prefer"))
         if at is not None:
             return i, at
     return None
 
 
-def _find_label(labels, items):
-    """First label found among the listed elements: exact, then prefix, then contained; controls before text."""
+def _find_label(labels, items, prefer: str | None = None):
+    """First label found among the listed elements: exact, then prefix, then contained; controls before text.
+    prefer="left": among equal hits, the leftmost (the sidebar's "Agents", not the breadcrumb's)."""
     for label in labels if isinstance(labels, list) else [labels]:
         low = str(label).lower()
         for test in (lambda n: n == low, lambda n: n.startswith(low), lambda n: low in n):
             hits = [e for e in items if test(e.name.lower().strip())]
             if hits:
-                return min(hits, key=lambda e: e.role in _TEXT_ROLES)
+                side = (lambda e: e.center[0]) if prefer == "left" else (lambda e: 0)
+                return min(hits, key=lambda e: (e.role in _TEXT_ROLES, side(e)))
     return None
 
 
@@ -737,7 +741,8 @@ class Intervention:
         notes: list[dict] = []
         if (bound.request.software or "").lower() in ("hcompany", "h-company"):
             context += "\n\n" + _platform_knowledge("hcompany")
-            notes = _page_notes("hcompany")
+            # Site notes, plus the notes of this procedure (e.g. the newcomer tour); other procedures' notes are not.
+            notes = [n for n in _page_notes("hcompany") if n.get("procedure") in (None, bound.procedure.id)]
             max_steps += len(notes)
         notes_shown: set[int] = self.__dict__.setdefault("_notes_shown", set())  # across resumed attempts
         public_queries = {
@@ -826,7 +831,9 @@ class Intervention:
                                                                         blocker=message))
             # Planned explanations of this page (wizard step, Agent View...), once each, before the next action.
             # Only on pages reached during the guidance, so a question asked elsewhere does not start a tour.
-            note = _next_page_note(notes, notes_shown, info, items) if history else None
+            # Site notes only on pages reached during the guidance (no tour for an unrelated question); notes that
+            # belong to this procedure (the tour itself) start at once.
+            note = _next_page_note([n if (history or n.get("procedure")) else {} for n in notes], notes_shown, info, items)
             if note is not None:
                 idx, at = note
                 notes_shown.add(idx)

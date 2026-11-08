@@ -313,3 +313,21 @@ def test_docs_question_from_the_platform_is_guided_not_waiting_for_the_docs_site
                         and AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary="x", blocker="x")))
     it.start(); it.approve(ApproveCommand()); it.wait(5)
     assert "hub.hcompany.ai" in seen["hints"][0] and "first guide the person there" in seen["hints"][0]
+
+
+def test_newcomer_tour_points_at_each_sidebar_section_not_the_breadcrumb():
+    """Sidebar and breadcrumb labels read on the live platform, 2026-11-08 ("Agents"/"Sessions" exist in both)."""
+    from hcs_agent.runner import _page_notes, _next_page_note
+    sidebar = [ctl("AXButton", n, 100) for n in ["Home", "Projects", "Agents", "Sessions", "Skills", "Environments",
+                                                 "Browser Profiles", "Vaults", "Schedules", "Organisation",
+                                                 "API keys", "Webhooks", "Upgrade"]]
+    crumbs = [ctl("AXButton", "Agents", 468), ctl("AXButton", "Sessions", 575)]
+    items = crumbs + sidebar + [ctl("AXButton", "Help and feedback", 1464)]
+    notes = [n for n in _page_notes("hcompany") if n.get("procedure") == "hcompany_platform_tour"]
+    info = SimpleNamespace(url="https://platform.hcompany.ai/", elements=items)
+    shown, order = set(), []
+    while (r := _next_page_note(notes, shown, info, items)):
+        shown.add(r[0]); order.append((r[1].name, r[1].center[0]))
+    assert [n for n, _ in order] == ["Home", "Agents", "Sessions", "Skills", "Environments", "Browser Profiles",
+                                     "Schedules", "API keys", "Upgrade", "Help and feedback"]
+    assert dict(order)["Agents"] == 100 and dict(order)["Sessions"] == 100  # sidebar, not breadcrumb

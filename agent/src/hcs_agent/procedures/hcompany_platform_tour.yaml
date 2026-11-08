@@ -1,0 +1,60 @@
+# H Company platform — newcomer tour ("I'm new here, can we do a quick tour?"). Read-only: the guide points at each
+# section of the left sidebar (labels read on the live platform 2026-11-08) with a planned note
+# (data/hcompany-page-notes.yaml, procedure: hcompany_platform_tour); nothing is clicked or changed.
+id: hcompany_platform_tour
+software: hcompany
+software_version: "2026-11"
+session_type: discovery
+title: Quick tour of the H Platform for a newcomer (what each section of the sidebar is for)
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 24
+max_time_s_per_attempt: 300
+
+parameters: []
+
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+
+objective: >-
+  Give a newcomer a quick tour of platform.hcompany.ai: what each section of the left sidebar is for, then suggest
+  a first thing to try.
+
+planned_changes:
+  - "Read-only: nothing is clicked, created or changed."
+
+allowed_actions:
+  - Point at the sidebar entries and explain them; the person may click to look if they want.
+
+forbidden_actions:
+  - Creating, editing or deleting anything; any purchase or Upgrade.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You give a newcomer a quick, friendly tour of platform.hcompany.ai in a browser on macOS. Read-only.
+  Planned notes point at each section of the left sidebar; they are shown first. If the sidebar is collapsed,
+  point at "Expand sidebar" first. Once the notes are done, set done=true with a one-sentence summary that
+  suggests a first thing to try, e.g. "Ask me to build an agent and run it in a cloud session."
+
+guide_steps:
+  - instruction: "Here is the left sidebar: every section of the platform"
+    kind: info
+    element: "the left sidebar of the platform"
+    why: "Each entry opens one part of the platform."
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left sidebar"
+recovery_steps: []
+
+postcondition:
+  description: The H Platform is displayed in the browser.
+  checks:
+    - key: platform_visible
+      prompt: The H Platform (platform.hcompany.ai) is displayed in the browser, with its left sidebar.
+  verification_instructions: |
+    You are a read-only verifier. Look at the screen only; never click. Report exactly what you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+  decision_expected: Support must check that the person can sign in to the platform.
+  default_category: unknown

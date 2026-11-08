@@ -172,10 +172,45 @@ def _is_stop_utterance(text: str) -> bool:
     return normalized in {"stop", "stop task", "stop the task", "arrete", "arrete la tache"}
 
 
+# Spoken mode switches, so nobody has to open the desktop app mid-demo. Short commands only: a sentence that
+# also asks for a task ("create an API key for me") goes to the router.
+_TO_AGENT = re.compile(r"^\W*(?:(?:ok|okay|hey|hey companion|companion|alright)[ ,]+)?(?:please[ ,]+)?(?:you )?"
+                       r"(?:do it(?: for me)?|take over|take the wheel|go ahead|you do it|do it yourself|switch to "
+                       r"(?:agent|auto|do it) mode|fais[- ]le(?: pour moi)?|fais[- ]le toi[- ]même|prends la main|"
+                       r"occupe[- ]t'en|à toi|a toi|passe en mode (?:agent|auto))(?: please| s'il te plaît| stp)?\W*$", re.I)
+_TO_USER = re.compile(r"^\W*(?:(?:ok|okay|hey|companion|alright|non|no)[ ,]+)?(?:let me do it|i'?ll do it(?: myself)?|"
+                      r"i do it|guide me|show me instead|just show me|switch to guide mode|je le fais(?: moi[- ]même)?|"
+                      r"laisse[- ]moi faire|montre[- ]moi plutôt|guide[- ]moi|passe en mode guide)\W*$", re.I)
+
+
+def _mode_command(text: str) -> int | None:
+    """2 = the agent acts, 1 = the person acts with guidance (and help if stuck), None = not a mode command."""
+    t = (text or "").strip()
+    if len(t.split()) > 8:
+        return None
+    if _TO_AGENT.search(t):
+        return 2
+    if _TO_USER.search(t):
+        return 1
+    return None
+
+
+def _apply_mode_command(level: int, ov=None) -> None:
+    _set_autonomy(level)
+    msg = "OK, I'm taking over: watch me do it." if level >= 2 else "OK, your turn: I'll show you each step."
+    print(f"  [voice] mode -> autonomy {level}: {msg}", flush=True)
+    _say(msg)
+    if ov is not None:
+        ov.badge(msg)
+
+
 def _consume_talk_control(text: str, ov=None) -> bool:
     """An explicitly armed feedback dictation wins, including a comment consisting of 'stop'."""
     if _FEEDBACK.consume_transcript(text):
         _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
+        return True
+    if (level := _mode_command(text)) is not None:
+        _apply_mode_command(level, ov)
         return True
     if not _is_stop_utterance(text):
         return False
@@ -959,7 +994,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             last_request = request
             if not coaching:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
-            do_it = (not coaching and request.procedure_id and request.mode is Mode.act and _DO_IT.search(text))
+            do_it = bool(not coaching and request.procedure_id and _DO_IT.search(text))  # explicit ask wins
             if do_it:
                 print("  [voice] explicit \"do it for me\": the agent acts for this request (autonomy 2)")
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
@@ -1412,6 +1447,16 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
 
     def tick() -> None:
         nonlocal shown_step, shown_key, prompted, guidance_scene_shown
+        if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
+            ptt = _VOICE.get("ptt")
+            try:
+                pending = ptt.transcripts.queue[0]
+            except (AttributeError, IndexError):
+                pending = None
+            if isinstance(pending, str) and (level := _mode_command(pending)) is not None:
+                ptt.transcripts.get_nowait()
+                _apply_mode_command(level, ov)  # "do it" mid-wizard: the agent takes over from this step
+                return
         if (not interrupted["done"] and _new_request_pending() and it.state is State.awaiting_user and it.guidance
                 and (question := _take_step_question())):
             # A question about the current step is not a new task: explain the step again, keep guiding.
