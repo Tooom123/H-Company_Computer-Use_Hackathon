@@ -169,7 +169,9 @@ class Procedure(BaseModel):
         return values
 
     def render(self, text: str, values: dict[str, str]) -> str:
-        return text.format_map(_SafeDict(values))
+        # Only {parameter} placeholders, in one pass. str.format crashed on literal braces carried by documentation
+        # or the user's words ("{ ... : sessionId }" -> ValueError) in an unscripted request.
+        return _PLACEHOLDER.sub(lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), text)
 
     def bound(self, request: InterventionRequest) -> BoundProcedure:
         values = self.resolve_parameters(request.parameters)
@@ -185,9 +187,9 @@ def _resolve_default(default: str) -> str:
     return (date.today() + timedelta(days=int(m.group(1)))).isoformat() if m else default
 
 
-class _SafeDict(dict):
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
+_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
 
 
 class BoundProcedure(BaseModel):

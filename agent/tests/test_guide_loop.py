@@ -108,3 +108,16 @@ def test_native_catalogue_keeps_navigation_over_timeline_ticks_and_counters(monk
     names = [e.name for e in items]
     assert names[:2] == ["Expand sidebar", "Agents"] and "Send" in names
     assert not any(n.endswith("AM") for n in names) and "72" not in names and "+" not in names
+
+
+def test_unscripted_request_survives_braces_in_docs_and_goal():
+    """Live crash 2026-11-08: the docs map carried '{ ... : sessionId }' into a generic procedure ->
+    ValueError: Invalid format specifier ' sessionId '."""
+    from hcs_agent.contract import InterventionRequest, Mode
+    from hcs_agent.procedures import make_generic_procedure
+
+    req = InterventionRequest(software="hcompany", goal="Upload files {with} this session", mode=Mode.guide,
+                              procedure_id="generic")
+    bound = make_generic_procedure(req, 'POST /sessions body: { "files": [...] : sessionId }').bound(req)
+    assert '{ "files": [...] : sessionId }' in bound.guide_instructions
+    assert "Upload files {with} this session" in bound.objective
