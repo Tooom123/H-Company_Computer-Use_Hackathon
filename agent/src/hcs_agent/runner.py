@@ -270,8 +270,20 @@ class Intervention:
                                               "one short French sentence what you do and why.")
                     last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
             elif guide and self.autonomy < 2:
-                last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
-                                                         self._stop, on_lookup)
+                # No script: plan each step from the page's own controls (fast, exact); the H agent only when the
+                # page cannot be read (no browser tree) or the planner gets lost.
+                last_attempt = self._dynamic_guide(bound)
+                if last_attempt is None:
+                    if self.autonomy >= 1 and self.guidance:
+                        self.takeover = True
+                        with self._lock:
+                            if not self.state.terminal:
+                                self.state = State.running
+                        self._emit("state_changed", "Taking over to finish the task.", takeover=True)
+                        last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
+                    else:
+                        last_attempt = self.backend.run_guidance(bound, task, self._on_step, self._on_guidance,
+                                                                 self._stop, on_lookup)
             else:
                 last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
             self._record_attempt(last_attempt)
@@ -450,6 +462,95 @@ class Intervention:
                                        why="", pointer=None, kind="info", last=True))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
+
+    def _dynamic_guide(self, bound: BoundProcedure, max_steps: int = 14) -> AttemptResult | None:
+        """Guide without a script: each step is planned from the controls actually on the page (accessibility
+        tree) and the local site knowledge, in one text-only model call; the box is exact. None = could not
+        read the page or got lost -> the caller falls back to the H agent."""
+        catalogue = getattr(self.backend, "page_catalogue", None)
+        planner = getattr(self.backend, "plan_step", None)
+        if catalogue is None or planner is None:
+            return None
+        from .backend import _where
+
+        try:
+            from .overlay import screen_size_points
+
+            sw, sh = screen_size_points()
+        except Exception:  # noqa: BLE001
+            sw, sh = 1512.0, 982.0
+        context = bound.procedure.agent_instructions
+        history: list[str] = []
+        repeats = 0
+        last_instruction = ""
+        waited_front = 0
+        for n in range(max_steps):
+            if self._stop.is_set():
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            if self.autonomy >= 2:
+                self._trace("autonomy raised to max: taking over")
+                return None
+            t0 = time.time()
+            cat = catalogue(bound)
+            if cat is None:
+                self._trace("no browser page to read: handing the guide to the H agent")
+                return None if not history else AttemptResult(None, "completed", DeclaredResult(
+                    outcome="unclear", summary="Guided from the page; outcome to verify."))
+            info, items = cat
+            if not getattr(info, "is_front", True):
+                waited_front += 1
+                if waited_front == 1:
+                    gs = GuidanceStep(index=len(self.guidance) + 1, instruction="Bring the browser to the front",
+                                      why="I read the page to guide you; it must be visible.", kind="wait", pointer=None)
+                    self._on_guidance_nowait(gs)
+                time.sleep(1.0)
+                if waited_front > 40:
+                    return None
+                continue
+            waited_front = 0
+            cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" for e in items]
+            plan = planner(bound.request.goal, context, f"{info.title[:80]} — {info.url[:100]}", cands, history)
+            self._trace(f"planned step {n + 1} in {time.time() - t0:.1f}s: "
+                        f"{'done' if plan.get('done') else plan.get('instruction', '')[:70]}")
+            if plan.get("done"):
+                return AttemptResult(None, "completed", DeclaredResult(
+                    outcome="done", summary=plan.get("summary") or "Goal reached, as planned from the page.",
+                    steps_taken=history))
+            instruction = (plan.get("instruction") or "").strip()
+            if not instruction:
+                return None
+            if instruction == last_instruction:
+                repeats += 1
+                if repeats >= 2:
+                    self._trace("the planner repeats itself: handing over")
+                    return None
+            else:
+                repeats = 0
+            last_instruction = instruction
+            kind = plan.get("kind") if plan.get("kind") in ("click", "type", "info") else "click"
+            target = items[plan["target"]] if plan.get("target") is not None else None
+            if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
+                instruction = f"{instruction} — type \"{plan['text']}\""
+            gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:160],
+                              where=target.name if target else "", pointer=target.center if target else None,
+                              box=target.box if target else None, box_exact=target is not None, kind=kind)
+            reply = self._on_guidance(gs)
+            if reply is None:
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            did, note = reply
+            if not did:
+                return None  # the user is stuck: the caller decides (takeover / agent) from the autonomy level
+            history.append(instruction if not note else f"{instruction} (user: {note})")
+        return AttemptResult(None, "completed", DeclaredResult(
+            outcome="unclear", summary="Step limit reached while guiding from the page; outcome to verify.",
+            steps_taken=history))
+
+    def _on_guidance_nowait(self, step: GuidanceStep) -> None:
+        """Publish an informational step without waiting for the user (e.g. 'bring the browser to the front')."""
+        self.guidance.append(step)
+        step.shown_at = _now()
+        self._set_state(State.awaiting_user, "Your turn: do the step shown, then continue.")
+        self._emit("guidance", step.instruction, step=step.model_dump(mode="json"))
 
     def _ensure_screen(self, bound: BoundProcedure, attempts: int = 40) -> bool:
         """Before guiding: wait until the expected screen is displayed, asking the user to show it if needed."""

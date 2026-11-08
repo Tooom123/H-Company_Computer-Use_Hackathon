@@ -179,3 +179,20 @@ def test_generic_unscripted_task_runs_with_the_general_agent(tmp_path):
     it.wait(5)
     assert it.report is not None and it.report.procedure_id == "generic"
     assert it.report.verification.checks.keys() == {"goal_achieved"}
+
+
+def test_unscripted_guide_plans_steps_from_the_page_catalogue(tmp_path):
+    from hcs_agent.voice import Intent, generic_request
+
+    req = generic_request(Intent(procedure_id=None, task="Start a new session", software="hcompany", mode="guide"))
+    events = []
+    it = Intervention(req, MockBackend(step_delay_s=0.01, outcome="done"), ProcedureRegistry(), events.append, tmp_path)
+    it.start()
+    it.approve(ApproveCommand())
+    _auto_next(it, events, [])
+    it.wait(5)
+    assert it.report.status is CaseStatus.resolved
+    steps = [g for g in it.guidance if not g.last]
+    assert steps and all(g.box_exact and g.box for g in steps)  # boxes come from the page catalogue, not vision
+    assert it.report.declared.summary == "[simulated] goal reached"
+    assert any("planned step" in e.message for e in events if e.type == "step")

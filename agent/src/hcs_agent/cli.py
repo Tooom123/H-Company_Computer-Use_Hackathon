@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -608,8 +609,9 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 request = generic_request(intent, doc)
                 last_request = request
                 history.clear()
-                print(f"  -> no script for this; general agent | {request.software} | mode {request.mode.value} | {request.goal}")
-                _say("No script for this one, I will work it out from the screen.")
+                print(f"  -> unscripted task: planning from the page and the documentation | {request.software} | "
+                      f"mode {request.mode.value} | {request.goal}")
+                _say("Let me work this out from the page.")
                 try:
                     code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
                                     overlay=not args.no_overlay, ov=ov)
@@ -949,6 +951,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 ov.badge("New request…", pulsing=True)
             it.stop(StopCommand(reason="replaced by a new voice request"))
             return
+        if interrupted["done"]:
+            return  # stopping: nothing more to show or read until the report lands
         status_badge()
         if getattr(it, "takeover", False) and it.state in (State.running, State.verifying):
             narrate()
@@ -1003,7 +1007,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 print(f"\n  {'input' if inputs.acted(g.kind) else 'screen'} detected, next…", flush=True)
                 advance()
                 return
-            ready, _, _ = select.select([sys.stdin], [], [], 0)
+            try:
+                ready, _, _ = select.select([sys.stdin], [], [], 0)
+            except (OSError, ValueError, io.UnsupportedOperation):  # no real stdin (tests, launchers)
+                ready = []
             if ready:
                 ans = sys.stdin.readline().strip()
                 if ans.lower() == "q":

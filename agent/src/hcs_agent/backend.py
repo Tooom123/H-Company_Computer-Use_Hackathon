@@ -520,6 +520,42 @@ class HBackend:
         except Exception:  # noqa: BLE001 - the tree is an accelerator, never a blocker
             return None, []
 
+    def page_catalogue(self, bound=None, max_items: int = 90):  # noqa: ARG002 - the mock uses `bound`
+        """(PageInfo, [Candidate]) of the browser page in front: the controls a planner may point at.
+        None when there is no browser page (or the tree is off)."""
+        if not self.use_a11y:
+            return None
+        try:
+            from . import a11y, sitemap
+
+            info = a11y.page()
+            if info is None or len(info.elements) <= 1:
+                return None
+            sitemap.remember(info)
+            seen: set[tuple[str, str]] = set()
+            items = []
+            for e in info.elements:
+                if e.role not in (*a11y.INTERACTIVE, "AXHeading"):
+                    continue
+                key = (e.role, e.name.lower())
+                if key in seen or e.frame[2] * e.frame[3] > 500 * 400:
+                    continue
+                if not a11y.visible_at_point(e):
+                    continue
+                seen.add(key)
+                items.append(e)
+                if len(items) >= max_items:
+                    break
+            return info, items
+        except Exception:  # noqa: BLE001
+            return None
+
+    def plan_step(self, goal: str, context: str, page: str, candidates: list[str], history: list[str]) -> dict | None:
+        try:
+            return self._grounding().plan_step(goal, context, page, candidates, history)
+        except Exception as exc:  # noqa: BLE001
+            return {"done": False, "instruction": "", "why": f"planner error: {exc}", "kind": "info", "target": None}
+
     def locate(self, description: str, context: str = "") -> Located | None:
         hit, ties = self._tree_locate(description)
         if hit is not None:
@@ -816,6 +852,27 @@ class MockBackend:
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:
         return True, "[simulated] effect visible"
+
+    def page_catalogue(self, bound=None, max_items: int = 90):
+        from types import SimpleNamespace
+
+        from .a11y import Candidate
+
+        if bound is not None and self._scenario(bound) != "done":
+            return None  # simulate a page that cannot be read: the H agent path (and its blocked outcome) runs
+        info = SimpleNamespace(url="https://platform.example/sessions", title="Sessions", is_front=True, elements=[])
+        items = [Candidate("AXButton", "New session", (400, 300, 120, 32)), Candidate("AXLink", "Agents", (40, 120, 80, 24))]
+        return info, items
+
+    _plans = 0
+
+    def plan_step(self, goal: str, context: str, page: str, candidates: list[str], history: list[str]) -> dict | None:
+        self._plans += 1
+        if self._plans >= 3 or len(history) >= 2:
+            return {"done": True, "instruction": "", "why": "", "kind": "info", "target": None,
+                    "summary": "[simulated] goal reached"}
+        return {"done": False, "instruction": f"Click New session ({self._plans})", "why": "It starts a session.",
+                "kind": "click", "target": 0}
 
     def locate(self, description: str, context: str = "") -> Located | None:
         time.sleep(self.step_delay_s)
