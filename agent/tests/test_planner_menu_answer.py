@@ -19,6 +19,8 @@ def test_text_planner_can_answer_visible_choices_without_requesting_another_acti
         assert 'do not ask to reopen their menu' in prompt
         assert 'Visibility alone does not prove a choice is selected' in prompt
         assert 'unavailable evidence' in str(body['tools'])
+        schema = body['tools'][0]['function']['parameters']
+        assert 'summary' in schema['required']
         return httpx.Response(200, json={'choices': [{'message': {'tool_calls': [{
             'function': {'name': 'next_step', 'arguments': json.dumps({
                 'done': True, 'kind': 'info', 'target': 0,

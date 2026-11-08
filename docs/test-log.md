@@ -1171,3 +1171,30 @@ returned: populated AGENT ANSWER -> direct informational answer, done=true
 individual planner latencies, not end-to-end voice latency or a human benchmark.
 Replay records remain private under human-cognition/diagnostics. Live voice,
 target placement and post-click continuation still need the human retest.
+
+### H session review: empty terminal answer falsely reported as success — 2026-11-08
+
+The human reported hearing “The page appears to answer the question; result
+still needs verification.” Three retained trials (`sess_49ff4ccc3999`,
+`sess_27e0f1b2cde7`, `sess_bc3c92ac3ade`) emitted that fallback and recorded
+resolved with “Goal reached, as planned from the page.” These are defective
+coaching outcomes, not validated successes or positive human labels. The last
+transcript was the incomplete “does it still”; the first contained the complete
+question. Original reports and traces remain unchanged.
+
+Diagnosis: the planner's terminal summary was optional. The runner replaced a
+missing summary with a generic sentence, ignoring any informational instruction,
+and declared success. The schema now requires summary and the prompt requests
+the concrete answer. The runner retains an informational instruction when the
+summary is missing, otherwise allows one bounded repair and blocks on repeated
+empty answers. Spoken and declared answers use the same text. An incomplete
+question should request clarification, not infer a goal from the page.
+
+124 targeted offline tests passed, including missing/invalid terminal summary,
+bounded repair, repeated empty responses, menu answers and guide progression.
+Two parallel real Holo4 Models API calls used the same synthetic replay fixture:
+the complete Interrupted/answer question returned a direct factual summary
+(1.732 s); “does it still” returned a clarification with done=false (1.662 s).
+These are planner-only timings, not voice or end-to-end benchmark results.
+Private replay: human-cognition/diagnostics/h-terminal-answer-replay-20261108.json.
+The live voice retest remains pending; no human success label is inferred.

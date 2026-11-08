@@ -709,6 +709,45 @@ def test_read_only_response_is_sent_to_planner_without_becoming_a_target(dynamic
     assert all('A response exists' not in candidate for candidate in dynamic.calls[0][3])
 
 
+@pytest.mark.parametrize('summary', [None, '', '  ', 42, {'wrong': 'type'}])
+def test_terminal_info_instruction_survives_missing_summary(dynamic, summary):
+    answer = 'Yes. The session produced an answer in the AGENT ANSWER panel.'
+    dynamic.backend.plan_step = lambda *args: {'done': True, 'kind': 'info',
+                                               'instruction': answer, 'summary': summary}
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert result.declared.summary == answer == dynamic.shown[0].instruction
+    assert len(dynamic.shown) == 1 and dynamic.shown[0].last
+
+
+def test_missing_terminal_answer_gets_one_repair_without_generic_success(dynamic):
+    plans = iter([{'done': True, 'kind': 'info', 'instruction': ''},
+                  {'done': True, 'summary': 'Yes. The final answer is displayed on the right.'}])
+    calls = []
+    dynamic.backend.plan_step = lambda *args: calls.append(args) or next(plans)
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done' and len(calls) == 2
+    assert len(dynamic.shown) == 1
+    assert 'final answer is displayed' in dynamic.shown[0].instruction
+    assert 'omitted the factual answer' in calls[1][4][-1]
+
+
+@pytest.mark.parametrize('plan', [
+    {'done': True, 'kind': 'info', 'instruction': ''},
+    {'done': True, 'kind': 'click', 'instruction': 'Click Answer'},
+    {'done': True, 'summary': 123, 'instruction': None},
+])
+def test_repeated_empty_terminal_answer_blocks_instead_of_success(dynamic, plan):
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    calls = []
+    dynamic.backend.plan_step = lambda *args: calls.append(args) or plan
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked' and len(calls) == 2
+    assert len(dynamic.shown) == 1 and dynamic.shown[0].last
+    assert 'reliable answer' in dynamic.shown[0].instruction
+    assert 'Goal reached' not in result.declared.summary
+
+
 @pytest.mark.parametrize('unavailable', ['missing', 'background', 'empty'])
 def test_lost_page_is_unknown_progress_not_a_change(dynamic, unavailable):
     from hcs_agent.runner import _page_state_signature

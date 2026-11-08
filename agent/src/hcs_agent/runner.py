@@ -659,6 +659,7 @@ class Intervention:
         rejected_plans = 0
         reobservations = 0
         empty_native_reads = 0
+        empty_terminal_answers = 0
         waited_front = 0
         for n in range(max_steps):
             if self._stop.is_set():
@@ -800,12 +801,26 @@ class Intervention:
                                                                         blocker=message, steps_taken=history))
             self._trace(f"planned step {n + 1} in {time.perf_counter() - t0:.1f}s: "
                         f"{'done' if plan.get('done') else plan.get('instruction', '')[:70]}")
-            if plan.get("done"):
-                summary = plan.get("summary") or "The page appears to answer the question; result still needs verification."
+            if plan.get("done") is True:
+                summary = plan.get("summary")
+                summary = summary.strip() if isinstance(summary, str) else ""
+                if not summary and plan.get("kind") == "info":
+                    instruction = plan.get("instruction")
+                    summary = instruction.strip() if isinstance(instruction, str) else ""
+                if not summary:
+                    empty_terminal_answers += 1
+                    self._trace("Planner marked done without a concrete answer; no success declared.")
+                    history.append("Your previous done=true response omitted the factual answer. "
+                                   "Return a concrete English summary grounded in the current page, "
+                                   "or ask for clarification with done=false. Do not repeat an action.")
+                    if empty_terminal_answers <= 1:
+                        continue  # one bounded repair; never speak a fabricated success fallback
+                    return native_blocked("I couldn't formulate a reliable answer. Please repeat the full question.",
+                                          "missing_terminal_answer")
                 self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction=summary,
                                               kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(
-                    outcome="done", summary=plan.get("summary") or "Goal reached, as planned from the page.",
+                    outcome="done", summary=summary,
                     steps_taken=history))
             instruction = (plan.get("instruction") or "").strip()
             if not instruction:

@@ -158,8 +158,8 @@ class Grounder:
                 "kind": {"type": "string", "enum": ["click", "type", "info"]},
                 "target": {"type": "integer", "description": "1-based index of the control to act on; 0 if none"},
                 "text": {"type": "string", "description": "for kind=type: what to type"},
-                "summary": {"type": "string", "description": "when done: what was achieved, one sentence"}},
-                "required": ["observation", "done", "instruction", "why", "kind", "target"]}}}
+                "summary": {"type": "string", "description": "When done: the concrete answer to the user's question, one short sentence with the observed fact or location. Otherwise an empty string."}},
+                "required": ["observation", "done", "instruction", "why", "kind", "target", "summary"]}}}
         listing = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(candidates)) or "(no controls listed)"
         hist = "\n".join(f"- {h}" for h in history[-8:]) or "(none yet)"
         prompt = (f"You guide a person using software, one step at a time; they do the clicks.\n"
@@ -184,6 +184,9 @@ class Grounder:
                   "question is whether a session produced an answer and a non-empty AGENT ANSWER is shown, "
                   "set done=true, kind=info, target=0 and summary to a direct yes with its location. "
                   "An Answer button or an empty heading alone is not that evidence. "
+                  "When done=true, put the actual factual answer in summary, not a meta statement such as "
+                  "'goal reached' or 'the page answers the question'. If the spoken question is incomplete "
+                  "and its meaning is unclear, ask one clarification with done=false, kind=info, target=0. "
                   "The current page takes precedence over a documentation recipe: skip steps already achieved. "
                   "For example, when a CRM pipeline is already open, search its records rather than asking to open CRM again. "
                   "For an existing record that is not visible, prefer the visible search field or filters; "
