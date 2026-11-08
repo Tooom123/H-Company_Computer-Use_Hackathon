@@ -41,8 +41,10 @@ function serve(root, onFeed) {
   });
 }
 
-export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
+export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPreload }) {
   let win = null;
+  let overlay = null; // the red honeycomb over the whole screen while the gaze is tracked
+  let overlayIdle = null;
   let server = null;
   let tracking = false;
   let errorPx = null;
@@ -56,7 +58,10 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
   // calibration opens in the user's browser instead, full screen, and the page posts its gaze to this server.
   const mode = process.platform === "linux" && process.env.HCS_VISION_WINDOW !== "electron" ? "browser" : "electron";
   const onFeed = (url, d) => {
-    if (url === "/accuracy" && Number.isFinite(d.px) && d.px > 0) errorPx = Math.round(d.px);
+    if (url === "/accuracy" && Number.isFinite(d.px) && d.px > 0) {
+      errorPx = Math.round(d.px);
+      if (overlay && !overlay.isDestroyed()) overlay.webContents.send("overlay:accuracy", errorPx);
+    }
     if (url === "/gaze" && opened && Number.isFinite(d.x) && Number.isFinite(d.y)) {
       lastFeed = Date.now();
       samples += 1;
@@ -75,7 +80,34 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
     return { available: true, running: Boolean(win && !win.isDestroyed()), tracking, builtin: true, errorPx, samples };
   }
 
+  /** Screen point -> the overlay (full screen, click-through, never captured): the user sees what is tracked. */
+  async function showGaze(x, y) {
+    if (!server) return;
+    if (!overlay || overlay.isDestroyed()) {
+      const { bounds } = screen.getPrimaryDisplay();
+      overlay = new BrowserWindow({
+        ...bounds, frame: false, transparent: true, resizable: false, movable: false, focusable: false,
+        alwaysOnTop: true, skipTaskbar: true, hasShadow: false, backgroundColor: "#00000000", show: false,
+        webPreferences: { preload: overlayPreload, contextIsolation: true, sandbox: true, backgroundThrottling: false },
+      });
+      overlay.setIgnoreMouseEvents(true);
+      overlay.setAlwaysOnTop(true, "screen-saver");
+      overlay.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
+      overlay.setContentProtection(true); // never in a screenshot: Holo must not see the honeycomb
+      overlay.on("closed", () => { overlay = null; });
+      await overlay.loadURL(`http://127.0.0.1:${server.address().port}/overlay.html`);
+      overlay.showInactive();
+      if (Number.isFinite(errorPx)) overlay.webContents.send("overlay:accuracy", errorPx);
+    }
+    if (overlay.isDestroyed()) return;
+    const b = overlay.getBounds();
+    overlay.webContents.send("overlay:gaze", { x: x - b.x, y: y - b.y });
+    clearTimeout(overlayIdle);
+    overlayIdle = setTimeout(() => overlay && !overlay.isDestroyed() && overlay.webContents.send("overlay:gaze", null), 1500);
+  }
+
   function forward(x, y) {
+    showGaze(x, y).catch(() => {});
     const now = Date.now();
     if (inFlight || now < pausedUntil || now - lastSent < 66) return; // ~15 points a second is plenty
     lastSent = now;
@@ -143,6 +175,8 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload }) {
     opened = 0;
     lastFeed = 0; // browser mode: the tab keeps running until the user closes it; the feed is ignored from now
     if (win && !win.isDestroyed()) win.destroy(); // the page's unload stops the camera
+    if (overlay && !overlay.isDestroyed()) overlay.destroy();
+    overlay = null;
     win = null;
     tracking = false;
     return status();

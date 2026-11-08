@@ -76,7 +76,7 @@ ipcMain.handle("agent", async (_e, method, p, body) => {
 // (gaze-window.mjs: heatmap/vision.html in a full-screen window that keeps tracking, click-through, afterwards).
 let vision = null;
 const gaze = createGazeCalibrator({ heatmapDir: path.resolve(here, "..", "heatmap"), agentUrl: AGENT,
-  preload: path.join(here, "gaze-preload.cjs") });
+  preload: path.join(here, "gaze-preload.cjs"), overlayPreload: path.join(here, "gaze-overlay-preload.cjs") });
 function labStatus() {
   if (process.platform !== "darwin" || process.env.HCS_VISION_BUILTIN === "1") return null; // the lab needs macOS
   if (!fs.existsSync(path.join(VISION_DIR, "package.json")) || !fs.existsSync(path.join(VISION_DIR, "node_modules"))) return null;

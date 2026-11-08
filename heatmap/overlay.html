@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gaze overlay</title>
+<style>
+  /* Full-screen, transparent, click-through window (desktop app): only the red honeycomb is drawn. */
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #heat { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="heat"></canvas>
+<script type="module">
+// Shows the user where the assistant thinks they look: the same honeycomb as the test page, centred on the gaze
+// (screen points, relative to this window), as wide as the measured accuracy. Fed by the desktop app (gaze-window.mjs).
+import { GazeHeatmap } from "./gaze-heatmap.js";
+
+const heat = new GazeHeatmap({ canvas: document.getElementById("heat"), maxAlpha: 0.22 });
+heat.setTargets([]); // no page here: a pure gaze cloud (the agent adds the controls on its side)
+heat.start();
+window.hcsOverlay?.onGaze((p) => heat.push(p ? { x: p.x, y: p.y, emittedAt: performance.now() } : null));
+window.hcsOverlay?.onAccuracy((px) => heat.setUncertainty(px));
+</script>
+</body>
+</html>
