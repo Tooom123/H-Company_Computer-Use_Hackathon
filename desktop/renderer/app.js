@@ -533,13 +533,14 @@ applyHoneycomb(pref("honeycomb") !== "false");
 async function loadVision(s) {
   renderVisionToggle();
   const v = s || (await api.vision.status());
-  const state = !v.available ? "Not installed" : v.starting ? "Starting camera" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
+  const state = !v.available ? "Not installed" : v.starting ? "Starting camera" : v.checkingCamera ? "Check your camera" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
   $("visionState").textContent = state;
   $("visionState").className = `badge${v.running ? " on" : ""}`;
   $("visionBtn").textContent = v.running ? (v.builtin ? "Stop tracking" : "Close the lab") : "Recalibrate";
   $("visionBtn").disabled = !v.available;
   $("visionNote").textContent = v.reason || (v.starting
-    ? "Allow the camera in the macOS dialog if asked. Calibration opens only when images arrive. You can cancel with Stop tracking."
+    ? "Allow the camera in the macOS dialog if asked. The preview opens first; you can cancel with Stop tracking."
+    : v.checkingCamera ? "Check that you can see yourself below, then start calibration."
     : v.running
     ? v.builtin
       ? v.tracking
@@ -551,9 +552,18 @@ async function loadVision(s) {
           : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
       : "Follow the targets on screen; it closes with this app."
     : v.builtin
-      ? "Opens calibration after camera permission (9 dots + an accuracy check). Esc or Cancel closes it; the menu bar and other apps stay accessible."
+      ? "Check the camera first, then calibrate (9 dots + an accuracy check). Esc or Cancel closes calibration."
       : "Opens Édouard's Vision Lab on the calibration screen.");
   $("visionBtn").onclick = async () => loadVision(v.running ? await api.vision.stop() : await api.vision.start());
+  $("cameraCheck").hidden = !v.checkingCamera;
+  const preview = $("cameraPreview");
+  if (v.checkingCamera && v.preview) preview.src = v.preview;
+  else preview.removeAttribute("src");
+  $("cameraCheckNote").textContent = v.face ? `Face detected · ${v.fps} fps` : "No face detected yet — look at the camera, or try the other camera.";
+  $("calibrateBtn").disabled = !v.checkingCamera || !v.face || v.starting;
+  $("calibrateBtn").onclick = async () => loadVision(await api.vision.calibrate());
+  $("cameraChoice").value = String(v.cameraIndex ?? 0);
+  $("cameraChoice").onchange = async (event) => loadVision(await api.vision.start(Number(event.target.value)));
 }
 
 // polling ---------------------------------------------------------------------------------------

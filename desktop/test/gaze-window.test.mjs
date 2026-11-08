@@ -11,7 +11,7 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 function fixture({ permission = "granted", allowed = true, mode = "native", load = null,
-                    state = { state: "ready", fps: 30 }, statusReply = null, accuracyReply = null } = {}) {
+                    state = { state: "ready", fps: 30, face: true }, statusReply = null, accuracyReply = null } = {}) {
   const windows = [], children = [], requests = [], ipc = new EventEmitter(), intervals = new Map();
   let stopped = 0, permissionRequests = 0, timerId = 0;
   ipc.handle = (name, fn) => ipc.on(name, fn);
@@ -41,11 +41,12 @@ function fixture({ permission = "granted", allowed = true, mode = "native", load
     session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) },
     shell: { async openExternal() {} }, path, fs: { existsSync: () => true },
     http: { createServer: () => ({ listen(_p, _h, cb) { cb(); }, address: () => ({ port: 12345 }), close() {} }) },
-    spawn: () => { const child = new EventEmitter(); child.exitCode = null;
+    spawn: (_python, args) => { const child = new EventEmitter(); child.args = args; child.exitCode = null;
       child.kill = () => { child.killed = true; child.exitCode = 0; child.emit("exit"); }; children.push(child); return child; },
     fetch: async (url, options) => {
       requests.push([url, options]);
-      const payload = url.endsWith("/status") ? (statusReply ? await statusReply : state)
+      const payload = url.endsWith("/camera") ? { ...state, preview: "data:image/jpeg;base64,local" }
+        : url.endsWith("/status") ? (statusReply ? await statusReply : state)
         : url.endsWith("/accuracy") && accuracyReply ? await accuracyReply : { ok: true };
       return { json: async () => payload };
     }, AbortSignal,
@@ -64,7 +65,9 @@ test("camera permission completes before any tracker or calibration window exist
   assert.equal(f.permissionRequests(), 1); assert.equal(f.children.length, 0); assert.equal(f.windows.length, 0);
   assert.equal(f.gaze.status().starting, true);
   permission.resolve(true); await start;
-  assert.equal(f.children.length, 1); assert.equal(f.windows.length, 1);
+  assert.equal(f.children.length, 1); assert.equal(f.windows.length, 0);
+  assert.equal(f.gaze.status().checkingCamera, true);
+  await f.gaze.calibrate(); assert.equal(f.windows.length, 1);
   assert.equal(f.gaze.status().starting, false);
 });
 
@@ -91,7 +94,7 @@ test("starting tracker or ready-without-frames times out without covering the de
 });
 
 test("calibration stays below OS dialogs and leaves the menu bar and Dock reachable", async () => {
-  const f = fixture(); await f.gaze.start(); const w = f.windows[0];
+  const f = fixture(); await f.gaze.start(); await f.gaze.calibrate(); const w = f.windows[0];
   assert.equal(w.options.alwaysOnTop, false); assert.equal(w.options.fullscreenable, false);
   assert.deepEqual(JSON.parse(JSON.stringify(w.bounds)), { x: 0, y: 25, width: 1470, height: 860 });
   assert.ok(!w.calls.some(([name, on]) => name === "setAlwaysOnTop" && on));
@@ -100,7 +103,7 @@ test("calibration stays below OS dialogs and leaves the menu bar and Dock reacha
 
 test("Esc and Cmd-W stop from the main process even if the page is unresponsive", async () => {
   for (const input of [{ type: "keyDown", key: "Escape" }, { type: "keyDown", key: "w", meta: true }]) {
-    const f = fixture(); await f.gaze.start(); const w = f.windows[0]; let prevented = false;
+    const f = fixture(); await f.gaze.start(); await f.gaze.calibrate(); const w = f.windows[0]; let prevented = false;
     w.webContents.emit("before-input-event", { preventDefault() { prevented = true; } }, input);
     assert.ok(prevented && w.destroyed && f.children[0].killed);
     assert.equal(f.gaze.status().running, false); assert.equal(f.stopped(), 1);
@@ -108,7 +111,7 @@ test("Esc and Cmd-W stop from the main process even if the page is unresponsive"
 });
 
 test("Cancel button accepts only the calibration renderer and releases its camera", async () => {
-  const f = fixture(); await f.gaze.start(); const w = f.windows[0];
+  const f = fixture(); await f.gaze.start(); await f.gaze.calibrate(); const w = f.windows[0];
   f.ipc.emit("overlay:close", { sender: {} }); assert.equal(w.destroyed, false);
   f.ipc.emit("overlay:close", { sender: w.webContents });
   assert.ok(w.destroyed && f.children[0].killed); assert.equal(f.stopped(), 1);
@@ -121,20 +124,21 @@ test("Stop during native startup discards the pending status response", async ()
 });
 
 test("Stop during page loading cannot reshow the destroyed calibration window", async () => {
-  const load = deferred(), f = fixture({ load }); const start = f.gaze.start(); await settle();
+  const load = deferred(), f = fixture({ load }); await f.gaze.start(); const start = f.gaze.calibrate(); await settle();
   const w = f.windows[0]; assert.ok(w); f.gaze.stop(); load.resolve(); await start;
   assert.ok(w.destroyed); assert.ok(!w.calls.some(([name]) => name === "show" || name === "showInactive"));
 });
 
 test("a late validation callback after Stop cannot recreate an overlay or restart polling", async () => {
   const reply = deferred(), f = fixture({ accuracyReply: reply.promise }); await f.gaze.start();
+  await f.gaze.calibrate();
   const w = f.windows[0]; f.ipc.emit("overlay:done", { sender: w.webContents }, 120);
   f.gaze.stop(); reply.resolve({ ok: true }); await settle();
   assert.ok(w.destroyed); assert.equal(f.windows.length, 1); assert.equal(f.intervals.size, 0);
 });
 
 test("only the completed tracking overlay floats, and it never consumes clicks", async () => {
-  const f = fixture(); await f.gaze.start(); const w = f.windows[0];
+  const f = fixture(); await f.gaze.start(); await f.gaze.calibrate(); const w = f.windows[0];
   f.ipc.emit("overlay:done", { sender: w.webContents }, 120); await settle();
   assert.ok(w.calls.some(([name, on, level]) => name === "setAlwaysOnTop" && on && level === "floating"));
   assert.deepEqual(w.calls.filter(([name]) => name === "setIgnoreMouseEvents").at(-1), ["setIgnoreMouseEvents", true]);
@@ -148,4 +152,30 @@ test("embedded WebGazer also waits for permission and has a main-process escape"
   assert.equal(w.options.alwaysOnTop, false);
   w.webContents.emit("before-input-event", { preventDefault() {} }, { type: "keyDown", key: "Escape" });
   assert.ok(w.destroyed); assert.equal(f.gaze.status().running, false);
+});
+
+test("camera preview stays in the panel until the user explicitly starts calibration", async () => {
+  const f = fixture(); await f.gaze.start(); const status = await f.gaze.inspect();
+  assert.equal(status.checkingCamera, true); assert.equal(status.face, true);
+  assert.match(status.preview, /^data:image\/jpeg;base64,/); assert.equal(f.windows.length, 0);
+  assert.ok(f.requests.every(([url]) => url.startsWith("http://127.0.0.1:8769/")));
+  await f.gaze.calibrate(); assert.equal(f.windows.length, 1);
+  assert.equal(f.gaze.status().preview, null);
+});
+
+test("frames without a detected face cannot open calibration", async () => {
+  const f = fixture({ state: { state: "ready", fps: 30, face: false } }); await f.gaze.start();
+  const status = await f.gaze.calibrate();
+  assert.equal(f.windows.length, 0); assert.equal(status.checkingCamera, true);
+  assert.match(status.reason, /No face detected/);
+  assert.ok(!f.requests.some(([url]) => url.endsWith("/calibrate/start")));
+});
+
+test("choosing the other camera stops the owned tracker and opens no calibration window", async () => {
+  const f = fixture(); await f.gaze.start(); await f.gaze.start(1);
+  assert.ok(f.children[0].killed); assert.equal(f.children.length, 2);
+  assert.deepEqual(Array.from(f.children[1].args), ["/tracker.py", "--camera", "1"]);
+  assert.equal(f.gaze.status().cameraIndex, 1); assert.equal(f.windows.length, 0);
+  await f.gaze.start(-1); await f.gaze.start("1");
+  assert.equal(f.children.length, 2); f.gaze.stop(); assert.equal(f.gaze.status().preview, null);
 });

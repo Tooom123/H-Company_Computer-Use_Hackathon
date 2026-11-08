@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld("hcs", {
   agent: (method, path, body) => ipcRenderer.invoke("agent", method, path, body),
   vision: {
     status: () => ipcRenderer.invoke("vision:status"),
-    start: () => ipcRenderer.invoke("vision:start"),
+    start: (camera) => ipcRenderer.invoke("vision:start", camera),
+    calibrate: () => ipcRenderer.invoke("vision:calibrate"),
     stop: () => ipcRenderer.invoke("vision:stop"),
     honeycomb: (on) => ipcRenderer.invoke("vision:honeycomb", on),
   },

@@ -72,6 +72,9 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   let disposed = false;
   let lastReason = null;
   let overlayInteractive = null;
+  let checkingCamera = false;
+  let preview = null;
+  let cameraIndex = 0;
   const current = (epoch) => !disposed && epoch === generation;
   // Electron 45 crashes when WebGazer starts on Linux (checked on Wayland, every GPU/sandbox switch): there the
   // calibration opens in the user's browser instead, full screen, and the page posts its gaze to this server.
@@ -105,7 +108,8 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
       const live = Date.now() - lastFeed < 2000;
       const reason = lastReason || (trackerState && trackerState.state === "no_camera" ? trackerState.message : undefined);
       return { available: true, running: alive || Boolean(starting), starting: Boolean(starting), tracking: alive && live,
-        builtin: true, native: true, errorPx, samples, reason,
+        builtin: true, native: true, errorPx, samples, reason, checkingCamera, cameraIndex,
+        preview: checkingCamera ? preview : null, fps: trackerState?.fps || 0,
         face: trackerState ? trackerState.face : undefined };
     }
     if (!ready()) return { available: false, running: false, builtin: true, reason: "Run `npm install && npm run assets` in heatmap/ once (local WebGazer)." };
@@ -233,7 +237,7 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
 
   async function startNative(epoch) {
     if (!proc || proc.exitCode !== null) {
-      const child = spawn(trackerPython, [trackerScript], { stdio: "ignore" });
+      const child = spawn(trackerPython, [trackerScript, "--camera", String(cameraIndex)], { stdio: "ignore" });
       proc = child;
       child.on("exit", () => { if (proc === child) { proc = null; fail("The camera tracker stopped. You can try Recalibrate again."); } });
       child.on("error", () => { if (proc === child) fail("The camera tracker could not start. Check its Python installation."); });
@@ -251,9 +255,37 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     }
     if (!current(epoch)) return status();
     if (!cameraReady) return fail(trackerState?.message || "The camera is not ready. Check its permission, then try Recalibrate again.");
+    // Let the user see and confirm the camera before any calibration window appears.
+    checkingCamera = true;
+    return inspect();
+  }
+
+  async function inspect() {
+    const epoch = generation;
+    if (mode === "native" && checkingCamera && proc) {
+      const camera = await trackerCall("GET", "/camera");
+      if (!current(epoch)) return status();
+      preview = camera?.preview || null;
+      if (camera) trackerState = camera;
+    }
+    return status();
+  }
+
+  async function calibrate() {
+    const epoch = generation;
+    if (mode !== "native" || !checkingCamera || !proc || starting) return status();
+    trackerState = await trackerCall("GET", "/status");
+    if (!current(epoch)) return status();
+    if (!trackerState?.face || !(trackerState.fps > 0)) {
+      lastReason = "No face detected yet. Check the preview and face the camera before starting.";
+      return status();
+    }
+    lastReason = null;
     const reset = await trackerCall("POST", "/calibrate/start", {});
     if (!current(epoch)) return status();
     if (!reset?.ok) return fail("The camera could not start calibration. Please try again.");
+    checkingCamera = false;
+    preview = null;
     clearInterval(poll);
     lastFeed = 0;
     await ensureOverlay(true, epoch);
@@ -326,6 +358,7 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     }
     if (mode === "native") {
       if (!pythonOk) return status();
+      checkingCamera = true;
       return startNative(epoch);
     }
     if (!ready()) return status();
@@ -360,8 +393,12 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     return status();
   }
 
-  async function start() {
+  async function start(selectedCamera) {
     if (disposed) return status();
+    if (selectedCamera !== undefined) {
+      if (!Number.isInteger(selectedCamera) || selectedCamera < 0 || selectedCamera > 7) return status();
+      if (cameraIndex !== selectedCamera) { stop(); cameraIndex = selectedCamera; }
+    }
     if (starting) return starting;
     lastReason = null;
     const epoch = ++generation;
@@ -390,6 +427,8 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
       p.kill(); // only the child we own; release the camera even during startup
     }
     proc = null;
+    checkingCamera = false;
+    preview = null;
     opened = 0;
     lastFeed = 0; // browser mode: the tab keeps running until the user closes it; the feed is ignored from now
     clearTimeout(overlayIdle);
@@ -412,5 +451,5 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     server = null;
   }
 
-  return { status, start, stop, dispose, setHoneycomb };
+  return { status, inspect, start, calibrate, stop, dispose, setHoneycomb };
 }

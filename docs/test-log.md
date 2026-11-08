@@ -936,3 +936,21 @@ tests simulés. **33 tests desktop/calibration passent**, dont 12 nouveaux tests
 de cycle de vie. Aucun appel Holo, aucune mesure de précision, aucune cible
 de calibration remplie par l'agent. Le panneau est laissé prêt pour l'essai
 humain ; le moteur de coaching n'est pas lancé pendant cette vérification.
+
+### Vérification caméra avant les cibles
+
+Edouard signale ensuite qu'il ne peut toujours pas valider la caméra avant les
+cibles. Contrôle des réglages macOS : le lanceur actuel « ChatGPT » est autorisé
+pour la caméra ; deux appareils sont présents (FaceTime HD et iPhone). Un démarrage
+du tracker produit environ 30 images/s mais aucun visage au moment du contrôle.
+Cela ne permet pas de conclure que la caméra sélectionnée est la bonne, ni de
+reproduire le dialogue signalé par l'utilisateur.
+
+Le parcours natif sépare maintenant la préparation caméra et la calibration :
+prévisualisation locale dans Vision, choix Camera 1/2, détection du visage, puis
+confirmation explicite avant l'ouverture des cibles. Un contrôle côté processus
+principal refuse aussi l'ouverture si le visage disparaît. Aucune image caméra
+n'est envoyée à Holo. **36 tests desktop/calibration passent**. Dans l'app réelle,
+le panneau « Check your camera » et la prévisualisation sont disponibles ; le
+bouton de calibration reste désactivé tant que le visage n'est pas détecté.
+La précision du nouveau tracker natif n'est pas validée par ce contrôle.

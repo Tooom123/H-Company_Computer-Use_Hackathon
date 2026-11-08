@@ -10,6 +10,7 @@ class Element {
   get classList() { return { add: (c) => this.className += ` ${c}`, contains: (c) => this.className.split(" ").includes(c), toggle: (c, on) => { this.className = this.className.split(" ").filter((x) => x !== c).concat(on ? [c] : []).join(" "); } }; }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return this.attrs[k]; }
+  removeAttribute(k) { delete this.attrs[k]; }
   append(...els) { for (const e of els) { e.parent = this; this.children.push(e); } }
   replaceChildren(...els) { this.children = []; this.append(...els); }
   remove() { this.parent.children = this.parent.children.filter((e) => e !== this); }

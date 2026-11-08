@@ -91,10 +91,11 @@ function labStatus() {
 function visionStatus() {
   return labStatus() || gaze.status();
 }
-ipcMain.handle("vision:status", () => visionStatus());
-ipcMain.handle("vision:start", async () => {
+ipcMain.handle("vision:status", () => labStatus() || gaze.inspect());
+ipcMain.handle("vision:calibrate", () => gaze.calibrate());
+ipcMain.handle("vision:start", async (_event, camera) => {
   const lab = labStatus();
-  if (!lab) return gaze.start();
+  if (!lab) return gaze.start(camera);
   if (lab.running) return lab;
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE; // the lab is a full Electron app of its own
