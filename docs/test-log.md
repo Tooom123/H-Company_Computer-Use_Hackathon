@@ -1324,3 +1324,25 @@ restoration, shortcut expiry, and continued visibility of listening/error states
 The HTTP control tests required a local listening socket outside the sandbox;
 the initial sandbox-only run could not bind that socket and was rerun successfully.
 These are local software checks, not a new H benchmark or human usefulness label.
+
+### Misleading context rejection on H Vaults — 2026-11-08
+
+The user's photo showed H Platform's Vaults page with the local fallback asking
+them to open a supported app and finish signing in. The runtime logged three
+valid transcripts (cloud-agent help, then skill help), no intervention, and
+“No supported product in front”. The same Vaults URL exclusion already existed
+in commit 6cd4cc4, before the speech/display change in 14e2218. This is a local
+routing rejection, not evidence of a Holo response or model regression.
+
+Product identity is now separate from permission to inspect page content.
+Protected H pages remain unread and cannot start an agent, but the UI reports
+H Company · protected page, with a specific explanation and a relevant manual
+exit (Skills, Agents or View documentation). Login, unknown origin, missing URL
+and non-foreground windows have distinct messages. Only the product and reason
+are logged; no URL/query or page contents enter the diagnostic.
+
+154 targeted offline tests passed, including the exact skill/cloud/vault
+questions, no AX walk on protected pages, documentation access, origin checks,
+and the live-loop fallback without a fabricated run. No new model call or human
+success/usefulness label was produced. The restriction itself remains: coaching
+resumes after the user opens an allowed section or the documentation.

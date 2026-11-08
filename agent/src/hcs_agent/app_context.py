@@ -57,7 +57,8 @@ def retrieval_query(text: str, software: str) -> str:
     return " ".join([text, *extra])
 
 
-def profile_for_page(info) -> AppProfile | None:
+def _profile_for_identity(info) -> AppProfile | None:
+    """Recognize the product without authorizing access to its page contents."""
     if info is None or not info.is_front:
         return None
     if getattr(info, "native", False):
@@ -75,13 +76,61 @@ def profile_for_page(info) -> AppProfile | None:
             return None
         if not software:
             return None
-        path = unquote(parsed.path).lower()
-        if parsed.hostname not in DOC_HOSTS and re.search(
-                r"(?:^|/)(?:auth|login|signin|sign-in|credentials|secrets|vaults?|api-keys?|tokens?|payments?|security)(?:/|$)", path):
-            return None
         return PROFILES[software]
     except (TypeError, ValueError):
         return None
+
+
+def _restricted_section(info) -> str | None:
+    if getattr(info, "native", False):
+        return None
+    parsed = urlsplit(info.url)
+    if parsed.hostname in DOC_HOSTS:
+        return None  # documentation about a vault is not a user's vault
+    match = re.search(
+        r"(?:^|/)(auth|login|signin|sign-in|credentials|secrets|vaults?|api-keys?|tokens?|billing|payments?|security)(?:/|$)",
+        unquote(parsed.path).lower())
+    return match.group(1) if match else None
+
+
+def profile_for_page(info) -> AppProfile | None:
+    profile = _profile_for_identity(info)
+    return profile if profile and not _restricted_section(info) else None
+
+
+class ContextUnavailable(ValueError):
+    """An actionable local routing explanation, not a model answer or task result."""
+    def __init__(self, message: str, *, reason: str, profile: AppProfile | None = None):
+        super().__init__(message)
+        self.status = {"mode": "automatic", "sources": 0, "availability": reason,
+                       "label": f"{profile.label} · {reason.replace('_', ' ')}" if profile else "Select the product window"}
+        if profile:
+            self.status["software"] = profile.software
+
+
+def unavailable_context(info, question: str = "") -> ContextUnavailable:
+    profile = _profile_for_identity(info)
+    section = _restricted_section(info) if profile else None
+    if section in ("auth", "login", "signin", "sign-in"):
+        return ContextUnavailable(f"You're on {profile.label}'s sign-in page. Finish signing in, then ask again.",
+                                  reason="sign_in", profile=profile)
+    if section:
+        # These hints use only the question and known navigation, never vault contents.
+        if profile.software == "h-company" and section in ("vault", "vaults"):
+            if re.search(r"\bskills?\b", question, re.I):
+                message = "For help with a skill, open Skills in H Company's sidebar, then ask again. I don't inspect the Vaults page."
+            elif re.search(r"\b(?:cloud|agents?|browsers?|navigateur|nuage)\b", question, re.I):
+                message = "For help running a cloud agent, open Agents in H Company's sidebar, then ask again. I don't inspect the Vaults page."
+            else:
+                message = "You're on H Company's Vaults page. Open View documentation, then ask again; I can explain vaults without inspecting credentials."
+        else:
+            message = f"I recognize {profile.label}, but I don't inspect credential, security or billing pages. Open another section or its documentation, then ask again."
+        return ContextUnavailable(message, reason="protected_page", profile=profile)
+    if info is None or not getattr(info, "is_front", False):
+        return ContextUnavailable("Bring the product window to the front, then hold the talk key and ask again.", reason="not_in_front")
+    if not getattr(info, "url", "") and not getattr(info, "native", False):
+        return ContextUnavailable("I couldn't identify the active browser tab. Wait for the page to load, then ask again.", reason="page_unavailable")
+    return ContextUnavailable("This window isn't one of the demo products. Switch to H Company, Odoo, SAP, Devin, Comfy Cloud or CapCut, then ask again.", reason="unsupported_product")
 
 
 def request_matches_page(request: InterventionRequest, info) -> bool:
@@ -97,7 +146,7 @@ def request_matches_page(request: InterventionRequest, info) -> bool:
 def make_request(text: str, info, knowledge, previous: InterventionRequest | None = None):
     profile = profile_for_page(info)
     if profile is None:
-        raise ValueError("Open H Company, Odoo, SAP, Devin, Comfy Cloud or CapCut Web in front, finish signing in, then ask again.")
+        raise unavailable_context(info, text)
     if not text.strip():
         raise ValueError("Please say a question.")
     try:

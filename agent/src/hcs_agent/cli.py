@@ -845,12 +845,19 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 ov.badge("Thinking…", pulsing=True)
             if automatic:
                 from . import a11y
-                from .app_context import make_request
+                from .app_context import ContextUnavailable, make_request
                 try:
                     request, context_status = make_request(text, a11y.foreground_page(), backend.knowledge, last_request)
+                except ContextUnavailable as exc:
+                    _APP_CONTEXT.clear()
+                    _APP_CONTEXT.update(exc.status)
+                    # Only a product label + reason: no URL/query, page contents or credentials.
+                    print(f"  [context] {exc.status['availability']}: {exc.status['label']}", flush=True)
+                    _flash(ov, str(exc), "question")
+                    continue
                 except ValueError as exc:
                     _APP_CONTEXT.clear()
-                    _APP_CONTEXT.update(mode="automatic", label="No supported product in front", sources=0)
+                    _APP_CONTEXT.update(mode="automatic", label="Question unavailable", sources=0)
                     _flash(ov, str(exc), "question")
                     continue
                 except Exception:

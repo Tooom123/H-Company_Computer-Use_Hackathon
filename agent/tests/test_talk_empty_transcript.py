@@ -100,6 +100,24 @@ def test_automatic_talk_changes_product_without_reusing_old_goal_or_native_targe
     assert not talk.flashes
 
 
+def test_automatic_talk_reports_protected_h_page_without_fabricating_a_run(talk, monkeypatch, capsys):
+    from hcs_agent.a11y import PageInfo
+    from hcs_agent.knowledge import NoKnowledge
+    talk.args.software = "auto"
+    talk.texts = ["Show me how to do a skill."]
+    monkeypatch.setattr(cli, "_APP_CONTEXT", {})
+    monkeypatch.setattr(cli, "make_backend", lambda _: SimpleNamespace(knowledge=NoKnowledge()))
+    monkeypatch.setattr(a11y, "foreground_page", lambda: PageInfo(
+        app="Chrome", title="Vaults", url="https://platform.hcompany.ai/agents/vaults?secret=private"))
+    assert cli.cmd_talk(talk.args) == 0
+    assert cli._APP_CONTEXT["software"] == "h-company"
+    assert cli._APP_CONTEXT["availability"] == "protected_page"
+    assert "open Skills" in talk.flashes[0]
+    assert not talk.requests
+    output = capsys.readouterr().out
+    assert "[context] protected_page" in output and "secret=private" not in output
+
+
 def test_silence_preserves_armed_feedback_for_the_next_actual_comment(talk):
     directory = talk.directory / "sess_finished"
     directory.mkdir()

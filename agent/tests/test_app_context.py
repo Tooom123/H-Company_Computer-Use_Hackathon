@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from hcs_agent.a11y import PageInfo
-from hcs_agent.app_context import NATIVE_BUNDLE, ProductKnowledge, make_request, profile_for_page, request_matches_page
+from hcs_agent.app_context import ContextUnavailable, NATIVE_BUNDLE, ProductKnowledge, make_request, profile_for_page, request_matches_page
 from hcs_agent.knowledge import DocAnswer, Source
 from hcs_agent.procedures import ProcedureRegistry
 
@@ -133,6 +133,55 @@ def test_browser_reader_does_not_walk_unrelated_or_login_content(monkeypatch):
     monkeypatch.setattr(a11y, '_walk', lambda _: pytest.fail('Must reject the origin before reading its content'))
     page = a11y._read_browser_page(('window', 'Google Chrome', True), known_only=True)
     assert page.elements == []
+
+
+@pytest.mark.parametrize('question,expected', [
+    ('Show me how to do a skill.', 'open Skills'),
+    ('How can I launch an agent in the cloud?', 'open Agents'),
+    ('Tell me more about this vault.', 'Open View documentation'),
+])
+def test_vault_is_recognized_but_not_read_and_explanation_matches_question(question, expected):
+    knowledge = SimpleNamespace(ask=lambda *a, **k: pytest.fail('Protected page must not start a task or retrieval'))
+    page = browser('https://platform.hcompany.ai/org/private/vaults?token=secret')
+    with pytest.raises(ContextUnavailable) as error:
+        make_request(question, page, knowledge)
+    assert error.value.status['software'] == 'h-company'
+    assert error.value.status['availability'] == 'protected_page'
+    assert expected in str(error.value)
+    assert 'finish signing in' not in str(error.value)
+    assert 'secret' not in str(error.value.status) + str(error.value)
+    assert profile_for_page(page) is None
+
+
+@pytest.mark.parametrize('url', ['https://platform.hcompany.ai/agents/vaults',
+                                'https://platform.hcompany.ai/settings/api-keys',
+                                'https://platform.hcompany.ai/billing'])
+def test_protected_page_identity_never_authorizes_reading_controls(monkeypatch, url):
+    from hcs_agent import a11y
+    monkeypatch.setattr(a11y, '_web_area', lambda _: 'web')
+    monkeypatch.setattr(a11y, '_attr', lambda _, attr: url if attr == 'AXURL' else 'Protected')
+    monkeypatch.setattr(a11y, '_frame', lambda _: (0, 0, 1000, 800))
+    monkeypatch.setattr(a11y, '_walk', lambda _: pytest.fail('Protected controls must not be read'))
+    assert a11y._read_browser_page(('window', 'Google Chrome', True), known_only=True).elements == []
+
+
+@pytest.mark.parametrize('page,reason', [
+    (None, 'not_in_front'),
+    (browser('https://platform.hcompany.ai/agents', is_front=False), 'not_in_front'),
+    (browser(''), 'page_unavailable'),
+    (browser('https://platform.hcompany.ai/auth/signin'), 'sign_in'),
+    (browser('https://other.example'), 'unsupported_product'),
+    (browser('https://platform.hcompany.ai.evil.example/vaults'), 'unsupported_product'),
+])
+def test_unavailable_context_reports_the_actual_reason(page, reason):
+    with pytest.raises(ContextUnavailable) as error:
+        make_request('Show me a skill', page, ProductKnowledge({}))
+    assert error.value.status['availability'] == reason
+
+
+def test_vault_documentation_remains_a_supported_coaching_page():
+    req, status = make_request('Explain vaults', browser('https://hub.hcompany.ai/agents-api/vaults/overview'), ProductKnowledge({}))
+    assert req.software == status['software'] == 'h-company'
 
 
 @pytest.mark.parametrize('observation', [None, browser('https://app.devin.ai/')])
