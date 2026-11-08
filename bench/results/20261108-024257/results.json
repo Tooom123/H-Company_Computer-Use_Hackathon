@@ -1,0 +1,127 @@
+{
+  "summary": {
+    "n": 2,
+    "model": "holo4-35b-a3b",
+    "dataset": {
+      "error_px": 120,
+      "repeats": 3,
+      "miss_rate": 0.1,
+      "seed": 42,
+      "margin_px": 40,
+      "min_crop": {
+        "w": 512,
+        "h": 320
+      },
+      "screen": [
+        1440,
+        900
+      ],
+      "heatmap": {
+        "sigmaMin": 96,
+        "roiMass": 0.8
+      },
+      "created_at": "2026-11-08T01:35:49.658Z"
+    },
+    "pixels": {
+      "F": 655360.0,
+      "G": 187904.0
+    },
+    "target_in_crop": 1,
+    "F": {
+      "success": 2,
+      "median_latency_s": 2.600065493501461,
+      "mean_prompt_tokens": 1118,
+      "mean_completion_tokens": 97
+    },
+    "G": {
+      "success": 2,
+      "median_latency_s": 1.6711642199989,
+      "mean_prompt_tokens": 1323,
+      "mean_completion_tokens": 127,
+      "fallbacks": 1,
+      "success_without_fallback": 1
+    }
+  },
+  "trials": [
+    {
+      "id": "crm-new-0",
+      "screen": "crm",
+      "target": "new",
+      "miss": true,
+      "gaze_error_px": 850,
+      "target_in_crop": false,
+      "F": {
+        "pixels": 655360,
+        "bytes": 52754,
+        "fn": "locate",
+        "latency_s": 4.2784306809990085,
+        "prompt_tokens": 1118,
+        "completion_tokens": 97,
+        "xy": [
+          123.12,
+          73.8
+        ],
+        "success": true
+      },
+      "G": {
+        "pixels": 187904,
+        "bytes": 10057,
+        "fallback": true,
+        "crop_call": {
+          "latency_s": 0.9441831189978984,
+          "prompt_tokens": 764,
+          "completion_tokens": 59
+        },
+        "found_in_crop": false,
+        "xy": [
+          123.12,
+          73.8
+        ],
+        "success": true,
+        "latency_s": 2.235401624995575,
+        "prompt_tokens": 1882,
+        "completion_tokens": 156
+      }
+    },
+    {
+      "id": "crm-new-1",
+      "screen": "crm",
+      "target": "new",
+      "miss": false,
+      "gaze_error_px": 79,
+      "target_in_crop": true,
+      "F": {
+        "pixels": 655360,
+        "bytes": 52754,
+        "fn": "locate",
+        "latency_s": 0.9217003060039133,
+        "prompt_tokens": 1118,
+        "completion_tokens": 97,
+        "xy": [
+          123.12,
+          73.8
+        ],
+        "success": true
+      },
+      "G": {
+        "pixels": 187904,
+        "bytes": 26502,
+        "fallback": false,
+        "crop_call": {
+          "latency_s": 1.1069268150022253,
+          "prompt_tokens": 764,
+          "completion_tokens": 98
+        },
+        "found_in_crop": true,
+        "xy": [
+          125.696,
+          72.4825
+        ],
+        "success": true,
+        "latency_s": 1.1069268150022253,
+        "prompt_tokens": 764,
+        "completion_tokens": 98
+      }
+    }
+  ]
+}

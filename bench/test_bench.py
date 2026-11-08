@@ -39,3 +39,21 @@ def test_images_sent():
     assert rb.full_image(screen).size == (1024, 640)  # as grounding.capture()
     assert rb.crop_image(screen, {"x": 10, "y": 20, "width": 512, "height": 320}).size == (512, 320)
     assert rb.crop_image(screen, {"x": 0, "y": 0, "width": 1440, "height": 900}).width == 1024  # never bigger than F
+
+
+def test_centre_crop_control_has_the_gaze_crop_size():
+    c = rb.centre_crop({"x": 900, "y": 10, "width": 600, "height": 400}, 1440, 900)
+    assert c == {"x": 420, "y": 250, "width": 600, "height": 400}
+
+
+def test_mcnemar_and_wilson():
+    assert rb.mcnemar(0, 0) == 1.0
+    assert rb.mcnemar(0, 10) < 0.01
+    lo, hi = rb.wilson(50, 100)
+    assert 0.40 < lo < 0.41 and 0.59 < hi < 0.60
+
+
+def test_grow_crop_keeps_centre_and_stays_on_screen():
+    assert rb.grow_crop({"x": 600, "y": 300, "width": 512, "height": 320}, 1440, 900, 768, 480) == {"x": 472, "y": 220, "width": 768, "height": 480}
+    assert rb.grow_crop({"x": 1300, "y": 800, "width": 140, "height": 100}, 1440, 900, 768, 480) == {"x": 672, "y": 420, "width": 768, "height": 480}
+    assert "zoomed" not in rb.prompt_for("x", True, context=False) and "not_found" in rb.prompt_for("x", True, context=False)
