@@ -39,3 +39,25 @@ def is_idle_badge(text: str, pulsing: bool) -> bool:
 def shortcut_label(key: str) -> str:
     symbols = {"cmd": "⌘", "command": "⌘", "ctrl": "⌃", "control": "⌃", "shift": "⇧", "alt": "⌥", "option": "⌥"}
     return "".join(symbols.get(part.lower(), part.upper()) for part in key.split("+"))[:24]
+
+
+# Masking tape on the paper scraps. Slots: the four corners plus the middle of the top edge.
+TAPE_SLOTS = ("top-left", "top-right", "bottom-left", "bottom-right", "top")
+
+
+def _tape_ok(slots: tuple[str, ...]) -> bool:
+    """Gravity: at least one piece on top, and the paper held on both sides (never two on the same side,
+    never only the bottom). A piece in the middle of the top edge holds both sides only when it is not alone."""
+    has_top = any(s.startswith("top") for s in slots)
+    left = any(s.endswith("left") for s in slots)
+    right = any(s.endswith("right") for s in slots)
+    return has_top and left and right
+
+
+def tape_slots(rnd) -> tuple[str, ...]:
+    """2 to 4 pieces of tape, picked with `rnd` (seeded by the caller, so a paper keeps its tape across frames)."""
+    from itertools import combinations
+
+    n = rnd.randint(2, 4)
+    choices = [c for c in combinations(TAPE_SLOTS, n) if _tape_ok(c)]
+    return choices[rnd.randrange(len(choices))]

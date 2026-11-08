@@ -24,11 +24,12 @@ import Foundation
 import objc
 from Quartz import CGEventCreate, CGEventGetLocation
 
-from .overlay_layout import is_idle_badge, magnet_hit, magnet_rect, magnet_size, shortcut_label
+from .overlay_layout import is_idle_badge, magnet_hit, magnet_rect, magnet_size, shortcut_label, tape_slots
 
 GRAPHITE = (0.86, 0.17, 0.12, 0.92)  # red pencil: readable on light and dark backgrounds
 PAPER = (1.0, 1.0, 0.985, 0.93)
 PAPER_SOFT = (1.0, 1.0, 0.985, 0.80)
+TAPE = (0.95, 0.84, 0.60, 0.66)  # yellowed masking tape, translucent
 HAND_FONTS = ("Bradley Hand", "Noteworthy", "Marker Felt", "Chalkboard")
 
 Shape = Literal["circle", "box", "underline", "label", "arrow"]
@@ -224,8 +225,38 @@ def _arrow(start, end, rnd, width=1.4):
         _stroke([end, (end[0] + 20 * math.cos(a), end[1] + 20 * math.sin(a))], rnd, width, 0.8)
 
 
-def _draw_paper(x, y, w, h, rnd, color=PAPER):
-    """A scrap of white paper: roughly cut edges, slight tilt, soft shadow (cutout collage)."""
+def _draw_tape(cx, cy, angle, length, thick, rnd):
+    """One piece of masking tape centred on (cx, cy): torn, jagged short ends, slightly yellowed, see-through."""
+    ux, uy = math.cos(angle), math.sin(angle)
+    vx, vy = -uy, ux
+    hl, ht = length / 2, thick / 2
+
+    def at(u, v):
+        return (cx + ux * u + vx * v, cy + uy * u + vy * v)
+
+    n = 6  # teeth per torn end
+    pts = [at(-hl + rnd.uniform(-1.5, 1.5), -ht)]
+    pts += [at(hl + rnd.uniform(-1.2, 1.2) + (1.6 if i % 2 else -1.6), -ht + thick * i / n) for i in range(n + 1)]
+    pts += [at(-hl + rnd.uniform(-1.2, 1.2) + (1.6 if i % 2 else -1.6), ht - thick * i / n) for i in range(n + 1)]
+    path = AppKit.NSBezierPath.bezierPath()
+    path.moveToPoint_(pts[0])
+    for pt in pts[1:]:
+        path.lineToPoint_(pt)
+    path.closePath()
+    AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*TAPE).setFill()
+    path.fill()
+    edge = AppKit.NSBezierPath.bezierPath()  # the two long edges, a shade darker
+    edge.setLineWidth_(0.6)
+    for v in (-ht, ht):
+        edge.moveToPoint_(at(-hl + 2, v))
+        edge.lineToPoint_(at(hl - 2, v))
+    AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.72, 0.58, 0.32, 0.35).setStroke()
+    edge.stroke()
+
+
+def _draw_paper(x, y, w, h, rnd, color=PAPER, tape=True):
+    """A scrap of white paper: roughly cut edges, slight tilt, soft shadow (cutout collage), held on the
+    screen by 2 to 4 pieces of masking tape (`tape_slots`: always one on top, both sides held)."""
     tilt = rnd.uniform(-0.03, 0.03)
     cx, cy = x + w / 2, y + h / 2
 
@@ -253,6 +284,18 @@ def _draw_paper(x, y, w, h, rnd, color=PAPER):
     AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(*color).setFill()
     path.fill()
     AppKit.NSGraphicsContext.restoreGraphicsState()
+    if not tape:
+        return
+    length = max(30.0, min(62.0, 0.9 * h + 0.04 * w))
+    thick = max(10.0, min(17.0, 0.3 * length))
+    inset = thick * 0.35  # the tape sits across the corner, half on the paper, half on the screen
+    corners = {"top-left": (x + inset, y + h - inset, math.pi / 4), "top-right": (x + w - inset, y + h - inset, -math.pi / 4),
+               "bottom-left": (x + inset, y + inset, -math.pi / 4), "bottom-right": (x + w - inset, y + inset, math.pi / 4),
+               "top": (x + w / 2 + rnd.uniform(-0.12, 0.12) * w, y + h, 0.0)}
+    for slot in tape_slots(rnd):
+        tx, ty, a = corners[slot]
+        tx, ty = rot(tx, ty)
+        _draw_tape(tx, ty, a + tilt + rnd.uniform(-0.14, 0.14), length * rnd.uniform(0.85, 1.1), thick, rnd)
 
 
 def _measure(text, size, max_w):
@@ -633,7 +676,7 @@ class _MagnetView(AppKit.NSView):
         b = self.bounds()
         W, H = b.size.width, b.size.height
         _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 10_000  # draw everything, no reveal
-        _draw_paper(6, 6, W - 12, H - 12, rnd)
+        _draw_paper(6, 6, W - 12, H - 12, rnd, tape=False)  # its window is too tight for tape overhang
         _ink().setStroke()
         attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
         if self.compact:
