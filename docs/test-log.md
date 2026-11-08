@@ -963,3 +963,22 @@ prévisualisation, un visage détecté et environ 23 images/s. L'état du pannea
 confirme « Check your camera » avec la préparation ouverte. **37 tests passent**,
 dont la régression de récupération après caméra indisponible. Les cibles n'ont
 pas été remplies par l'agent ; la suite reste un essai humain.
+
+### 2026-11-08 — Raccourci Finder et environnement Vision persistant
+
+Le raccourci `/Applications/H Companion.app` pointait encore vers le checkout
+expérimental H Platform V2 et un Python temporaire disparu après redémarrage.
+La calibration n'était pas en cause. Le lanceur commun propose maintenant le
+profil `hcompany-vision` : checkout courant, `.venv` persistante, tracker natif,
+ports 8794/8795 et Option droite. Un ancien chemin Python absent laisse essayer
+la `.venv` du checkout. Les chemins locaux (Electron et fichier de clés) restent
+dans la configuration privée ; aucune clé n'est intégrée au bundle.
+
+**31 tests de lanceur passent**, dont la récupération du Python disparu, le
+profil H Company, le démarrage avec fichier privé et la réutilisation du moteur.
+Bundle Swift compilé, signature locale vérifiée, ancien raccourci sauvegardé.
+Deux ouvertures via Applications ouvrent Vision dans le bon checkout et conservent
+le même PID Electron ainsi que le même moteur H réel, sans deuxième écouteur vocal.
+Le panneau affiche « Open camera preview », Camera 1, et le moteur rapporte
+Vision activée. Le tracker est arrêté : aucune nouvelle calibration ni mesure de
+précision n'a été réalisée pendant ce contrôle. Aucun appel Holo de scénario.

@@ -33,6 +33,21 @@ Preset voice, speed and safe key choices are remembered. An explicitly configure
 
 ### Finder / menu-bar launcher for the Devin pilot (macOS)
 
+For the current **H Company + native Vision** flow, install the same shortcut with
+`python3 scripts/install-macos-launcher.py --profile hcompany-vision`.
+It uses the checkout's persistent `.venv` (`uv sync --all-packages`), the native
+tracker's `desktop/tracker/.venv`, and ports 8794/8795. Reopening reuses the matching
+engine and Electron window; it does not reset an active calibration. This profile
+coaches H Company in the browser, with Right Option to talk.
+
+Optional local paths go in
+`~/Library/Application Support/HCompanionResearch/main-vision-coach/launcher.json`:
+`{"env_file":"/absolute/private/providers.env","electron":"/absolute/path/to/Electron"}`.
+Only paths belong in this configuration; provider keys stay in the private env file.
+Without an Electron override, run `npm ci --prefix desktop`. The installer refuses
+to overwrite an existing bundle: keep a backup and install to a new destination first.
+Do not point this shortcut at an older experimental checkout or a `/tmp` Python.
+
 On the demo Mac, **Applications → H Companion.app** is the Finder/Spotlight entry
 point. It has the companion icon and invokes the same launcher below, reopening
 the existing window or starting the coach as needed. To install that local

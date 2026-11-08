@@ -219,3 +219,57 @@ def test_python_probe_keeps_virtualenv_symlink_and_does_not_run_shell(launcher, 
     monkeypatch.setattr(launcher.subprocess, "run", run)
     assert launcher.python_executable(launcher.test_private) == str(binary)
     assert len(calls) == 1
+
+
+def test_missing_temporary_python_falls_back_to_checkout_venv(launcher, monkeypatch):
+    monkeypatch.setenv('HCS_PILOT_PYTHON', '/private/tmp/removed-venv/bin/python')
+    binary = launcher.ROOT / '.venv/bin/python'
+    binary.parent.mkdir(parents=True)
+    binary.touch(mode=0o700)
+    monkeypatch.setattr(launcher.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0))
+    assert launcher.python_executable(launcher.test_private) == str(binary)
+
+
+def test_vision_reopens_matching_engine_without_duplicate_listener(launcher, monkeypatch):
+    launcher.configure_profile('hcompany-vision')
+    assert (launcher.CONTROL_PORT, launcher.BACKEND_PORT) == (8794, 8795)
+    metadata(launcher, software='hcompany', surface='browser', native_bundle_id=None)
+    monkeypatch.setattr(launcher, 'control_status', status)
+    assert launcher.start_runtime('/test/python', launcher.test_private) is False
+    assert not launcher.owns_runtime(status(), metadata(launcher))
+
+
+def test_vision_cold_start_uses_current_repo_and_private_env_path(launcher, monkeypatch):
+    launcher.configure_profile('hcompany-vision')
+    source = launcher.test_private / 'private.env'
+    source.touch()
+    (launcher.test_private / 'launcher.json').write_text(json.dumps({'env_file': str(source)}))
+    metadata(launcher, software='hcompany', surface='browser', native_bundle_id=None)
+    replies = iter([None, status()])
+    monkeypatch.setattr(launcher, 'control_status', lambda: next(replies))
+    monkeypatch.setattr(launcher, 'port_busy', lambda _: False)
+    calls = []
+    monkeypatch.setattr(launcher.subprocess, 'Popen', lambda cmd, **kw: calls.append(cmd) or SimpleNamespace(pid=1234, poll=lambda: None))
+    assert launcher.start_runtime('/test/python', launcher.test_private)
+    cmd = calls[0]
+    assert cmd[2] == str(launcher.ROOT / 'scripts/run-h-company-human.py')
+    assert '--native-devin' not in cmd
+    for flag, value in {'--software': 'hcompany', '--control-port': '8794', '--backend-port': '8795', '--key': 'alt_r', '--env-file': str(source)}.items():
+        assert cmd[cmd.index(flag) + 1] == value
+
+
+def test_vision_desktop_receives_native_tracker_but_no_provider_secrets(launcher, monkeypatch):
+    launcher.configure_profile('hcompany-vision')
+    binary = launcher.test_private / 'Electron'
+    binary.touch()
+    (launcher.test_private / 'launcher.json').write_text(json.dumps({'electron': str(binary)}))
+    monkeypatch.setenv('HAI_API_KEY', 'test-secret')
+    calls = []
+    monkeypatch.setattr(launcher.subprocess, 'Popen', lambda cmd, **kw: calls.append((cmd, kw['env'])) or SimpleNamespace(wait=lambda timeout: 0))
+    launcher.start_desktop('/test/python', launcher.test_private)
+    cmd, env = calls[0]
+    assert cmd == [str(binary), str(launcher.ROOT / 'desktop'), '--section=vision']
+    assert env['HCS_CONTROL_URL'] == 'http://127.0.0.1:8794'
+    assert env['HCS_VISION_WINDOW'] == 'native'
+    assert env['HCS_TRACKER_PYTHON'] == str(launcher.ROOT / 'desktop/tracker/.venv/bin/python')
+    assert 'HAI_API_KEY' not in env
