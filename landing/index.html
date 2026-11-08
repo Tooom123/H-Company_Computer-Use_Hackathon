@@ -87,35 +87,51 @@
     </div>
   </section>
 
-  <section class="section" id="example" data-annotate>
-    <p class="eyebrow mono">In action · an API key on H Company's portal</p>
-    <h2>“How do I <span data-mark="underline" data-order="1">create an API key</span>?”</h2>
-    <figure class="cutout" aria-label="Illustration: H Companion points to the Create API key button, step 2 of 3">
+  <section class="section" id="example">
+    <p class="eyebrow mono">In action · H Platform, step 2 of the API key procedure</p>
+    <h2>“Show me how to create an API key.”</h2>
+    <figure class="cutout" id="demo" aria-label="A Mac screen: the H Platform API keys page in Chrome, with H Companion's red pencil overlay. It heard the request, then framed the Create an API key button with the note: 2. Click Create an API key.">
       <span class="tape tape-l" aria-hidden="true"></span>
       <span class="tape tape-r" aria-hidden="true"></span>
-      <div class="shot" aria-hidden="true">
-        <div class="shot-bar"><i></i><i></i><i></i><span class="mono">hcompany.ai · portal</span></div>
-        <div class="shot-body">
-          <nav class="shot-nav">
-            <svg class="shot-logo" viewBox="838 195 197 220"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg>
-            <span>Playground</span><span>Agents</span><span class="on">API keys</span><span>Usage</span><span>Billing</span>
-          </nav>
-          <div class="shot-main">
-            <div class="shot-head">
-              <div><b>API keys</b><small>Keys let your apps call the models. Keep them secret.</small></div>
-              <span class="shot-btn"><span data-mark="circle" data-order="3">+ Create API key</span></span>
-            </div>
-            <div class="shot-table">
-              <div class="shot-row shot-th"><span>Name</span><span>Key</span><span>Created</span></div>
-              <div class="shot-row"><span>staging</span><span class="mono">hk-••••••••3f9a</span><span>Oct 28</span></div>
-              <div class="shot-row empty"><span></span><span></span><span></span></div>
+      <div class="screen" aria-hidden="true">
+        <div class="stage" id="stage">
+          <div class="mac-bar"><b>Chrome</b><span>File</span><span>Edit</span><span>View</span><span>History</span><span>Bookmarks</span><span>Profiles</span><span>Tab</span><span>Window</span><span>Help</span><em>Sun 8 Nov  11:12</em></div>
+          <div class="chrome">
+            <div class="chrome-tabs"><i class="tl r"></i><i class="tl y"></i><i class="tl g"></i>
+              <div class="chrome-tab"><svg viewBox="838 195 197 220"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg>H Platform<span>×</span></div><span class="chrome-plus">+</span></div>
+            <div class="chrome-bar"><span class="nav">‹ › ↻</span><div class="omni">platform.hcompany.ai/settings/api-keys</div></div>
+          </div>
+          <div class="plat">
+            <aside class="plat-side">
+              <div class="plat-logo"><svg viewBox="838 195 197 220"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg>H Platform</div>
+              <span>Agents</span><span>Sessions</span>
+              <small>Configure</small>
+              <span class="on">API keys</span><span>Billing</span>
+            </aside>
+            <div class="plat-main">
+              <div class="plat-head">
+                <div><h4>API keys</h4><p>Only a short prefix of each key is shown.</p></div>
+                <span class="plat-btn" id="target">Create an API key</span>
+              </div>
+              <div class="plat-card">
+                <div class="plat-row plat-th"><span>Name</span><span>Key</span><span>Expiry</span><span>Created</span></div>
+                <div class="plat-row"><span>hackathon-mac</span><span class="mono">3f9a••••••••</span><span>Never</span><span>Nov 7, 2026</span></div>
+              </div>
+              <div class="plat-card plat-use">
+                <h5>Use your API key</h5>
+                <dl><dt>Base URL</dt><dd class="mono">https://api.hcompany.ai/v1</dd>
+                  <dt>Authorization header</dt><dd class="mono">Authorization: Bearer &lt;your API key&gt;</dd></dl>
+                <h6>Example request</h6>
+                <pre class="mono">curl https://api.hcompany.ai/v1/models \
+  -H "Authorization: Bearer $H_API_KEY"</pre>
+              </div>
             </div>
           </div>
+          <svg class="pencil" id="pencil" viewBox="0 0 1440 900"></svg>
         </div>
       </div>
-      <p class="pen cut-step" data-write data-order="2">Step 2 / 3 · click “Create API key”</p>
-      <span class="cut-arrow" data-write data-order="2" aria-hidden="true"><svg viewBox="0 0 110 170"><path d="M4 10 C 62 4, 100 50, 70 152"/><path d="M60 138 L 69 156 L 82 141"/></svg></span>
-      <p class="cut-voice" data-write data-order="4"><span class="mono">H Companion</span> Then name it and copy it: it is shown only once.</p>
+      <figcaption class="fine">Recreated for this page: the H Platform screen from its live labels, the overlay drawn like the
+        app draws it (red pencil, paper scraps, status badge, Magnet). Never a key value on screen.</figcaption>
     </figure>
   </section>
 
@@ -160,5 +176,6 @@
 <script type="module" src="annotate.js"></script>
 <script type="module" src="margin.js"></script>
 <script type="module" src="billing.js"></script>
+<script type="module" src="companion-demo.js"></script>
 </body>
 </html>
