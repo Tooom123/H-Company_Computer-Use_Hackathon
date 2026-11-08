@@ -11,6 +11,9 @@ usage and costs. This module is the only bridge: plain HTTP on 127.0.0.1, stdlib
     POST /stop       stop the current task (local gate first, as everywhere)
     POST /voice      {"enabled"?: bool, "voice"?: id, "speed"?: float}
     POST /voice/test say a sample sentence
+    GET  /feedback   current completed-session feedback draft
+    POST /feedback/dictate {"session_id": ...} arm the next transcript as feedback
+    POST /feedback  explicit human labels, bound to a finished session
 
 Safety: bound to 127.0.0.1; every request must carry `X-HCS-App: 1` (a web page cannot add that header to a
 cross-origin request without a CORS preflight, which is never granted) and a local Host header (DNS rebinding).
@@ -26,6 +29,8 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
+
+from .desktop_feedback import DesktopFeedback, FeedbackError
 
 DEFAULT_PORT = 8768
 APP_HEADER = "X-HCS-App"
@@ -160,11 +165,13 @@ class Controller:
                  set_autonomy: Callable[[int], None], stop: Callable[[], bool],
                  set_voice: Callable[[dict[str, Any]], dict[str, Any]], test_voice: Callable[[], bool],
                  on_app_presence: Callable[[bool], None] | None = None,
+                 feedback: DesktopFeedback | None = None,
                  quota: Callable[[], Any] = h_quota, tts_usage: Callable[[], Any] = elevenlabs_usage) -> None:
         self.runs_dir = runs_dir
         self._status, self._set_autonomy, self._stop = status, set_autonomy, stop
         self._set_voice, self._test_voice = set_voice, test_voice
         self._on_presence = on_app_presence
+        self._feedback = feedback or DesktopFeedback()
         self._quota, self._tts = _Cached(quota), _Cached(tts_usage)
         self.app_seen = 0.0
         self.app_present = False
@@ -207,6 +214,17 @@ class Controller:
 
     def handle(self, method: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         path = path.split("?", 1)[0].rstrip("/") or "/"
+        if path in ("/feedback", "/feedback/dictate"):
+            try:
+                if method == "GET" and path == "/feedback":
+                    return 200, self._feedback.status()
+                if method == "POST" and path == "/feedback/dictate":
+                    return 200, self._feedback.arm(body)
+                if method == "POST" and path == "/feedback":
+                    return 200, self._feedback.save(body)
+            except FeedbackError as exc:
+                return exc.status, {"error": str(exc)}
+            return 405, {"error": "Method not allowed"}
         if method == "GET" and path == "/status":
             return 200, self.status()
         if method == "GET" and path == "/sessions":
@@ -217,6 +235,8 @@ class Controller:
             level = body.get("level")
             if not isinstance(level, int) or isinstance(level, bool) or level not in (0, 1, 2):
                 return 400, {"error": "level must be 0, 1 or 2"}
+            if level != 0 and os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1":
+                return 403, {"error": "This coaching session only observes; autonomous control is disabled"}
             self._set_autonomy(level)
             return 200, self.status()
         if method == "POST" and path == "/stop":

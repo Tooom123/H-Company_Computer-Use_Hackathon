@@ -36,6 +36,7 @@ from .contract import (
     InterventionReport,
     InterventionRequest,
     KnowledgeNote,
+    Mode,
     NextCommand,
     ProposedPlan,
     State,
@@ -67,6 +68,10 @@ class Intervention:
         runs_dir: Path = Path("runs"),
         uplink: SupportUplink | None | bool = True,
     ) -> None:
+        self.observe_only = (getattr(backend, "observe_only", False) is True
+                             or os.environ.get("HCS_GUIDE_OBSERVE_ONLY", "").lower() in {"1", "true", "yes"})
+        if self.observe_only:
+            request = request.model_copy(update={"mode": Mode.guide, "autonomy": 0})
         self.request = request
         self.backend = backend
         self.sink = sink
@@ -195,6 +200,10 @@ class Intervention:
 
     def set_autonomy(self, level: int) -> None:
         """Live change from the slider. Raising to the max while guiding hands the task to the agent."""
+        if self.observe_only:
+            self.autonomy = 0
+            self._emit("state_changed", "Observation-only GUIDE: autonomy remains 0.", autonomy=0)
+            return
         self.autonomy = max(0, min(2, int(level)))
         self._emit("state_changed", f"Autonomy set to {self.autonomy}", autonomy=self.autonomy)
         if self.autonomy >= 2 and self.state is State.awaiting_user:
@@ -277,7 +286,12 @@ class Intervention:
             self._set_state(State.verifying, "Checking the result in the software.")
             verify = self._fast_verify(bound) if (guide and not self.takeover) else None
             if verify is None:
-                verify = self.backend.verify(bound, self._on_step, self._stop)
+                if guide and (self.autonomy == 0 or self.observe_only):
+                    verify = VerifyResult(None, "inconclusive", observed=(
+                        "The current screen does not confirm every postcondition. "
+                        "Observation-only verification did not take control of the desktop."))
+                else:
+                    verify = self.backend.verify(bound, self._on_step, self._stop)
             self._record_verify(verify)
             if self._stop.is_set():
                 return self._finish_stopped()
@@ -446,13 +460,15 @@ class Intervention:
         """Before guiding: wait until the expected screen is displayed, asking the user to show it if needed."""
         expected = bound.expected_screen
         check = getattr(self.backend, "screen_matches", None)
-        if not expected or check is None:
+        if not expected:
             return True
+        if check is None:
+            return False
         shown = False
         for _ in range(attempts):
             if self._stop.is_set():
                 return False
-            ok, visible = check(expected)
+            ok, visible = self._read_visual_check(check, expected)
             self._trace(f"screen check: {'ok' if ok else 'not yet'} ({visible[:60]})")
             if ok:
                 if shown:
@@ -483,7 +499,7 @@ class Intervention:
             if self._on_guidance(gs) is None:
                 return False
             check = getattr(self.backend, "screen_matches", None)
-            if check and check(bound.expected_screen)[0]:
+            if check and self._read_visual_check(check, bound.expected_screen)[0]:
                 return True
         return self._ensure_screen(bound, attempts=10)
 
@@ -491,9 +507,9 @@ class Intervention:
         """Has the step's effect appeared? Returns "yes", "no", or "away" (another application is in front)."""
         check = getattr(self.backend, "effect_visible", None) or getattr(self.backend, "screen_matches", None)
         if check is None:
-            return "yes"
+            return "no"
         for attempt in range(tries):
-            ok, visible = check(expected)
+            ok, visible = self._read_visual_check(check, expected)
             self._trace(f"done check ({attempt + 1}/{tries}): {'yes' if ok else 'no'} ({visible[:60]})")
             if ok:
                 return "yes"
@@ -507,14 +523,15 @@ class Intervention:
 
     def _fast_verify(self, bound: BoundProcedure):
         """Guide mode: the user is already on the final screen, so each postcondition check is one Holo screen
-        check (~2 s) instead of a full agent session (~15 s). Any doubt -> None, and the agent verifier runs."""
+        check instead of a full agent session. Doubt -> None; autonomy 0 remains inconclusive."""
         check = getattr(self.backend, "effect_visible", None) or getattr(self.backend, "screen_matches", None)
         if check is None or self._stop.is_set():
             return None
         results: dict[str, bool] = {}
         seen: list[str] = []
         for key, prompt in bound.checks.items():
-            ok, visible = check(f"{prompt} (look at the exact field or area; answer false if it is not visible)")
+            ok, visible = self._read_visual_check(
+                check, f"{prompt} (look at the exact field or area; answer false if it is not visible)")
             self._trace(f"fast check {key}: {'yes' if ok else 'no'} ({visible[:50]})")
             results[key] = ok
             seen.append(visible)
@@ -523,6 +540,18 @@ class Intervention:
         from .backend import VerifyResult
 
         return VerifyResult("holo-screen-check", "completed", results, "; ".join(seen)[:400], cost_usd=0.0)
+
+    @staticmethod
+    def _read_visual_check(check, expected: str) -> tuple[bool, str]:
+        """Third-party backends must also fail closed, without tracing raw errors."""
+        try:
+            result = check(expected)
+            if (isinstance(result, tuple) and len(result) == 2 and type(result[0]) is bool
+                    and isinstance(result[1], str) and result[1].strip()):
+                return result
+        except Exception:
+            pass
+        return False, ""
 
     def _trace(self, summary: str) -> None:
         self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))
@@ -599,7 +628,7 @@ class Intervention:
         if res.cost_usd:
             self.cost_usd += res.cost_usd
         self.verification = Verification(
-            performed=res.status not in {"interrupted", "failed"} or bool(res.checks),
+            performed=res.status not in {"interrupted", "failed", "inconclusive"} or bool(res.checks),
             satisfied=bool(res.checks) and all(res.checks.values()),
             postcondition=self._bound.postcondition_description,
             observed=res.observed or (res.error or ""),

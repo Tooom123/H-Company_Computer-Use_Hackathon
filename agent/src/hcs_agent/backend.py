@@ -20,6 +20,7 @@ from typing import Any, Callable, Literal, Protocol
 from pydantic import BaseModel, Field
 
 from hai_agents.polling import AnswerValidationError
+from hai_agents_local.desktop import PyautoguiDesktopBridge
 
 from .contract import Category, DeclaredResult, GuidanceStep, Step
 from .grounding import Located
@@ -184,6 +185,33 @@ def make_lookup_tool(knowledge: Knowledge, software: str, on_lookup: LookupCallb
 # --------------------------------------------------------------------------- real H backend
 
 
+class ReadOnlyDesktopBridge(PyautoguiDesktopBridge):
+    """Enforce GUIDE observation at the local command boundary, before driver access.
+
+    Names are SDK wire methods, not model tool names. Every other method (including
+    future methods) is denied. Local overlay drawing remains outside this bridge.
+    This does not redact sensitive information visible on the user's screen.
+    """
+
+    commands = frozenset({
+        "platform", "screenshot_b64", "get_screen_size", "get_mouse_position",
+        "get_observation_snapshot",
+    })
+
+    def _dispatch(self, name, args):
+        if name not in self.commands or args:
+            return None, "GUIDE observation only: desktop input, files and shell are disabled."
+        # Do not call the base dispatcher: it logs raw driver exceptions, which
+        # may contain private paths or credentials. These methods take no args.
+        from hai_agents_local.transport import serialize_result
+
+        try:
+            method = getattr(self._driver, name)
+            return serialize_result(method() if callable(method) else method), None
+        except Exception:
+            return None, "GUIDE observation unavailable; no desktop action was performed."
+
+
 class HBackend:
     """Drives this Mac through H's desktop environment."""
 
@@ -205,12 +233,17 @@ class HBackend:
         self.screenshot_max_width = screenshot_max_width
         self.timezone_name = timezone_name
         self.knowledge = knowledge or NoKnowledge()
+        # Freeze the permission for this backend/channel; a later environment
+        # edit must not upgrade an already running observation-only session.
+        self.observe_only = os.environ.get("HCS_GUIDE_OBSERVE_ONLY", "").lower() in {"1", "true", "yes"}
         self._desktop_session_id: str | None = None
-        if os.environ.get("HCS_AUTO_CLEANUP", "1") not in {"0", "false", "no"}:
+        if not self.observe_only and os.environ.get("HCS_AUTO_CLEANUP", "1") not in {"0", "false", "no"}:
             self._close_orphans()
 
     def _close_orphans(self) -> None:
         """Close command channels left pending by earlier dead processes: each one holds a concurrency slot."""
+        if getattr(self, "observe_only", False):
+            return  # GUIDE never enumerates or deletes unrelated sessions.
         import httpx
 
         wrapper = self._client._client_wrapper
@@ -236,7 +269,8 @@ class HBackend:
         if self._desktop_session_id is not None and not self._channel_healthy(self._desktop_session_id):
             self._desktop_session_id = None  # stale: the bridge died or the platform closed the channel
         if self._desktop_session_id is None:
-            bridge = PyautoguiDesktopBridge(
+            bridge_type = ReadOnlyDesktopBridge if getattr(self, "observe_only", False) else PyautoguiDesktopBridge
+            bridge = bridge_type(
                 "user-mac", api_key=wrapper._api_key, base_url=wrapper.get_base_url(),
                 max_width=self.screenshot_max_width,
             )
@@ -289,6 +323,14 @@ class HBackend:
         }
         if fast:
             spec["reasoning_effort"] = "low"  # guide steps are short observations, not plans
+        if getattr(self, "observe_only", False):
+            spec["instructions"] += (
+                "\nObservation-only GUIDE: only inspect the current screen and explain the next user action. "
+                "Never click, type, scroll, use shell or access files. The local bridge rejects these commands. "
+                "Ask the user to change the screen and wait for their confirmation."
+            )
+            # Defense in depth; the local allowlist above is the enforcement.
+            spec["environments"][0]["shell"] = False
         return spec
 
     # ----------------------------------------------------------------- session helpers
@@ -324,6 +366,10 @@ class HBackend:
     # ----------------------------------------------------------------- public API
 
     def run_attempt(self, bound, task, attempt, on_step, stop_event, on_lookup=None) -> AttemptResult:
+        if getattr(self, "observe_only", False):
+            return AttemptResult(None, "failed", DeclaredResult(
+                outcome="blocked", summary="Observation-only GUIDE cannot take control of the desktop.",
+                blocker="Desktop actions are disabled for this session.", blocker_category=Category.environment))
         proc = bound.procedure
         if stop_event.is_set():
             return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -447,6 +493,9 @@ class HBackend:
         return AttemptResult(sid, "completed", declared, cost_usd=cost, guidance=guidance)
 
     def verify(self, bound, on_step, stop_event) -> VerifyResult:
+        if getattr(self, "observe_only", False):
+            return VerifyResult(None, "inconclusive", observed=(
+                "Observation-only GUIDE requires visual postcondition checks; autonomous verification is disabled."))
         checks = bound.checks
         if stop_event.is_set():
             return VerifyResult(None, "interrupted")
@@ -492,16 +541,25 @@ class HBackend:
             return Located(False, None, f"grounding error: {exc}")
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:
-        try:
-            return self._grounding().effect_visible(expected)
-        except Exception as exc:  # noqa: BLE001
-            return True, f"effect check unavailable: {exc}"
+        return self._visual_check("effect_visible", expected)
 
     def screen_matches(self, expected: str) -> tuple[bool, str]:
+        return self._visual_check("screen_matches", expected)
+
+    def _visual_check(self, method: str, expected: str) -> tuple[bool, str]:
         try:
-            return self._grounding().screen_matches(expected)
-        except Exception as exc:  # noqa: BLE001
-            return True, f"screen check unavailable: {exc}"  # do not block the guide on a check failure
+            result = getattr(self._grounding(), method)(expected)
+            if (not isinstance(result, tuple) or len(result) != 2 or type(result[0]) is not bool
+                    or not isinstance(result[1], str) or not result[1].strip()):
+                raise ValueError("Unusable visual check")
+        except Exception:
+            self.last_visual_check = {"check": method, "status": "unavailable",
+                                      "message": "Visual verification unavailable; outcome inconclusive."}
+            # An empty description prevents the runner mistaking an unavailable
+            # check for another foreground application and waiting indefinitely.
+            return False, ""
+        self.last_visual_check = {"check": method, "status": "observed", "matched": result[0]}
+        return result
 
     def screenshot(self, path: Path) -> Path | None:
         try:

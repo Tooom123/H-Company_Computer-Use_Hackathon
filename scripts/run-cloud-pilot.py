@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--port', type=int, default=8771)
     parser.add_argument('--max-parallel', type=int, default=2)
     parser.add_argument('--history', type=Path, action='append', default=[])
+    parser.add_argument('--human-history', type=Path, action='append', default=[])
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 1 <= args.max_parallel <= 10:
         parser.error('Choose a local port and between 1 and 10 parallel jobs.')
@@ -78,6 +79,8 @@ def main():
     revisions = {'engine_revision': ENGINE_REV, 'support_revision': SUPPORT_REV}
     historical = [{'id': f'odoo-{i+1}', 'label': f'Odoo · série locale {i+1}',
                    'root': path, 'software': 'odoo'} for i, path in enumerate(args.history)]
+    historical.extend({'id': f'h-human-{i+1}', 'label': 'H Company · guidage humain',
+                       'root': path, 'software': 'h-company'} for i, path in enumerate(args.human_history))
     app = create_cloud_app(private_root=private, token=token, runner=runner, knowledge=knowledge,
                            username=credentials['username'], password=credentials['password'],
                            historical_sources=historical, account_configuration=account, revisions=revisions)

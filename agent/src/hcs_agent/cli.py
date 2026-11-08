@@ -21,6 +21,7 @@ from .backend import make_backend
 from .contract import AgentEvent, ApproveCommand, InterventionRequest, Mode, NextCommand, State, StopCommand
 from .procedures import ProcedureRegistry
 from .runner import Intervention
+from .desktop_feedback import DesktopFeedback, RunJournal
 
 
 _LAST_LOOKUP_AT = 0.0
@@ -87,12 +88,16 @@ def _prefetch_voice(request: InterventionRequest) -> None:
 
 
 _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
+_FEEDBACK = DesktopFeedback()
+_RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
 _TEST_SENTENCE = "Hi, I'm your H Companion. Hold Command H and tell me what you need."
 
 
 def _set_autonomy(level: int) -> None:
     """One place for every source (Magnet click, desktop app): default for next tasks + the running one."""
     level = max(0, min(2, int(level)))
+    if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1":
+        level = 0
     _MAGNET["level"] = level
     if _MAGNET.get("widget") is not None:
         _MAGNET["widget"].set_level(level)
@@ -129,7 +134,8 @@ def _control_status() -> dict:
     backend = _CONTROL.get("backend")
     return {
         "agent": {"command": _CONTROL["command"], "pid": os.getpid(), "since": _CONTROL["since"],
-                  "simulated": bool(getattr(backend, "simulated", False))},
+                  "simulated": bool(getattr(backend, "simulated", False)),
+                  "observe_only": os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1"},
         "autonomy": _MAGNET["level"],
         "voice": {"state": _VOICE.get("state"), "last_text": _VOICE.get("last_text"),
                   "ptt_key": getattr(ptt, "key_name", None)},
@@ -205,7 +211,8 @@ def _start_control(runs_dir: Path, command: str, backend) -> None:
     _CONTROL.update(command=command, backend=backend, since=time.strftime("%Y-%m-%dT%H:%M:%S"))
     _speaker()  # the app's Voice page can set and test the voice even before the first note is shown
     ctl = Controller(runs_dir, status=_control_status, set_autonomy=_set_autonomy, stop=_control_stop,
-                     set_voice=_control_voice, test_voice=_control_test_voice, on_app_presence=_app_presence)
+                     set_voice=_control_voice, test_voice=_control_test_voice, on_app_presence=_app_presence,
+                     feedback=_FEEDBACK)
     try:
         port = int(os.environ.get("HCS_CONTROL_PORT", DEFAULT_PORT))
         _CONTROL["server"] = ControlServer(ctl, port).start()
@@ -302,9 +309,11 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
              overlay: bool = True, ov=None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
     # The Magnet is the authority: 0 = show only, 1 = guide + takeover when stuck, 2 = the agent does it.
-    request.autonomy = _MAGNET["level"]
+    request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else _MAGNET["level"]
     request.mode = Mode.act if request.autonomy >= 2 else Mode.guide
-    it = Intervention(request, backend, ProcedureRegistry(), _print_event, runs_dir)
+    journal = RunJournal(runs_dir, request, _print_event, simulated=backend.simulated)
+    it = Intervention(request, backend, ProcedureRegistry(), journal, runs_dir)
+    _FEEDBACK.register(it)
     _MAGNET["current"] = it
     if ov is not None:
         _ensure_magnet()
@@ -314,6 +323,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         _prefetch_voice(request)
     it.start()
     if it.state.terminal:
+        _notify_run_finished(it)
         return 1
     if auto_approve:
         print(">> auto-approving (--yes)")
@@ -324,6 +334,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         if answer != "y":
             it.approve(ApproveCommand(approved=False))
             it.wait()
+            _notify_run_finished(it)
             return 2
     it.approve(ApproveCommand(approved=True, scope_note=scope_note))
 
@@ -351,6 +362,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         it.uplink.flush(10)
         print(f"support backend: {it.uplink.sent} sent, {it.uplink.failed} failed ({it.uplink.url})")
     if it.report:
+        _notify_run_finished(it)
         print(f"\nreport: {it.runs_dir / 'report.json'}")
         print(json.dumps(it.report.to_support_summary(), indent=2))
         if it.report.timings.stop_latency_s is not None:
@@ -359,6 +371,28 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
             _show_outcome(ov, it)
         return 0 if it.report.status.value == "resolved" else 3
     return 1
+
+
+def _notify_run_finished(it) -> None:
+    """Allow a private launcher to export completed H archives without delaying the desktop UI."""
+    callback = _RUN_FINISHED_HOOK
+    if callback is None or it.report is None:
+        return
+    report = it.report.model_dump(mode="json")
+    def call():
+        try:
+            callback(it.runs_dir, report)
+        except Exception:  # an exporter failure must never relaunch or corrupt the intervention
+            print("(run archive export failed; local report and events retained)", flush=True)
+    threading.Thread(target=call, name=f"run-export-{it.request.session_id}", daemon=True).start()
+
+
+def _hcompany_request(text: str, context: str = "") -> InterventionRequest:
+    """The H demo is an open-ended question, never an approximate match to an Odoo procedure."""
+    if not text.strip():
+        raise ValueError("Please say a question")
+    return InterventionRequest(software="h-company", goal=text, procedure_id="hcompany_general_guide",
+                               parameters={"question": text, "context": context}, mode=Mode.guide, autonomy=0)
 
 
 def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
@@ -423,8 +457,12 @@ def cmd_talk(args: argparse.Namespace) -> int:
     from .voice import IntentRouter, PushToTalk, intent_to_request
 
     registry = ProcedureRegistry()
+    hcompany = getattr(args, "software", None) == "hcompany"
+    if hcompany:
+        registry.get("hcompany_general_guide")  # fail before opening devices if the fixture is missing
+        _set_autonomy(0)
     # Proper nouns only: common words in the vocabulary made Gladia swap real words for them.
-    vocab = ["Acme Demo", "Acme Corp", "Odoo"]
+    vocab = ["H Company", "Holo", "H Companion"] if hcompany else ["Acme Demo", "Acme Corp", "Odoo"]
     ov = None
     if not args.no_overlay and sys.platform == "darwin":
         from .overlay import Overlay
@@ -461,7 +499,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         backend._desktop_channel()
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     _VOICE["ptt"] = ptt
-    router = IntentRouter(registry)
+    router = None if hcompany else IntentRouter(registry)
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
           f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
@@ -492,6 +530,9 @@ def cmd_talk(args: argparse.Namespace) -> int:
             text = next_transcript()
             _VOICE["last_text"] = text
             print(f"\nYou said: \"{text}\"")
+            if _FEEDBACK.consume_transcript(text):
+                _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
+                continue
             if last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
                 print(f"  -> resuming {request.procedure_id} from the current screen")
@@ -506,27 +547,37 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             if ov is not None:
                 ov.badge("Thinking…", pulsing=True)
-            history.append(f"User: {text}")
-            try:
-                intent = router.route(text, history[:-1])
-            except Exception as exc:  # noqa: BLE001
-                print(f"  could not understand the request ({exc}); try again.")
-                _flash(ov, "I did not get that, please rephrase", "question")
-                continue
-            if not intent.procedure_id or intent.missing:
-                # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
-                q = intent.question or "What exactly should I help with?"
-                print(f"  ? {q}")
-                history.append(f"Assistant: {q}")
-                if len([h for h in history if h.startswith("Assistant:")]) >= 4:
-                    history.clear()  # too many rounds: start fresh rather than loop
-                _say(q)
-                _flash(ov, q, "question", seconds=6.0)
-                continue
-            history.clear()
-            request = intent_to_request(intent)
+            if hcompany:
+                context = ""
+                if last_request is not None:
+                    context = "Previous request (historical context, not a new authorization): " + last_request.goal
+                    previous = _MAGNET.get("current")
+                    if previous is not None and previous.guidance:
+                        context += "\nLast guidance shown: " + previous.guidance[-1].instruction
+                request = _hcompany_request(text, context)
+            else:
+                history.append(f"User: {text}")
+                try:
+                    intent = router.route(text, history[:-1])
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  could not understand the request ({exc}); try again.")
+                    _flash(ov, "I did not get that, please rephrase", "question")
+                    continue
+                if not intent.procedure_id or intent.missing:
+                    # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
+                    q = intent.question or "What exactly should I help with?"
+                    print(f"  ? {q}")
+                    history.append(f"Assistant: {q}")
+                    if len([h for h in history if h.startswith("Assistant:")]) >= 4:
+                        history.clear()  # too many rounds: start fresh rather than loop
+                    _say(q)
+                    _flash(ov, q, "question", seconds=6.0)
+                    continue
+                history.clear()
+                request = intent_to_request(intent)
             last_request = request
-            history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
+            if not hcompany:
+                history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
@@ -948,6 +999,7 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(fn=cmd_run)
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
+    talk.add_argument("--software", choices=["hcompany"], help="Open-ended H Company coaching instead of Odoo routing")
     talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
     talk.add_argument("--confirm", action="store_true", help="Ask for approval before running (default: the spoken request is the approval)")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")

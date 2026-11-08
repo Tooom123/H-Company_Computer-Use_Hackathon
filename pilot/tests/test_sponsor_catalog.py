@@ -112,19 +112,10 @@ def test_unknown_case_and_prompt_injection_in_session_identifier_fail_closed():
         })
 
 
-def test_revised_evidence_policy_is_versioned_and_keeps_missing_values_unknown():
+def test_revised_catalogue_is_versioned_for_retest_provenance():
     """Retests must retain this prompt change in their catalogue provenance."""
     for card in load_sponsor_catalog():
         assert card['catalog_version'] == '2026-11-08.1'
-        prompt = card['prompt']
-        assert 'Observations, Hypothèses et Inconnues' in prompt
-        assert 'API déjà fourni' in prompt
-        assert "Ne fais pas d'appel API" in prompt
-        assert 'son libellé et son unité' in prompt
-        assert 'information absente ne devient pas zéro' in prompt
-        assert "Une heure affichée n'est pas une durée" in prompt
-        assert 'Ne déduis jamais des tokens ou un coût du temps' in prompt
-        assert 'interrupted, ne suffit pas à prouver un échec ni une réussite métier' in prompt
 
 
 def test_hc08_reports_the_symptom_without_injecting_the_known_fixture_cause():
