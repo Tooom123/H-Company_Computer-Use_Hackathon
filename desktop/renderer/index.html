@@ -22,7 +22,6 @@
       <nav class="tabs" role="tablist">
         <button class="tab" data-go="home" role="tab">Home</button>
         <button class="tab" data-go="activity" role="tab">Activity</button>
-        <button class="tab" data-go="feedback" role="tab">Mon retour</button>
         <button class="tab" data-go="voice" role="tab">Voice</button>
         <button class="tab" data-go="vision" role="tab">Vision</button>
       </nav>
@@ -110,38 +109,6 @@
           <div class="stat"><b id="stSessions">—</b><span>tasks this month</span></div>
           <div class="stat"><b id="stVerified">—</b><span>checked in the software</span></div>
           <div class="stat"><b id="stTime">—</b><span>typical task time</span></div>
-        </div>
-        <button class="btn ghost" id="feedbackHome" hidden>Donner mon retour sur cet essai →</button>
-      </section>
-
-      <section class="view" id="view-feedback" hidden>
-        <div class="view-h"><h1>Mon retour</h1></div>
-        <p class="muted">Décris ce que tu as observé, puis choisis tes réponses. Ton retour reste séparé du verdict de l’agent.</p>
-        <div class="card">
-          <p class="muted small" id="feedbackSession">Termine un essai pour donner ton retour.</p>
-          <button class="btn ghost" id="feedbackDictate" disabled>Dicter mon retour</button>
-          <p class="muted small" id="feedbackHint"></p>
-          <label class="feedback-field" for="feedbackComment">Ce qui m’a aidé, ce qui était confus
-            <textarea id="feedbackComment" rows="5" maxlength="4000" disabled></textarea>
-          </label>
-          <div class="grid">
-            <label class="feedback-field" for="feedbackSuccess">Ai-je réussi la tâche ?
-              <select id="feedbackSuccess" disabled>
-                <option value="">Choisir une réponse</option>
-                <option value="yes">Oui</option><option value="partial">En partie</option>
-                <option value="no">Non</option><option value="unknown">Je ne sais pas</option>
-              </select>
-            </label>
-            <label class="feedback-field" for="feedbackUseful">L’accompagnement était-il utile ?
-              <select id="feedbackUseful" disabled>
-                <option value="">Choisir une réponse</option>
-                <option value="yes">Oui</option><option value="no">Non</option>
-                <option value="unknown">Je ne sais pas</option>
-              </select>
-            </label>
-          </div>
-          <button class="btn" id="feedbackSave" disabled>Enregistrer mon retour</button>
-          <p id="feedbackMessage" class="hand msg" role="status" aria-live="polite"></p>
         </div>
       </section>
 
