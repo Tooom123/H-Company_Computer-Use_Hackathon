@@ -461,6 +461,10 @@ def cmd_talk(args: argparse.Namespace) -> int:
     voice_state = {"s": None}
 
     def on_state(s: str) -> None:
+        if s.startswith("partial: "):
+            if ov is not None and voice_state["s"] == "recording":
+                ov.badge(_short(s[9:], 70) or "Listening…", pulsing=True)  # live words while speaking
+            return
         voice_state["s"] = s
         _VOICE["state"] = s
         print(f"  [voice] {s}", flush=True)
