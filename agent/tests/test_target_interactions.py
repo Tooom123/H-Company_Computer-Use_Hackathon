@@ -478,3 +478,17 @@ def test_only_an_explicit_do_it_lets_a_spoken_request_act(text, do_it):
                                     ("How much does a session cost?", True), ("What is a skill?", False)])
 def test_limit_and_price_questions_point_at_the_plan(q, plan):
     assert bool(cli._PLAN_QUESTION.search(q)) is plan
+
+
+@pytest.mark.parametrize("text,routed_act,acts", [
+    ("Yeah can you build me a napper key?", True, True),   # live 2026-11-08: "an API key" heard as "a napper key"
+    ("Can you create an API key?", True, True),
+    ("Peux-tu créer une clé API ?", True, True),
+    ("Show me how to create an API key", True, False),
+    ("Comment je crée une clé API ?", True, False),
+    ("Can you create an API key?", False, False),           # router said guide: the Magnet decides
+    ("Create an API key for me", False, True),              # explicit "for me" always acts
+    ("Word. upload them with this session.", True, False),  # mis-transcription never acts
+])
+def test_direct_requests_act_how_questions_are_shown(text, routed_act, acts):
+    assert cli._wants_it_done(text, routed_act) is acts

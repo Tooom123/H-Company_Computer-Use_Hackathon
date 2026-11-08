@@ -346,6 +346,21 @@ _DO_IT = re.compile(r"\b(do it|for me|on my behalf|you do it|do this|fais[- ]le|
                     r"vas[- ]y|occupe[- ]t'en|tu le fais|crée[- ]moi|cree[- ]moi|create (it|one) for me)\b", re.I)
 
 
+# A direct request ("can you build me an API key?", "peux-tu créer...") routed as act is a request to act; a "how"
+# question ("show me how", "comment") is a request to be shown.
+_ASK_TO_ACT = re.compile(r"\b(can you|could you|would you|will you|please|(build|make|create|get|generate|set up|"
+                         r"give) me|peux[- ]tu|tu peux|pourrais[- ]tu|tu pourrais|crée|cree|créer moi|fais|génère|genere)\b", re.I)
+_ASK_TO_SEE = re.compile(r"\b(show me|how (do|to|can|would|should)|walk me|teach me|explain|guide me|montre|comment|"
+                         r"explique|apprends)\b", re.I)
+
+
+def _wants_it_done(text: str, routed_act: bool) -> bool:
+    """Explicit "do it for me" always; otherwise a direct request the router read as act, unless it asks how."""
+    if _DO_IT.search(text):
+        return True
+    return routed_act and bool(_ASK_TO_ACT.search(text)) and not _ASK_TO_SEE.search(text)
+
+
 def _reading_time(*texts: str) -> float:
     """Seconds to say these texts aloud (about 14 characters per second), at least 4 s."""
     return max(4.0, sum(len(t or "") for t in texts) / 14.0 + 1.0)
@@ -994,7 +1009,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             last_request = request
             if not coaching:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
-            do_it = bool(not coaching and request.procedure_id and _DO_IT.search(text))  # explicit ask wins
+            do_it = bool(not coaching and request.procedure_id and _wants_it_done(text, request.mode is Mode.act))
             if do_it:
                 print("  [voice] explicit \"do it for me\": the agent acts for this request (autonomy 2)")
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
