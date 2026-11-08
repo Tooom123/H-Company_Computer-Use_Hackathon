@@ -84,3 +84,27 @@ def test_label_helpers():
     assert _quoted_labels("Open the agent's settings") == []
     assert _label_matches("Build", "Build ⌘B") and not _label_matches("Build ⌘B", "Close")
     assert _page_change_note(AGENTS, AGENTS) == "Page after that: no visible change within 2 s."
+
+
+def test_native_catalogue_keeps_navigation_over_timeline_ticks_and_counters(monkeypatch):
+    """Devin Desktop probe 2026-11-08: 121 named elements, the walk lists the bottom first, and the 90 cut dropped
+    Agents / Expand sidebar / Back while keeping 8 px '5:35 AM' ticks and diff counters."""
+    from hcs_agent import a11y
+    from hcs_agent.backend import HBackend
+
+    C = lambda role, name, x, y, w=28, h=28: a11y.Candidate(role, name, (x, y, w, h))
+    bottom = [C("AXButton", "Send", 1071, 927), C("AXStaticText", "72", 590, 831, 16, 15),
+              C("AXStaticText", "+", 541, 831, 8, 15)]
+    ticks = [C("AXButton", f"{i}:00 AM", 1469, 100 + 8 * i, 26, 8) for i in range(60)]
+    text = [C("AXStaticText", f"message line {i}", 410, 110 + 20 * i, 600, 17) for i in range(40)]
+    top = [C("AXPopUpButton", "Agents", 37, 39, 84), C("AXButton", "Expand sidebar", 8, 39)]
+    info = a11y.PageInfo(app="Devin Desktop", title="s", url="", is_front=True, native=True,
+                         bundle_id="com.exafunction.windsurf", elements=bottom + ticks + text + top)
+    monkeypatch.setattr(a11y, "page", lambda: info)
+    monkeypatch.setattr(a11y, "visible_at_point", lambda e: True)
+    b = HBackend.__new__(HBackend)
+    b.use_a11y, b.observe_only = True, True
+    _, items = b.page_catalogue()
+    names = [e.name for e in items]
+    assert names[:2] == ["Expand sidebar", "Agents"] and "Send" in names
+    assert not any(n.endswith("AM") for n in names) and "72" not in names and "+" not in names

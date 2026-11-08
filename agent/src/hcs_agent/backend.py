@@ -645,7 +645,22 @@ class HBackend:
                 sitemap.remember(info)
             seen: set[tuple[str, str]] = set()
             items = []
-            for e in info.elements:
+            pool = info.elements
+            native = getattr(info, "native", False)
+            if native:
+                # Devin Desktop exposes more named elements than max_items, and the walk lists the bottom of the
+                # window first: the cut used to drop the navigation (Agents, Expand sidebar, Back...) while keeping
+                # 8 px timeline ticks and diff counters ("72", "+"). Controls first, then headings, then text with
+                # words; nothing too small to click.
+                import re as _re
+
+                def usable(e):
+                    if e.frame[2] < 10 or e.frame[3] < 10:
+                        return False
+                    return e.role != "AXStaticText" or _re.search(r"[^\W\d_]{2}", e.name) is not None
+                rank = lambda e: 0 if e.role in a11y.INTERACTIVE else 1 if e.role == "AXHeading" else 2
+                pool = sorted((e for e in pool if usable(e)), key=rank)
+            for e in pool:
                 if e.role not in (*a11y.INTERACTIVE, "AXHeading", *(["AXStaticText"] if getattr(info, "native", False) else [])):
                     continue
                 key = (e.role, e.name.lower())
@@ -657,6 +672,8 @@ class HBackend:
                 items.append(e)
                 if len(items) >= max_items:
                     break
+            if native:
+                items.sort(key=lambda e: (round(e.frame[1] / 8), e.frame[0]))  # reading order for the planner
             return info, items
         except Exception:  # noqa: BLE001
             return None
