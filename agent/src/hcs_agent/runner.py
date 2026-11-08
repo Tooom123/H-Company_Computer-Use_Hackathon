@@ -123,7 +123,9 @@ def _next_page_note(notes, shown, info, items):
             continue
         if n.get("url") and str(n["url"]) not in url:
             continue
-        if not n.get("step") and not n.get("url"):
+        if n.get("has") and not all(_find_label([h], items) is not None for h in n["has"]):
+            continue
+        if not n.get("step") and not n.get("url") and not n.get("has"):
             continue
         at = _find_label(n["at"], items)
         if at is not None:

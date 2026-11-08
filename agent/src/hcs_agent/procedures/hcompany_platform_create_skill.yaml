@@ -1,0 +1,90 @@
+# H Company platform — guided procedure. Labels read on the live platform 2026-11-08 (Skills page, New skill
+# dialog: Name *, Description *, Body *, Create skill / Cancel); field rules from hub.hcompany.ai skills/create.
+id: hcompany_platform_create_skill
+software: hcompany
+software_version: "2026-11"
+session_type: configuration
+title: Build a skill on the H Platform (Skills, New skill) and attach it to an agent
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 30
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: skill_name
+    description: Name of the skill (lowercase letters, digits, hyphens), e.g. "extract-table-data"
+    required: false
+    default: "extract-table-data"
+
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+
+objective: >-
+  Build a custom skill on platform.hcompany.ai (Skills, New skill: name, description, body, Create skill) and see
+  it in the skills list; then explain how to attach it to an agent.
+
+planned_changes:
+  - One custom skill (named by the person) is added to the organization's catalog. It can be deleted afterwards.
+
+allowed_actions:
+  - Navigate to Skills, open New skill, fill name, description and body, create the skill.
+
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Deleting or editing existing skills, agents or sessions.
+  - Using the reserved h/ prefix for the name.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
+  The person decides: names and texts are theirs; values below are suggestions; a filled field is kept.
+  Procedure:
+  1. Open Skills in the left sidebar (under Build). The list shows H's public skills (h/...) and the
+     organization's own skills (scope Org).
+  2. Click New skill. A dialog opens with Name, Description and Body, all required.
+  3. Name: lowercase letters, digits and hyphens (suggestion "{skill_name}"); h/ is reserved for H; it cannot be
+     changed later.
+  4. Description: WHEN to use the skill, e.g. "Use when the task asks for data in an HTML table." The agent reads
+     it to decide whether to load the skill.
+  5. Body: the Markdown instructions the agent loads when it uses the skill, e.g. "Extract all rows and columns
+     into a JSON array of objects, using the table headers as keys."
+  6. Click Create skill; the new skill appears in the list with scope Org.
+  7. Then explain how to use it: in the Build an agent wizard, step 4 Skills, attach it to an agent (or edit an
+     existing agent). Do not build an agent in this procedure unless the person asks.
+
+guide_steps:
+  - instruction: "Open Skills in the left sidebar"
+    element: "the Skills entry in the left sidebar, under Build"
+    why: "Skills are reusable Markdown instructions an agent loads on demand."
+    done_when: "the Skills page is displayed with its list of skills and a New skill button"
+  - instruction: "Click New skill"
+    element: "the New skill button at the top right of the Skills page"
+    why: "It opens a dialog with the three parts of a skill: name, description, body."
+    done_when: "the New skill dialog is open with Name, Description and Body fields"
+dynamic_tail: true
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left sidebar (Agents, Sessions, Skills)"
+recovery_steps:
+  - instruction: "Click Skills in the left sidebar"
+    element: "the Skills entry in the left sidebar"
+    why: "The skills list and its New skill button are there."
+
+postcondition:
+  description: >-
+    The New skill dialog is closed and the skills list shows the skill just created (scope Org).
+  checks:
+    - key: dialog_closed
+      prompt: The New skill dialog (Name / Description / Body) is closed; the Skills list is displayed.
+    - key: skill_listed
+      prompt: The skills list contains a newly created skill with scope Org (not an h/ public skill).
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Navigate only to look. Report exactly what you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must check the skill naming rules (409: the name exists, 403: h/ reserved, 422: empty body).
+  default_category: unknown

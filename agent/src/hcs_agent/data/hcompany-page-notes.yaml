@@ -90,3 +90,30 @@
   why: >-
     These controls step through the recorded trajectory, one action at a time, so you can review the session
     after the fact.
+
+# Skills page and the New skill dialog (labels read live 2026-11-08; rules from hub skills/create).
+#   has: labels that must all be on screen
+- url: /agents/skills
+  at: ["Name"]
+  text: "Ready-made skills and your own"
+  why: >-
+    Skills starting with h/ are public ones H ships, like h/visual-browser or h/search. Skills your organization
+    builds show the scope Org and are private to it.
+- has: ["Create skill", "Body *"]
+  at: ["Name *"]
+  text: "The name is the skill's id"
+  why: >-
+    Lowercase letters, digits and hyphens, like web-scraper. The h/ prefix is reserved for H, and the name
+    cannot be changed after creation.
+- has: ["Create skill", "Body *"]
+  at: ["Description *"]
+  text: "The description says when to use it"
+  why: >-
+    Write the situation, not the content: "Use when the task asks for data in an HTML table." The agent reads
+    this line to decide whether to load the skill.
+- has: ["Create skill", "Body *"]
+  at: ["Body *"]
+  text: "The body is the know-how itself"
+  why: >-
+    Markdown instructions loaded into the agent's context when the skill runs: steps, rules, output format.
+    Keep it short and concrete.
