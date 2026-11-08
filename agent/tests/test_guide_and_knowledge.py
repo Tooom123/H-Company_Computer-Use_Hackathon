@@ -196,3 +196,18 @@ def test_unscripted_guide_plans_steps_from_the_page_catalogue(tmp_path):
     assert steps and all(g.box_exact and g.box for g in steps)  # boxes come from the page catalogue, not vision
     assert it.report.declared.summary == "[simulated] goal reached"
     assert any("planned step" in e.message for e in events if e.type == "step")
+
+
+def test_plan_first_software_is_guided_from_the_page_with_script_hints(tmp_path):
+    """hcompany: a scripted procedure is still guided from the live page; the script's steps are hints."""
+    events = []
+    req = InterventionRequest(software="hcompany", goal="create an agent", procedure_id="hcompany_platform_create_agent",
+                              parameters={"agent_name": "demo-web-reader"}, mode=Mode.guide)
+    it = Intervention(req, MockBackend(step_delay_s=0.01, outcome="done"), ProcedureRegistry(), events.append, tmp_path)
+    it.start()
+    it.approve(ApproveCommand())
+    _auto_next(it, events, [])
+    it.wait(5)
+    assert it.report.status is CaseStatus.resolved
+    assert any("planned step" in e.message for e in events if e.type == "step")  # planner, not the script runner
+    assert all(g.box_exact for g in it.guidance if not g.last)

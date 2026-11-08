@@ -345,6 +345,8 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         f"Today is {date.today().isoformat()}.\n"
         "Known procedures:\n" + "\n".join(cat) + "\n\n" + site + convo +
         f"User just said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
+        "Choose a procedure ONLY if completing it accomplishes what the user asked (creating an agent is not "
+        "running a session; logging a note is not scheduling an activity); otherwise use task.\n"
         "Return ONLY a JSON object with keys: procedure_id (string or null), mode ('act' if the user wants it done "
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say), "

@@ -1,0 +1,102 @@
+# H Company platform — guided procedure. Live run 2026-11-08: the first screens (Agents, Build an agent, name)
+# were found through the accessibility tree. The wizard's later steps (Config … Session) are planned from each
+# page; the last step, Session, is where the agent is run in a cloud browser.
+id: hcompany_platform_run_cloud_session
+software: hcompany
+software_version: "2026-11"
+session_type: onboarding
+title: Run an agent in a cloud browser session (Build an agent wizard, through its Session step)
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 40
+max_time_s_per_attempt: 480
+
+parameters:
+  - name: agent_name
+    description: Name of the agent to build (lowercase letters, digits, hyphens), e.g. "demo-web-reader"
+    required: false
+    default: "demo-web-reader"
+  - name: task
+    description: The task to give the agent for its first cloud session
+    required: false
+    default: "Open example.com and read its main heading"
+
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+
+objective: >-
+  Run an agent in a cloud browser session on platform.hcompany.ai: go through the Build an agent wizard
+  (Details, Config with the web / cloud browser environment, Instructions, Skills, Subagents) and, at its last
+  step, Session, start a session with the task "{task}"; the session page or Agent View must then be displayed.
+
+planned_changes:
+  - One agent "{agent_name}" is created and one cloud session is started with the task "{task}".
+
+allowed_actions:
+  - Navigate to Agents, open the Build an agent wizard, fill its steps, start the session at the Session step.
+  - Open the session's page or Agent View once it runs.
+
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Revealing, copying or reading aloud an API key or secret; the overlay never frames a secret value.
+  - Deleting agents, keys, sessions or environments.
+  - "Choosing the desktop or your-browser environment (that would drive this very Mac): cloud browser only."
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
+  "Build an agent" is a wizard with six steps shown at the top of the dialog: 1 Details, 2 Config, 3 Instructions,
+  4 Skills, 5 Subagents, 6 Session. Procedure:
+  1. Open Agents (left navigation) and click the button that opens the Build an agent wizard.
+  2. Details: name "{agent_name}", one-line description. Next.
+  3. Config: environment = web / cloud browser (never desktop, never your browser), default model. Next.
+  4. Instructions, Skills, Subagents: keep the defaults. Next each time.
+  5. Session: enter the task "{task}" and start the session. The session page (or Agent View) opens: that is the goal.
+  If the wizard asks for credits or a plan upgrade, stop and report it as blocked with the exact message.
+
+guide_steps:
+  - instruction: "Open Agents in the left navigation"
+    element: "the Agents entry in the left navigation menu of the platform"
+    why: "An agent is a saved configuration: environment, model, instructions. We build one, then run it."
+    done_when: "an agents page is displayed listing agents and a button to build or create an agent"
+  - instruction: "Click Build an agent"
+    element: "the Build an agent (or Create agent) button on the agents page"
+    why: "A six-step wizard opens; the last step, Session, runs the agent in a cloud browser."
+    done_when: "the Build an agent wizard is open on its Details step, with a name field"
+  - instruction: "Type \"{agent_name}\" as the name"
+    kind: type
+    element: "the name field of the Build an agent wizard, Details step"
+    why: "This is the id you pass when running sessions from code later."
+    done_when: "the name field of the wizard shows {agent_name}"
+dynamic_tail: true
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to go back to the platform home"
+    element: "the H Company logo at the top-left of the platform page"
+    why: "The home page is where every section starts from."
+  - instruction: "Click Agents in the left navigation"
+    element: "the Agents entry in the left navigation menu of the platform"
+    why: "The wizard starts from the agents page."
+    optional: true
+
+postcondition:
+  description: >-
+    A session of "{agent_name}" is running or finished in a cloud browser: its session page or Agent View is displayed.
+  checks:
+    - key: session_open
+      prompt: A session page or Agent View is displayed (a status such as running / completed, and a timeline or live view), not the Build an agent wizard.
+    - key: cloud_environment
+      prompt: The session runs in a cloud browser (web environment), not on this desktop.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Look at the screen and report whether a session page or Agent View of the agent
+    is displayed with a status, and which environment it uses. Never reveal secrets.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must check the account's plan, credits and session quota, and whether the wizard changed.
+  default_category: unknown

@@ -1,5 +1,6 @@
-# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
-# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+# H Company platform — guided procedure. Live run 2026-11-08: Agents, Build an agent, the name field were found
+# through the accessibility tree. "Build an agent" is a 6-step wizard (Details, Config, Instructions, Skills,
+# Subagents, Session): the Details step is scripted, the following steps are planned from each page.
 id: hcompany_platform_create_agent
 software: hcompany
 software_version: "2026-11"
@@ -7,7 +8,7 @@ session_type: configuration
 title: Create a reusable agent on the H Platform
 reversible: true
 max_attempts: 1
-max_steps_per_attempt: 25
+max_steps_per_attempt: 40
 max_time_s_per_attempt: 300
 
 parameters:
@@ -36,34 +37,30 @@ forbidden_actions:
 
 agent_instructions: |
   You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
-  Procedure:
-  1. Open Agents (Computer Use Agents, then Agents) and click Create agent (or New agent).
-  2. Name: "{agent_name}" (lowercase letters, digits and hyphens only). Description: one line.
-  3. Environment: {environment}. Model: leave the default (holo4-27b).
-  4. Save. Confirm "{agent_name}" appears in the agents list.
+  "Build an agent" is a wizard with six steps shown at the top of the dialog: 1 Details, 2 Config, 3 Instructions,
+  4 Skills, 5 Subagents, 6 Session. Procedure:
+  1. Open Agents (left navigation) and click the button that opens the Build an agent wizard.
+  2. Details: name "{agent_name}" (lowercase letters, digits, hyphens), one-line description. Go to the next step.
+  3. Config: environment {environment}, keep the default model. Instructions, Skills, Subagents: keep defaults,
+     go to the next step each time.
+  4. Session (last step): save the agent WITHOUT starting a session in this procedure.
+  5. Confirm "{agent_name}" appears in the agents list and the wizard is closed.
   Do not run a session from it in this procedure.
 guide_steps:
   - instruction: "Open Agents in the left navigation"
     element: "the Agents entry in the left navigation menu of the platform"
     why: "An agent is a saved configuration: environment, model, instructions."
-    done_when: "an agents page is displayed listing the pre-built h/ agents and a create button"
-  - instruction: "Click Create agent"
-    element: "the Create agent (or New agent) button on the agents page"
-    why: "A form opens; only name, description and environment are required."
-    done_when: "an agent creation form is open with a name field"
+    done_when: "an agents page is displayed listing agents and a button to build or create an agent"
+  - instruction: "Click Build an agent"
+    element: "the Build an agent (or Create agent) button on the agents page"
+    why: "A six-step wizard opens: Details, Config, Instructions, Skills, Subagents, Session."
+    done_when: "the Build an agent wizard is open on its Details step, with a name field"
   - instruction: "Type \"{agent_name}\" as the name"
     kind: type
-    element: "the name field of the agent creation form"
+    element: "the name field of the Build an agent wizard, Details step"
     why: "Names use lowercase letters, digits and hyphens; this is the id you pass when running sessions."
-    done_when: "the name field of the form contains {agent_name}"
-  - instruction: "Pick the {environment} environment"
-    element: "the environment selector of the agent creation form (web, browser, desktop)"
-    why: "web = a cloud browser; browser = your own Chrome; desktop = your Mac screen."
-    done_when: "the environment selector of the form shows {environment}"
-  - instruction: "Click Save"
-    element: "the Save (or Create) button at the bottom of the agent creation form"
-    why: "The agent is now in your catalog and can be run by name."
-    done_when: "the agents list shows an agent named {agent_name}"
+    done_when: "the name field of the wizard shows {agent_name}"
+dynamic_tail: true
 
 expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
 recovery_steps:
@@ -77,12 +74,12 @@ recovery_steps:
 
 postcondition:
   description: >-
-    The agents list shows "{agent_name}".
+    The wizard is closed and the agents list shows "{agent_name}".
   checks:
-    - key: agents_page
-      prompt: The agents page of the platform is displayed.
+    - key: wizard_closed
+      prompt: The Build an agent wizard (Details / Config / Instructions / Skills / Subagents / Session) is closed; the agents list is displayed in full.
     - key: agent_listed
-      prompt: An agent named "{agent_name}" appears in the list.
+      prompt: The agents list contains a row or card named "{agent_name}" (in the list itself, not in a form field).
   verification_instructions: |
     You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
     and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
