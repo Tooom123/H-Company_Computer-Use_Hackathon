@@ -47,9 +47,12 @@ explication ne m'aide pas »). L'opérateur doit noter une correction ou interru
 comme telle. Une nouvelle dictée peut remplacer la tâche en cours dans la boucle
 Matteo ; ce n'est pas automatiquement un commentaire attaché à l'étape.
 
-## Commandes et instrumentation : ce qui existe dans le code
+## Commandes et instrumentation
 
-Lecture du checkout de travail, pas preuve que ce binaire tourne déjà :
+État consigné à la révision `7e7ef88`, qui intègre le `main` de l'équipe
+`6cfe7a3`, après les corrections locales `1d0b1d9`. Le runtime et la page Voix
+ont été vérifiés ; un parcours GUIDE complet et son retour humain restent à
+valider.
 
 - `hcs-agent talk` propose le push-to-talk : maintenir la touche, parler, relâcher.
   Pour cette séance, utiliser **Ctrl+Maj+H**, nouveau défaut du lanceur humain.
@@ -78,6 +81,10 @@ Lecture du checkout de travail, pas preuve que ce binaire tourne déjà :
   une confirmation dans le terminal, pas dans l'interface desktop.
   `Ctrl+C` interrompt ; pendant l'attente GUIDE, le CLI accepte aussi `q` puis
   Entrée. Un arrêt confirmé doit être vérifié.
+- Si le Magnet gêne la lecture, cliquer sur son **−** pour le réduire, puis sur
+  sa poignée pour le rouvrir. Ce mode compact masque le rappel du raccourci au
+  repos ; les indications critiques d'enregistrement, d'erreur et d'arrêt restent
+  visibles. Il ne change pas l'autonomie.
 - **Route H ajoutée, passage réel à confirmer :** `talk --software hcompany`
   conserve la question verbatim et choisit `hcompany_general_guide`, sans routage
   approximatif vers Odoo. Cette procédure observe dynamiquement la page ; elle
@@ -92,9 +99,21 @@ Lecture du checkout de travail, pas preuve que ce binaire tourne déjà :
   annoncer onze documents sans vérifier ce compteur. L'export des seules sessions
   H liées à l'essai produit `archive-status.json` ; complet, partiel et indisponible
   restent distincts.
-- La synthèse vocale de la boucle Matteo dépend d'ElevenLabs et d'un lecteur audio.
-  Gladia assure la transcription ; sa présence seule ne garantit pas une réponse
-  parlée. Les annotations et le texte doivent être vérifiés en live.
+- Sur macOS, le lanceur choisit désormais la synthèse **locale Thomas**, sans
+  clé ElevenLabs : `HCS_TTS_PROVIDER=macos`, `HCS_TTS_MACOS_VOICE=Thomas`.
+  Gladia assure séparément la transcription. Dans la page **Voix**, vérifier
+  « macOS / Thomas » et activer la voix ; l'interrupteur permet de la couper.
+  `HCS_TTS=0` la désactive au lancement. Un opérateur peut choisir un autre
+  fournisseur via `HCS_TTS_PROVIDER` ; `elevenlabs` exige sa propre clé.
+  Stop et le début d'une dictée interrompent la lecture.
+  La page native a affiché Thomas activé et l'API de test a accepté la demande
+  (`requested=true`) : **l'utilisateur doit encore confirmer qu'il entend la
+  phrase**. Une demande acceptée ne prouve pas la sortie audio.
+- Les cibles du modèle utilisent maintenant un repère explicite normalisé
+  `0..1000` sur la capture entière ; un repère absent ou invalide est rejeté.
+  La conversion vers l'overlay est corrigée, mais sa précision doit encore être
+  évaluée à l'écran avec l'utilisateur. Ne pas déduire de gain de latence de
+  cette correction.
 - La boucle desktop possède maintenant `request.json`, `events.jsonl` et
   `report.json` dans `<runs-dir>/<session>`, puis un retour explicite : écran
   **Mon retour**, bouton **Dicter mon retour**, dictée avec la touche choisie,

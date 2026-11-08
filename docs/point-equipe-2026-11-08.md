@@ -23,9 +23,10 @@ guidage ; ils ne démontrent pas encore son utilité pour une personne.
   pas encore une recherche hybride.
 - L'app de coaching H est lancée localement en mode GUIDE : Holo4, onze documents
   H chargés, transcription Gladia configurée, autonomie zéro et
-  `observe_only=true`. ElevenLabs n'est pas configuré : aucune réponse vocale
-  de synthèse n'est disponible dans cette session. Le premier échange vocal
-  guidé réel et son feedback utilisateur restent à faire.
+  `observe_only=true`. La synthèse locale macOS Thomas est disponible sans clé
+  ElevenLabs. La page Voix affiche Thomas activé et la demande de test audio a
+  été acceptée ; l'écoute effective reste à confirmer par l'utilisateur. Le
+  premier parcours GUIDE complet évalué et son feedback restent à recueillir.
 
 Sur le Mac d'Edouard : [tour de contrôle](http://127.0.0.1:8771/company/live),
 [sessions](http://127.0.0.1:8771/company/sessions),
@@ -39,8 +40,9 @@ et le backend sur `127.0.0.1:8781`. Les commandes de lancement et dix questions
 progressives figurent dans le [parcours humain H](scenarios/h-company-human-session.md).
 Le premier essai de dictée a révélé un conflit avec `⌘H`, qui masque la fenêtre
 active sur macOS et a laissé l'enregistrement bloqué. Le lanceur utilise
-désormais **Ctrl+Maj+H** ; le redémarrage et le premier échange guidé complet
-restent à valider. Le défaut historique du CLI seul reste `⌘H`.
+désormais **Ctrl+Maj+H**. Le Magnet se réduit avec **−** et se rouvre par sa
+poignée ; seul le rappel au repos est masqué, pas les indications critiques.
+Le défaut historique du CLI seul reste `⌘H`.
 
 ## Campagne H — résultats des essais autonomes
 
@@ -91,19 +93,25 @@ sont donc :
    « vérification indisponible = inconclusif » et enregistrer séparément son
    retour sur la réussite et l'utilité de l'aide.
 
-Le dernier `origin/main` de l'équipe, `1f35eef`, a été intégré à notre branche
-par le commit de fusion `b4ad15e`. Le raccordement du coaching humain H est
-commité dans `4626800`. **75 tests ciblés et six tests desktop passent** ; une
-vérification de l'interface avec réponses simulées n'a relevé aucune erreur
-JavaScript. Ces contrôles ne constituent pas un essai vocal humain. Le total
-historique de 838 tests ne doit pas être présenté comme la couverture de cette
-nouvelle fonctionnalité.
+Le dernier `origin/main` intégré est `6cfe7a3`, via le commit de fusion
+`7e7ef88`. Les corrections locales `1d0b1d9` ajoutent la voix macOS, les
+contrôles compacts et le repère explicite des coordonnées de guidage. Le
+raccordement humain initial reste dans `4626800`. **961 tests pytest et sept
+tests desktop passent**. La page Voix native a été contrôlée ; l'API a accepté
+le test audio avec `requested=true`. Ces résultats ne prouvent ni que la phrase
+est audible pour l'utilisateur, ni que le guidage est précis ou utile.
+
+Le modèle doit déclarer des coordonnées normalisées `0..1000` sur la capture
+entière ; un repère absent ou invalide est rejeté avant affichage de la cible.
+La précision du pointage reste à valider avec la personne. Aucun gain de
+latence n'est établi par ces corrections.
 
 La [PR n°4](https://github.com/Tooom123/H-Company_Computer-Use_Hackathon/pull/4)
-regroupe les pilotes et le portail. Elle n'est pas fusionnée ; les nouveaux
-commits locaux ne sont pas encore poussés. La résolution locale des conflits
-ne met donc pas encore à jour son état distant. Après publication, obtenir la
-revue d'un équipier avant fusion, conformément à `AGENTS.md`.
+regroupe les pilotes et le portail. **Au point de contrôle local `7e7ef88`**,
+elle n'est pas fusionnée et les nouveaux commits ne sont pas encore poussés.
+Ce constat doit être revérifié après publication ; la fusion locale de `main`
+ne vaut pas fusion de la PR distante. Obtenir la revue d'un équipier avant
+fusion, conformément à `AGENTS.md`.
 
 ## Passage à SAP et répartition proposée
 

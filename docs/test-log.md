@@ -622,3 +622,23 @@ La transcription Gladia et la synthèse vocale sont des composants distincts.
 La synthèse Thomas a produit un WAV valide hors sandbox, sans lecture audio
 pendant ce contrôle. Aucun gain de latence H ni précision réelle après correctif
 n'est encore établi par ces tests techniques.
+
+Intégration : `1d0b1d9` contient les corrections ; `7e7ef88` intègre le nouveau
+`main` de Matteo (`6cfe7a3`) dans la branche de travail, sans fusionner notre PR
+sur main. Après résolution du conflit de routage CLI : **961 tests Python et
+sept tests desktop passent**. Les huit tests nécessitant un serveur local ont
+d'abord été bloqués par le sandbox ; la suite complète hors sandbox passe.
+
+Le pilote humain redémarré expose `speech.provider=macos`, `voice=Thomas`,
+`enabled=true`, tout en conservant `observe_only=true` et autonomie zéro.
+La page Voice réelle affiche ces paramètres et la commande de test vocal a été
+acceptée. Audibilité et précision du cercle restent à confirmer par l'utilisateur.
+Les sept anciennes traces sont conservées ; elles n'avaient pas de fichier de
+labels humains au moment du redémarrage. Le test de voix ne crée pas de succès H.
+
+Premier passage après redémarrage : demande « Montre-moi où lire les réponses
+de cet essai », `sess_0037fb139a9b`. Une consigne, cible logique (1057, 523),
+18,7 s pour la séance complète, coût H déclaré 0,0041307 USD. Le vérificateur
+visuel valide ses deux critères et le rapport est resolved. Ce résultat technique
+ne confirme ni l'audibilité, ni le placement perçu du cercle, ni l'utilité : retour
+humain encore attendu. Pas de comparaison de vitesse avec les essais différents.
