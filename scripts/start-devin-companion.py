@@ -57,6 +57,9 @@ def control_status():
 
 def port_busy(port):
     with socket.socket() as probe:
+        # Match HTTPServer/uvicorn: a recently closed connection in TIME_WAIT is
+        # not a live coach and must not prevent an immediate, explicit restart.
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(('127.0.0.1', port))
             return False

@@ -192,11 +192,13 @@ def _native_page(bundle: str) -> PageInfo:
     win, name, pid = selected
     started = time.monotonic()
     web = _web_area(win)
-    root = web if web is not None else win
     # AXURL is an observed URL, not a conversion of a native identity to a guessed website.
     url = str(_attr(web, "AXURL") or "") if web is not None else ""
-    viewport = _frame(root) or _frame(win)
-    elements = _walk(root)
+    # Electron's native menus can be siblings of AXWebArea in the focused window.
+    # Walking only the web area misses an opened popup and keeps suggesting its trigger.
+    # Stay inside this exact focused window; never enumerate application/background windows.
+    viewport = _frame(win) or (_frame(web) if web is not None else None)
+    elements = [e for e in _walk(win) if e.role not in {"AXWindow", "AXWebArea"}]
     if viewport:
         x, y, w, h = viewport
         elements = [e for e in elements if e.frame[0] + e.frame[2] > x and e.frame[0] < x + w
@@ -220,9 +222,11 @@ def _web_area(win):
     while stack and seen < 400:
         el = stack.pop()
         seen += 1
-        if _attr(el, "AXRole") == "AXWebArea":
+        role = _attr(el, "AXRole")
+        if role == "AXWebArea":
             return el
-        stack.extend(_attr(el, "AXChildren") or [])
+        if role not in INPUT_ROLES:
+            stack.extend(_attr(el, "AXChildren") or [])
     return None
 
 

@@ -128,6 +128,45 @@ def test_native_window_without_web_area_exposes_its_native_controls(fake_ax):
     assert any(el.name == "Review" and el.box == (120, 180, 100, 30) for el in info.elements)
 
 
+def test_native_menu_sibling_of_web_area_is_collected_without_reading_other_windows_or_input_values(fake_ax):
+    trigger = _node("AXPopUpButton", "Devin Settings", AXFrame=_rect(800, 90, 40, 25))
+    web = _node("AXWebArea", children=[trigger], AXFrame=_rect(50, 90, 880, 610),
+                AXURL="vscode-file://vscode-app/local/workbench.html")
+    option = _node("AXMenuItem", "Docs", AXFrame=_rect(700, 120, 180, 25))
+    private_child = _node("AXStaticText", AXValue="private-entered-text")
+    field = _node("AXTextField", "Search settings", children=[private_child],
+                  AXValue="private-field-value", AXFrame=_rect(700, 150, 180, 25))
+    menu = _node("AXMenu", children=[option, field], AXFrame=_rect(690, 115, 200, 100))
+    window = _node("AXWindow", "Devin", [web, menu], AXFrame=_rect(40, 60, 900, 650))
+    unrelated = _node("AXWindow", "Private background", [_node("AXButton", "Do not read")])
+    fake_ax.root = {"AXFocusedWindow": window, "AXWindows": [unrelated, window]}
+
+    info = a11y.page()
+
+    assert info.is_front and info.native
+    assert info.url == "vscode-file://vscode-app/local/workbench.html"
+    assert info.viewport == (40, 60, 900, 650)  # Native window, not the smaller web viewport.
+    assert any(el.name == "Docs" and el.box == (700, 120, 180, 25) for el in info.elements)
+    assert any(el.name == "Devin Settings" for el in info.elements)
+    assert any(el.name == "Search settings" for el in info.elements)
+    assert not any(node is unrelated or node is private_child for node, _name in fake_ax.reads)
+    assert not any(node is field and name == "AXValue" for node, name in fake_ax.reads)
+    assert not any(name == "AXWindows" for _node_read, name in fake_ax.reads)
+    assert not any("private-" in el.name or "Do not read" == el.name for el in info.elements)
+
+
+def test_closing_native_popup_removes_menu_items_from_next_catalogue(fake_ax):
+    web = _node("AXWebArea", children=[_node("AXPopUpButton", "Settings")])
+    menu = _node("AXMenu", children=[_node("AXMenuItem", "Docs")])
+    window = _node("AXWindow", "Devin", [web, menu])
+    fake_ax.root = {"AXFocusedWindow": window}
+    assert any(el.name == "Docs" for el in a11y.page().elements)
+
+    window["AXChildren"] = [web]
+
+    assert all(el.name != "Docs" for el in a11y.page().elements)
+
+
 @pytest.mark.parametrize("front", [
     None,
     _application("com.google.Chrome", "Google Chrome", 12),

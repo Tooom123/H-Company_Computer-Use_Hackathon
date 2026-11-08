@@ -39,6 +39,7 @@ def main():
         parser.error('Choose two distinct local ports.')
     for port in (args.control_port, args.backend_port):
         with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind(('127.0.0.1', port))
             except OSError:

@@ -842,3 +842,33 @@ demande ce qui a changé plutôt que d'attribuer toute absence de progression à
 Chrome ou une capture globale n'a été introduit. La cause exacte de la répétition
 après les gestes humains et la qualité du guidage restent à mesurer sur un nouvel
 essai ; aucun de ces essais n'a été labellisé réussi automatiquement.
+
+L'inspection native suivante a établi un défaut reproductible : le menu
+« Devin Settings » expose un `AXMenu` frère de `AXWebArea`, alors que le collecteur
+ne parcourait que ce dernier. La lecture couvre désormais la fenêtre native
+focalisée entière, menus compris, en conservant le ciblage du bundle/PID,
+la revérification du focus et l'exclusion des valeurs et descendants des champs.
+Les autres fenêtres ne sont pas parcourues. **121 tests AX, cognition et guidage
+passent**, avec des régressions sur l'apparition et la fermeture du menu. Aucun
+réglage Devin n'a été modifié pendant l'inspection. Cette correction explique
+une répétition possible ; elle ne constitue pas encore une réussite humaine
+de bout en bout du scénario.
+
+## 2026-11-08 — Homepage publique et redémarrage immédiat
+
+La homepage de Tom est publiée sur **https://hcompanion.help/**. Le domaine
+principal répond 200 en HTTPS et `www` redirige vers celui-ci avec un certificat
+valide. Les sept fichiers statiques publiés ont été comparés à la release locale.
+Les tests visuels desktop/mobile n'ont trouvé ni débordement ni erreur JavaScript.
+Les cinq tests de la démo passent ; les anciens liens de paiement ne déclenchent
+plus de requête vers localhost et ne prétendent plus confirmer un paiement.
+Le texte présente le parcours de coaching actuel et les prix comme illustratifs.
+Les contrôles des services déjà hébergés et les 19 identifiants de conteneurs
+restent inchangés. Détails : [déploiement](landing-deployment-2026-11-08.md).
+
+Pendant le redémarrage du pilote Devin, les sockets TCP récemment fermées
+étaient prises pour un serveur encore actif. Le contrôle des ports utilise
+désormais la même réutilisation d'adresse que le serveur : un listener actif
+reste refusé, un port en TIME_WAIT peut être repris. **27 tests du lanceur**
+passent, dont une régression avec de vraies connexions TCP. Le moteur a ensuite
+redémarré et annoncé son état prêt ; aucune trace n'a été effacée.

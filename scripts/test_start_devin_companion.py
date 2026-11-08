@@ -4,9 +4,27 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import socket
 from types import SimpleNamespace
 
 import pytest
+
+
+def test_port_probe_refuses_live_listener_but_allows_tcp_time_wait():
+    spec = importlib.util.spec_from_file_location("launcher_port_probe", Path(__file__).with_name("start-devin-companion.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with socket.socket() as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(('127.0.0.1', 0))
+        port = server.getsockname()[1]
+        server.listen(1)
+        assert module.port_busy(port) is True
+        with socket.create_connection(('127.0.0.1', port), timeout=1) as client:
+            peer, _ = server.accept()
+            peer.close()  # Server initiates close; its connection can remain in TIME_WAIT.
+            assert client.recv(1) == b''
+    assert module.port_busy(port) is False
 
 
 @pytest.fixture
