@@ -865,7 +865,7 @@ class Intervention:
             corrections = []
             shown_on.add(step_key)
             if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
-                instruction = f"{instruction} — type \"{plan['text']}\""
+                instruction = f"{instruction} — for example \"{plan['text']}\""
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:320],
                               where=target.name if target else "", pointer=target.center if target else None,
                               box=target.box if target else None, box_exact=target is not None, kind=kind,
