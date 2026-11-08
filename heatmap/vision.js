@@ -277,6 +277,9 @@ if (bridge) { // desktop app: the mouse comparison makes no sense; the result bu
   $("mouseBtn").hidden = true;
   $("closeBtn").hidden = false;
   $("closeBtn").onclick = () => bridge.close();
+  $("cancelCalibration").hidden = false;
+  $("cancelCalibration").onclick = () => bridge.close();
+  addEventListener("keydown", (event) => { if (event.key === "Escape") bridge.close(); });
   $("goBtn").textContent = "Start tracking";
 }
 $("mouseBtn").onclick = () => {

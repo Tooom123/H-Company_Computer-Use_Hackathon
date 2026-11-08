@@ -12,8 +12,12 @@
   #veil { position: fixed; inset: 0; background: rgba(255, 255, 255, 0.9); display: none; }
   body.calibrating #veil { display: block; }
   .banner { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); background: rgba(20, 20, 20, 0.92); color: #fff;
-    border-radius: 999px; padding: 10px 20px; font: 600 15px system-ui, sans-serif; white-space: nowrap; display: none; }
+    border-radius: 20px; padding: 10px 20px; font: 600 15px system-ui, sans-serif; max-width: calc(100vw - 60px); text-align: center; display: none; }
   body.calibrating .banner { display: block; }
+  #cancelCalibration { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10;
+    border: 1px solid #ccc; border-radius: 999px; padding: 12px 20px; background: white; color: #222;
+    font: 600 15px system-ui, sans-serif; cursor: pointer; display: none; }
+  body.calibrating #cancelCalibration { display: block; }
   .dot { position: fixed; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
     background: radial-gradient(circle, #e3242b 0 30%, rgba(227, 36, 43, 0.25) 31% 100%); display: none; transition: transform 0.15s; }
   .dot.look { cursor: default; animation: pulse 1s ease-in-out infinite; }
@@ -27,6 +31,7 @@
 <div id="veil"></div>
 <div class="banner" id="banner"></div>
 <button class="dot" id="dot" aria-label="calibration dot"></button>
+<button id="cancelCalibration">Cancel calibration · Esc</button>
 <script type="module">
 // Calibration (9 dots clicked while looked at, then 4 dots only looked at, as on the vision page), then the
 // honeycomb follows the gaze over every app. The gaze itself comes from the background tracker (gaze_tracker.py);
@@ -38,13 +43,19 @@ const CLICKS_PER_TARGET = 3;
 
 const api = window.hcsOverlay;
 const $ = (id) => document.getElementById(id);
+$("cancelCalibration").onclick = () => api?.close();
+addEventListener("keydown", (event) => { if (event.key === "Escape") api?.close(); });
 const heat = new GazeHeatmap({ canvas: $("heat"), maxAlpha: 0.22 });
 heat.setTargets([]); // no page here: a pure gaze cloud (the agent adds the screen's controls on its side)
 heat.start();
 api?.onGaze((p) => heat.push(p ? { x: p.x, y: p.y, emittedAt: performance.now() } : null));
 api?.onAccuracy((px) => heat.setUncertainty(px));
 api?.onHoneycomb?.((on) => document.body.classList.toggle("no-honeycomb", on === false));
-api?.onMode((m) => { if (m === "calibrate") calibrate(); });
+api?.onMode((m) => {
+  if (m === "calibrate") calibrate().catch(() => {
+    $("banner").textContent = "Calibration stopped responding. Press Esc or Cancel to return to Vision.";
+  });
+});
 
 async function calibrate() {
   document.body.classList.add("calibrating");

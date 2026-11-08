@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--native-devin', action='store_true',
                         help='Read the focused Devin Desktop accessibility tree instead of a browser tab.')
     parser.add_argument('--private-root', type=Path)
+    parser.add_argument('--env-file', type=Path, help='Existing private provider credentials file; never copied into the app.')
     parser.add_argument('--control-port', type=int, default=8780)
     parser.add_argument('--backend-port', type=int, default=8781)
     parser.add_argument('--key', default='ctrl+shift+h')
@@ -57,7 +58,12 @@ def main():
         raise SystemExit('A human coaching runtime already owns this directory.') from None
     sys.path[:0] = [str(ROOT), str(ROOT/'agent/src'), str(ROOT/'backend/src')]
     from dotenv import dotenv_values
-    for source in (ROOT/'app/.env', ROOT/'agent/.env', ROOT/'.env'):  # root .env: where the README puts the keys
+    sources = [ROOT/'app/.env', ROOT/'agent/.env', ROOT/'.env']
+    if args.env_file:
+        if not args.env_file.expanduser().is_file():
+            parser.error('The private provider credentials file does not exist.')
+        sources.insert(0, args.env_file.expanduser())
+    for source in sources:
         for name, value in dotenv_values(source).items():
             if name in {'HAI_API_KEY', 'GLADIA_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVEN'} and value:
                 os.environ.setdefault(name, value)

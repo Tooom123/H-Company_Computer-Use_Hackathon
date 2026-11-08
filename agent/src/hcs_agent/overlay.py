@@ -447,7 +447,7 @@ class _SketchView(AppKit.NSView):
         import time
 
         text, pulsing = self.badge
-        if self.compact_idle and is_idle_badge(text, pulsing):
+        if is_idle_badge(text, pulsing):
             return
         bounds = self.bounds()
         rnd = random.Random(11)
@@ -548,6 +548,9 @@ class Overlay:
         _on_main(apply)
 
     def badge(self, text: str | None, pulsing: bool = False) -> None:
+        # The talk key remains in the app's Voice settings, not on a permanent desktop note.
+        if text is not None and is_idle_badge(text, pulsing):
+            text = None
         def apply() -> None:
             self.view.badge = None if text is None else (text, pulsing)
             self.view.setNeedsDisplay_(True)
@@ -638,10 +641,7 @@ class _MagnetView(AppKit.NSView):
         attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
         if self.compact:
             Foundation.NSString.stringWithString_(AUTONOMY_LABELS[self.level]).drawInRect_withAttributes_(
-                ((14, 23), (W - 46, 20)), attrs)
-            small = {**attrs, AppKit.NSFontAttributeName: _hand_font(11)}
-            Foundation.NSString.stringWithString_(f"{self.shortcut} · new request").drawInRect_withAttributes_(
-                ((14, 7), (W - 28, 18)), small)
+                ((14, 14), (W - 46, 20)), attrs)
             _stroke([(W - 24, 25), (W - 18, 31), (W - 24, 37)], rnd, 1.4, 0.4)
             return
         # The collapse handle is separate from the autonomy rail.

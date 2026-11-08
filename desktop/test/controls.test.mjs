@@ -10,6 +10,7 @@ class Element {
   get classList() { return { add: (c) => this.className += ` ${c}`, contains: (c) => this.className.split(" ").includes(c), toggle: (c, on) => { this.className = this.className.split(" ").filter((x) => x !== c).concat(on ? [c] : []).join(" "); } }; }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return this.attrs[k]; }
+  removeAttribute(k) { delete this.attrs[k]; }
   append(...els) { for (const e of els) { e.parent = this; this.children.push(e); } }
   replaceChildren(...els) { this.children = []; this.append(...els); }
   remove() { this.parent.children = this.parent.children.filter((e) => e !== this); }
@@ -55,6 +56,17 @@ test("new desktop preserves configured voice and ignores stale Cmd-H preference"
   assert.equal(r.ids.get("voices").querySelector(".configured-voice").children[0].textContent, "Configured voice");
   assert.ok(r.ids.get("pttKeys").children.some((b) => b.dataset.key === "ctrl+shift+h"));
   assert.ok(!r.ids.get("pttKeys").children.some((b) => b.dataset.key === "cmd+h"));
+});
+
+test("an unavailable camera keeps its error and camera selector visible for recovery", async () => {
+  const r = await renderer();
+  await vm.runInContext('loadVision({available: true, native: true, running: false, cameraIndex: 1, reason: "Camera is unavailable"})', r.context);
+  assert.equal(r.ids.get("cameraCheck").hidden, false);
+  assert.equal(r.ids.get("cameraChoice").value, "1");
+  assert.equal(r.ids.get("visionNote").textContent, "Camera is unavailable");
+  assert.equal(r.ids.get("cameraPreview").hidden, true);
+  assert.equal(r.ids.get("calibrateBtn").hidden, true);
+  assert.equal(r.ids.get("visionBtn").textContent, "Open camera preview");
 });
 
 test("observe-only refuses slider keyboard and direct selection without posting autonomy", async () => {

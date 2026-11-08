@@ -177,6 +177,15 @@
             <button class="btn" id="visionBtn">Recalibrate</button>
           </div>
           <p class="muted small" id="visionNote"></p>
+          <div id="cameraCheck" hidden>
+            <img id="cameraPreview" width="320" height="240" alt="Local camera preview" />
+            <p id="cameraCheckNote" class="muted small"></p>
+            <div class="row">
+              <label>Camera <select id="cameraChoice"><option value="0">Camera 1</option><option value="1">Camera 2</option></select></label>
+              <button class="btn" id="calibrateBtn">I can see myself — start calibration</button>
+            </div>
+            <p class="muted small">This preview stays on your Mac. If it shows your phone camera, try the other camera. No dots appear until you continue.</p>
+          </div>
           <div class="row">
             <div>
               <h2>Show the red honeycomb</h2>

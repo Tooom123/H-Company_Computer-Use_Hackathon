@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld("hcsOverlay", {
   fit: () => ipcRenderer.invoke("overlay:fit"),
   validate: (x, y) => ipcRenderer.invoke("overlay:validate", { x, y }),
   done: (errorPx) => ipcRenderer.send("overlay:done", errorPx),
+  close: () => ipcRenderer.send("overlay:close"),
 });

@@ -9,10 +9,12 @@ Linux), so the eyes are read here, in a plain background process:
   validation:  4 other dots, just looked at: median distance = the accuracy sent with every gaze point
   tracking:    each frame -> screen point, smoothed (median of the last 5) -> GET /gaze
 
-Nothing leaves this computer: no image is stored or sent; only screen points are served on 127.0.0.1.
+Nothing leaves this computer: the camera check preview is served locally, never saved or sent to Holo.
+Once calibrated, only screen points are forwarded to the agent.
 
     python gaze_tracker.py [--port 8769] [--camera 0]
     GET  /status                 state (starting|ready|no_camera|calibrating|tracking), fps, face, error_px
+    GET  /camera                 local camera preview and face status, for the pre-calibration check
     POST /calibrate/start        forget the previous calibration
     POST /calibrate/point {x,y}  record the features while the user looks at (x, y) (screen points)
     POST /calibrate/fit          fit the model on the recorded points
@@ -24,6 +26,7 @@ Nothing leaves this computer: no image is stored or sent; only screen points are
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import statistics
@@ -110,6 +113,8 @@ class Tracker:
         self.preds: deque = deque(maxlen=5)
         self.gaze: dict = {}
         self.stop = threading.Event()
+        self.preview: str | None = None
+        self.preview_at = 0.0
 
     # ------------------------------------------------------------------ camera loop
     def run(self) -> None:
@@ -140,6 +145,14 @@ class Tracker:
                 time.sleep(0.05)
                 continue
             now = time.monotonic()
+            if now - self.preview_at > 0.25:
+                # Small, mirrored local preview for the camera check. Never stored or sent to the agent.
+                ok_jpeg, jpeg = cv2.imencode(".jpg", cv2.flip(cv2.resize(frame, (320, 240)), 1),
+                                           [cv2.IMWRITE_JPEG_QUALITY, 65])
+                if ok_jpeg:
+                    with self.lock:
+                        self.preview = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
+                        self.preview_at = now
             img = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             res = landmarker.detect_for_video(img, int((now - t0) * 1000))
             self.frames.append(now)
@@ -218,7 +231,7 @@ class Tracker:
 
     def status(self) -> dict:
         fps = 0.0
-        if len(self.frames) > 1:
+        if len(self.frames) > 1 and time.monotonic() - self.frames[-1] < 1:
             fps = (len(self.frames) - 1) / max(1e-6, self.frames[-1] - self.frames[0])
         with self.lock:
             face = bool(self.last_feat and time.monotonic() - self.last_feat[0] < 0.5)
@@ -236,10 +249,16 @@ def serve(tr: Tracker, port: int) -> ThreadingHTTPServer:
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
 
         def do_GET(self):  # noqa: N802
+            if self.path == "/camera":
+                result = tr.status()
+                with tr.lock:
+                    result["preview"] = tr.preview if time.monotonic() - tr.preview_at < 1 else None
+                return self._reply(200, result)
             if self.path == "/status":
                 return self._reply(200, tr.status())
             if self.path == "/gaze":

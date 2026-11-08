@@ -81,6 +81,7 @@ let vision = null;
 const gaze = createGazeCalibrator({ heatmapDir: path.resolve(here, "..", "heatmap"), agentUrl: AGENT,
   preload: path.join(here, "gaze-preload.cjs"), overlayPreload: path.join(here, "gaze-overlay-preload.cjs"),
   trackerScript: path.join(here, "tracker", "gaze_tracker.py"),
+  onStopped: () => { if (!quitting) showMainWindow(); },
   trackerPython: process.env.HCS_TRACKER_PYTHON || path.join(here, "tracker", ".venv", "bin", "python") });
 function labStatus() {
   if (process.platform !== "darwin" || process.env.HCS_VISION_BUILTIN === "1") return null; // the lab needs macOS
@@ -90,10 +91,11 @@ function labStatus() {
 function visionStatus() {
   return labStatus() || gaze.status();
 }
-ipcMain.handle("vision:status", () => visionStatus());
-ipcMain.handle("vision:start", async () => {
+ipcMain.handle("vision:status", () => labStatus() || gaze.inspect());
+ipcMain.handle("vision:calibrate", () => gaze.calibrate());
+ipcMain.handle("vision:start", async (_event, camera) => {
   const lab = labStatus();
-  if (!lab) return gaze.start();
+  if (!lab) return gaze.start(camera);
   if (lab.running) return lab;
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE; // the lab is a full Electron app of its own
