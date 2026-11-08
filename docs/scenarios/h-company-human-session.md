@@ -159,3 +159,12 @@ Sources de code : `agent/src/hcs_agent/cli.py`, `voice.py`, `control.py`,
 `app/src/VoicePilot.tsx`, `pilot/server.py` et
 `scripts/run-voice-pilot.py`, `scripts/run-h-company-human.py`.
 Catalogue source : [HC01–HC10](h-company-cloud-scenarios.md).
+
+## Clé vocale privée
+
+Le lanceur peut charger `speech.env` dans son dossier privé (hors Git), avec
+`ELEVENLABS_API_KEY` et `HCS_TTS_PROVIDER=elevenlabs`. Il ne journalise pas ces
+valeurs. Les variables du processus restent prioritaires. Une clé configurée
+ne suffit pas à prouver la lecture audio : vérifier une synthèse réelle, puis
+la phrase de test de l'app. La voix macOS reste disponible via le choix explicite
+`HCS_TTS_PROVIDER=macos`.

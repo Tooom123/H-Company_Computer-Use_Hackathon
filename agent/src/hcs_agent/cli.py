@@ -464,7 +464,11 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
-    """Closing note on screen: what happened, in one line, then back to listening."""
+    """Show the final guidance with its actual verification status, then resume listening.
+
+    A last=True answer does not enter awaiting_user, so the normal guide loop may
+    never draw it. This terminal scene must replace, not preserve, an older mark.
+    """
     from .overlay import Scene
 
     r = it.report
@@ -477,13 +481,29 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         text = "I could not verify the result"
         why = (r.escalation.blocked_on if r.escalation else "") or "Case handed over to support."
         doodle = "question"
+    final = (it.guidance[-1] if r.mode is Mode.guide and it.guidance and it.guidance[-1].last
+             and r.status.value != "abandoned" else None)
     ov.badge(None)
-    _say(text, why[:120])
-    ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
+    if final is not None:
+        # The model's explanation is useful even when verification is inconclusive;
+        # keep that distinction both visible and spoken. Never change the report.
+        _say(text, final.instruction)
+        ov.show_scene(Scene(text=final.instruction, target=final.pointer, target_box=final.box,
+                            why=text, step=final.index, doodle=doodle))
+    else:
+        _say(text, why[:120])
+        ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
     t0 = time.time()
     hold = 2.5 if r.status.value == "abandoned" else seconds
     try:
-        ov.run_until(lambda: time.time() - t0 > hold, None, 0.1)
+        def finished():
+            if _new_request_pending():
+                return True
+            elapsed = time.time() - t0
+            speaker = _SPEECH["speaker"]
+            speaking = final is not None and speaker is not None and speaker.speaking
+            return elapsed > hold and (not speaking or elapsed > max(hold, 30))
+        ov.run_until(finished, None, 0.1)
     except KeyboardInterrupt:
         ov.hide()
 
@@ -951,8 +971,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     it.stop(StopCommand(reason="user quit"))
                 else:
                     advance(done=ans == "", note=ans or None)
-        elif ov and it.state.terminal and it.guidance and it.guidance[-1].last and it.guidance[-1].pointer:
-            pass  # keep the last annotation until exit
+        # Final guidance is drawn by _show_outcome after the report is available.
+        # It must not reuse the previous step's annotation here.
 
     def finished() -> bool:
         if it.state.terminal and it.report is not None:

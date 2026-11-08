@@ -642,3 +642,26 @@ de cet essai », `sess_0037fb139a9b`. Une consigne, cible logique (1057, 523),
 visuel valide ses deux critères et le rapport est resolved. Ce résultat technique
 ne confirme ni l'audibilité, ni le placement perçu du cercle, ni l'utilité : retour
 humain encore attendu. Pas de comparaison de vitesse avec les essais différents.
+
+## 2026-11-08 — Activation ElevenLabs et retour visuel
+
+Retour humain reçu dans le chat : voix locale audible, repère encore décalé.
+Ce retour n'est pas converti automatiquement en labels de réussite/utilité.
+La clé ElevenLabs fournie est conservée hors dépôt, dans `speech.env` privé
+(mode 0600) ; le lanceur charge uniquement les variables vocales autorisées.
+Test réel de synthèse français : succès, 147 456 octets PCM, durée audio 3,34 s,
+requête 0,92 s avec le modèle flash configuré. Ce temps concerne la synthèse
+vocale uniquement, pas Holo ni une tâche utilisateur.
+
+L'essai en attente `sess_e9749b5ceb6b` a été arrêté proprement pour recharger la
+voix. Rapport et événements locaux conservés ; export H signalé partiel.
+L'audit de `sess_0037fb139a9b` confirme une conversion normalisée cohérente et
+un point situé dans le panneau demandé, sans preuve de nouveau décalage Retina.
+Un défaut distinct de restitution est identifié : la dernière consigne peut
+arriver sans état `awaiting_user` et ne pas dessiner sa nouvelle cible.
+
+Correctif de restitution finale : l'écran de clôture affiche maintenant la vraie
+consigne finale avec sa cible et son verdict, même si aucune attente utilisateur
+n'a précédé cette étape. Les cas non vérifiés restent présentés comme tels ; un
+abandon ne réutilise pas une ancienne cible. Tests ciblés de clôture, voix et
+coordonnées exécutés hors réseau ; précision perçue à retester sur une page H.

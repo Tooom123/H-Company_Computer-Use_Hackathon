@@ -45,6 +45,11 @@ def main():
         for name, value in dotenv_values(source).items():
             if name in {'HAI_API_KEY', 'GLADIA_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVEN'} and value:
                 os.environ.setdefault(name, value)
+    # Provider credentials belong outside the checkout, even when .env is ignored.
+    for name, value in dotenv_values(private/'speech.env').items():
+        if name in {'ELEVENLABS_API_KEY', 'ELEVEN', 'HCS_TTS_PROVIDER', 'HCS_TTS_VOICE',
+                    'HCS_TTS_MODEL', 'HCS_TTS_MACOS_VOICE'} and value:
+            os.environ.setdefault(name, value)
     if not all(os.environ.get(name) for name in ('HAI_API_KEY', 'GLADIA_API_KEY')):
         raise SystemExit('HAI_API_KEY and GLADIA_API_KEY are required in the private environment.')
     credentials_path = private/'credentials.json'
