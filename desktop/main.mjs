@@ -81,6 +81,7 @@ let vision = null;
 const gaze = createGazeCalibrator({ heatmapDir: path.resolve(here, "..", "heatmap"), agentUrl: AGENT,
   preload: path.join(here, "gaze-preload.cjs"), overlayPreload: path.join(here, "gaze-overlay-preload.cjs"),
   trackerScript: path.join(here, "tracker", "gaze_tracker.py"),
+  onStopped: () => { if (!quitting) showMainWindow(); },
   trackerPython: process.env.HCS_TRACKER_PYTHON || path.join(here, "tracker", ".venv", "bin", "python") });
 function labStatus() {
   if (process.platform !== "darwin" || process.env.HCS_VISION_BUILTIN === "1") return null; // the lab needs macOS

@@ -916,3 +916,23 @@ remplacent pas la recette humaine des scénarios Devin/Odoo.
 L'historique est conservé par fusion, sans squash : certains lanceurs extraient
 des révisions épinglées. Le lanceur macOS reste dépendant du checkout et de son
 environnement local. Les secrets et épisodes privés ne sont pas inclus.
+
+## 2026-11-08 — Sortie de calibration Vision et permission caméra
+
+Après un blocage signalé par Edouard, la calibration native n'utilise plus le
+niveau de fenêtre « screen-saver ». La demande caméra précède l'ouverture de la
+calibration ; le tracker doit recevoir des images avant d'afficher les cibles.
+La fenêtre laisse la barre de menus et le Dock accessibles. Échap, Cmd/Ctrl+W
+et le bouton « Cancel calibration » arrêtent la caméra et ramènent au panneau
+Vision. Les réponses asynchrones arrivées après annulation sont ignorées.
+
+Vérification réelle sur le Mac : deux démarrages de calibration native, puis
+annulation au premier point, par Échap et par le bouton. Dans les deux cas, le
+panneau Vision revient à « Ready » et le listener du tracker sur 8769 disparaît.
+La permission caméra était déjà accordée : le premier dialogue macOS n'a pas
+été reproduit. Les chemins permission refusée/en attente, absence d'images,
+annulation pendant le chargement et validation tardive sont couverts par les
+tests simulés. **33 tests desktop/calibration passent**, dont 12 nouveaux tests
+de cycle de vie. Aucun appel Holo, aucune mesure de précision, aucune cible
+de calibration remplie par l'agent. Le panneau est laissé prêt pour l'essai
+humain ; le moteur de coaching n'est pas lancé pendant cette vérification.

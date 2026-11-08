@@ -533,23 +533,25 @@ applyHoneycomb(pref("honeycomb") !== "false");
 async function loadVision(s) {
   renderVisionToggle();
   const v = s || (await api.vision.status());
-  const state = !v.available ? "Not installed" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
+  const state = !v.available ? "Not installed" : v.starting ? "Starting camera" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
   $("visionState").textContent = state;
   $("visionState").className = `badge${v.running ? " on" : ""}`;
   $("visionBtn").textContent = v.running ? (v.builtin ? "Stop tracking" : "Close the lab") : "Recalibrate";
   $("visionBtn").disabled = !v.available;
-  $("visionNote").textContent = v.reason || (v.running
+  $("visionNote").textContent = v.reason || (v.starting
+    ? "Allow the camera in the macOS dialog if asked. Calibration opens only when images arrive. You can cancel with Stop tracking."
+    : v.running
     ? v.builtin
       ? v.tracking
         ? `The camera follows your gaze in the background (accuracy ~${v.errorPx ?? "?"} px). Stop it here.`
         : v.native
-          ? "Calibration on screen: look at each red dot and click it 3 times, then just look at 4 more dots."
+          ? "Look at each red dot and click it 3 times, then look at 4 more dots. Press Esc or Cancel calibration to return here."
           : v.browser
           ? "Calibration opened in your browser, full screen: start the camera, click each red dot 5 times, then Start tracking."
           : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
       : "Follow the targets on screen; it closes with this app."
     : v.builtin
-      ? "Opens a full-screen calibration (9 dots + an accuracy check); then your gaze is tracked over every app, shown as a red honeycomb."
+      ? "Opens calibration after camera permission (9 dots + an accuracy check). Esc or Cancel closes it; the menu bar and other apps stay accessible."
       : "Opens Édouard's Vision Lab on the calibration screen.");
   $("visionBtn").onclick = async () => loadVision(v.running ? await api.vision.stop() : await api.vision.start());
 }

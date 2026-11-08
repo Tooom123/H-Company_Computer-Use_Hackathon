@@ -55,6 +55,9 @@
   body.cam-tl #webgazerVideoContainer{left:12px!important;top:12px!important;right:auto!important;bottom:auto!important}
   body.cam-tr #webgazerVideoContainer{right:12px!important;top:12px!important;left:auto!important;bottom:auto!important}
   body.cam-bl #webgazerVideoContainer{left:12px!important;bottom:12px!important;right:auto!important;top:auto!important}
+  #cancelCalibration{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:100;
+    padding:12px 20px;border:1px solid var(--line);border-radius:999px;background:white;color:var(--ink);font:600 15px system-ui;cursor:pointer}
+  body.tracking #cancelCalibration{display:none}
 </style>
 </head>
 <body>
@@ -65,6 +68,7 @@
   <button id="share">Share</button>
 </div>
 <canvas id="heat"></canvas>
+<button id="cancelCalibration" hidden>Cancel calibration · Esc</button>
 
 <div class="card" id="intro">
   <h1>The honeycomb, driven by your eyes</h1>
