@@ -1051,6 +1051,7 @@ class _InputWatcher:
         self._target_click = False
         self._field_focused = False
         self._expected_app = None
+        self._exact = False
         self._hub, self._kb = None, keyboard
         try:
             if self._kb is None:
@@ -1095,21 +1096,27 @@ class _InputWatcher:
         return (px - x) ** 2 + (py - y) ** 2 <= self.POINTER_TOLERANCE ** 2
 
     def _invalidate(self) -> None:
-        # A coordinate from a previous page/focus is no longer evidence. Only a new step re-arms it.
+        # The target itself is gone (the tracked control disappeared, or an untracked point scrolled away).
         self._target = None
+        self._reset()
+
+    def _reset(self) -> None:
+        # Evidence so far does not count (click elsewhere, other app, keys), but the step stays armed: closing a
+        # dialog first, or switching apps and back, must not leave the guide waiting forever.
         self._target_click = self._field_focused = False
         self.typed, self.last_submit = 0, 0.0
 
     def _same_app(self) -> bool:
         if self._expected_app is not None and self._focus_probe() != self._expected_app:
-            self._invalidate()
+            self._reset()
             return False
         return True
 
     def _on_event(self, event: str, payload) -> None:
         now = self._clock()
         if event in ("scroll", "combo_down"):
-            self._invalidate()
+            # A tracked (exact) box follows the control after a scroll; an untracked point does not.
+            self._reset() if (event == "combo_down" or self._exact) else self._invalidate()
             return
         if not self._same_app():
             return
@@ -1130,7 +1137,7 @@ class _InputWatcher:
                 if self._field_focused and self.typed:
                     self.last_submit = now  # typed in the field, then clicked on (e.g. Next): the field is done
                     return
-                self._invalidate()
+                self._reset()
                 return
             self._target_click = True
             self._field_focused = self._kind == "type"
@@ -1140,11 +1147,11 @@ class _InputWatcher:
                                "alt", "alt_l", "alt_r", "page_up", "page_down", "home", "end", "esc",
                                "up", "down", "left", "right")
             if any(payload == getattr(self._kb.Key, name, None) for name in navigation_keys):
-                self._invalidate()
+                self._reset()
                 return
             if not self._field_focused and (getattr(payload, "char", None)
                     or payload in (self._kb.Key.enter, self._kb.Key.tab, self._kb.Key.space, self._kb.Key.backspace)):
-                self._invalidate()
+                self._reset()
                 return
             if payload in (self._kb.Key.enter, self._kb.Key.tab):
                 if self._field_focused and self.typed:
@@ -1160,6 +1167,7 @@ class _InputWatcher:
         self.typed, self.last_submit = 0, 0.0
         self._target_click = self._field_focused = False
         self._expected_app = self._focus_probe()
+        self._exact = bool(getattr(guidance, "box_exact", False))
         self._target = None
         box, pointer = getattr(guidance, "box", None), getattr(guidance, "pointer", None)
         if self._finite(box, 4) and box[2] > 0 and box[3] > 0:

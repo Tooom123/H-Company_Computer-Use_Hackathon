@@ -105,12 +105,12 @@ def test_non_click_instructions_are_not_completed_by_a_target_click(rig, kind):
     assert not rig.w.acted(kind)
 
 
-def test_wrong_click_invalidates_old_coordinates_even_if_next_click_hits(rig):
+def test_wrong_click_does_not_count_but_the_step_stays_armed(rig):
+    """Live run 2026-11-08: the user closed a leftover dialog (click elsewhere), then clicked Agents: the old rule
+    had dropped the target and the guide waited forever."""
     arm(rig)
     click(rig, (500, 500))
-    click(rig)
     assert not rig.w.acted("click")
-    arm(rig)
     click(rig)
     assert rig.w.acted("click")
 
@@ -134,30 +134,43 @@ def test_ax_control_disappearing_after_target_click_still_requests_verification(
     assert "Result not verified" in rig.w.observation_note("click")
 
 
+def test_scroll_drops_an_untracked_point(rig):
+    arm(rig)  # pointer only: nothing follows it after a scroll
+    click(rig)
+    rig.w._on_event("scroll", (100, 100, 0, -1))
+    click(rig)
+    assert not rig.w.acted("click")
+
+
 @pytest.mark.parametrize("event,payload", [("scroll", (100, 100, 0, -1)), ("combo_down", None)])
-def test_scroll_or_voice_shortcut_invalidates_old_target(rig, event, payload):
-    arm(rig)
+def test_scroll_or_voice_shortcut_resets_evidence_of_a_tracked_box(rig, event, payload):
+    arm(rig, box=(80, 80, 40, 40), box_exact=True)
     click(rig)
     rig.w._on_event(event, payload)
+    assert not rig.w.acted("click")  # the earlier click no longer counts
     click(rig)
-    assert not rig.w.acted("click")
+    assert rig.w.acted("click")
 
 
-def test_browser_navigation_shortcut_invalidates_target(rig):
+def test_browser_navigation_shortcut_resets_evidence_only(rig):
     arm(rig)
+    click(rig, settle=False)
     rig.w._on_event("key_down", rig.keys.cmd)
-    click(rig)
+    rig.clock[0] += 0.6
     assert not rig.w.acted("click")
+    click(rig)
+    assert rig.w.acted("click")
 
 
-def test_application_change_invalidates_target_and_return_cannot_resurrect_it(rig):
+def test_application_change_discards_evidence_and_a_new_click_after_return_counts(rig):
     arm(rig)
     click(rig)
     rig.app[0] = 456
     assert not rig.w.acted("click")
     rig.app[0] = 123
+    assert not rig.w.acted("click")  # the click made before the switch does not come back
     click(rig)
-    assert not rig.w.acted("click")
+    assert rig.w.acted("click")
 
 
 def test_click_in_other_application_does_not_count_before_next_poll(rig):
@@ -247,7 +260,7 @@ def loop_rig(rig, monkeypatch):
 
 def test_loop_does_not_advance_on_irrelevant_clicks_and_prefetches_once(loop_rig):
     r = loop_rig
-    r.actions.extend([lambda: click(r.rig, (500, 500)), lambda: click(r.rig), lambda: None])
+    r.actions.extend([lambda: click(r.rig, (500, 500)), lambda: click(r.rig, (600, 600)), lambda: None])
     cli._guide_loop(r.it, auto=False, overlay=False)
     assert r.it.replies == []
     assert r.prefetched == [(["Next candidate only"], {"replace": True})]
