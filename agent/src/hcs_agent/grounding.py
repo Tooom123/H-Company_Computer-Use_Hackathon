@@ -179,6 +179,9 @@ class Grounder:
                   "an app forward when Current page already identifies its focused window. "
                   "Give the single next step. Point only at a listed control (its index); if the needed control is "
                   "not on this page, choose the listed control that leads to it (a menu, a tab, a link). "
+                  "The instruction must name exactly the control at target. Read 'Page after that' in the history: "
+                  "if your previous step opened something (a dialog, a wizard, a form), continue inside it; never "
+                  "repeat a step that already worked, and never ask to close a dialog the goal still needs. "
                   "If the goal is reached, set done=true with a summary. If this page is unrelated and nothing "
                   "listed leads to the goal, kind=info with an instruction telling the person where to go.")
         body = {

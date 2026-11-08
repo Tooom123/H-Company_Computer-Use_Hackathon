@@ -66,6 +66,42 @@ def _plan_first(software: str | None) -> bool:
     return (software or "").lower() in PLAN_FIRST
 
 
+_QUOTED = re.compile(r"(?<!\w)['\"«“‘]\s*([^'\"»”’]{1,60}?)\s*['\"»”’](?!\w)")
+
+
+def _norm_label(text: str) -> str:
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", (text or "").lower()).split())
+
+
+def _quoted_labels(instruction: str, exclude: str | None = None) -> list[str]:
+    """Control labels quoted in a planned instruction ("Click 'Build ⌘B'"), minus the text to type."""
+    skip = _norm_label(exclude or "")
+    return [m for m in _QUOTED.findall(instruction or "") if _norm_label(m) and _norm_label(m) != skip]
+
+
+def _label_matches(label: str, name: str) -> bool:
+    a, b = _norm_label(label), _norm_label(name)
+    return bool(a and b) and (f" {a} " in f" {b} " or f" {b} " in f" {a} ")
+
+
+def _page_change_note(before, after) -> str:
+    """What the user's action changed on the page, for the planner (it cannot see the screen)."""
+    if after is None:
+        return "Page after that: could not be read."
+    old = {(e.role, e.name) for e in before}
+    new = {(e.role, e.name) for e in after}
+    show = lambda keys: ", ".join(f"{r.replace('AX', '')} '{n[:40]}'" for r, n in sorted(keys)[:8])
+    appeared, gone = new - old, old - new
+    if not appeared and not gone:
+        return "Page after that: no visible change within 2 s."
+    parts = []
+    if appeared:
+        parts.append(f"appeared: {show(appeared)}" + (" …" if len(appeared) > 8 else ""))
+    if gone:
+        parts.append(f"no longer visible: {show(gone)}" + (" …" if len(gone) > 8 else ""))
+    return "Page after that: " + "; ".join(parts) + "."
+
+
 def _screen_check(check, expected: str, software: str) -> tuple[bool, str]:
     """Call a backend screen check, passing the software name when the backend accepts it."""
     try:
@@ -597,6 +633,8 @@ class Intervention:
             context += ("\n\nSuggested steps for this task (written in advance; the real page wins when they differ):\n"
                         + "\n".join(f"{i + 1}. {h}" for i, h in enumerate(hints)))
         history = list(history or [])
+        corrections: list[str] = []  # notes for the next planner call only, after a rejected plan
+        shown_on: set = set()  # (instruction, page) pairs already shown: seeing one again is a loop
         repeats = 0
         last_instruction = ""
         last_plan_observation = None
@@ -653,7 +691,7 @@ class Intervention:
             page_description = (f"Native application: Devin Desktop; bundle_id={info.bundle_id}; focused window: {info.title[:80]}"
                                 if native else f"{info.title[:80]} — {page_url[:100]}")
             goal = bound.objective if bound.procedure.id != "generic" else bound.request.goal
-            plan = planner(goal, context, page_description, cands, history)
+            plan = planner(goal, context, page_description, cands, history + corrections)
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             if native:
@@ -712,6 +750,39 @@ class Intervention:
             kind = plan.get("kind") if plan.get("kind") in ("click", "type", "info") else "click"
             target_index = plan.get("target")
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None
+            # The instruction and the box must name the same control: "Click 'Build'" framed on "Close" sent the
+            # user into a loop (open the wizard, close it, open it...).
+            problem = None
+            labels = [] if kind == "info" else _quoted_labels(instruction, exclude=plan.get("text"))
+            if labels and not (target and any(_label_matches(lb, target.name) for lb in labels)):
+                named = next((e for lb in labels for e in items if _label_matches(lb, e.name)), None)
+                if named is not None:
+                    target = named
+                else:
+                    problem = (f"Correction: your last answer named {', '.join(repr(lb) for lb in labels)}, which is "
+                               "not among the listed controls of the current page. The page has changed, probably "
+                               "because the previous step worked. Choose the next step from the listed controls.")
+            # "Click Next" on each page of a wizard is fine; the same step back on a page where it was already
+            # shown means the user is going round in circles.
+            step_key = (instruction, info.url, info.title, frozenset((e.role, e.name) for e in items))
+            looped = step_key in shown_on and repeats == 0  # same page as last time: the repeat counter above decides
+            if problem is None and looped:
+                problem = (f"Correction: you already gave the step \"{instruction}\" on this same page and the person "
+                           "did it. Do not repeat it: give the next step from the listed controls, "
+                           "or set done/blocked.")
+            if problem is not None:
+                if not corrections:
+                    self._trace(f"rejected planned step ({'loop' if looped else 'label/target mismatch'}): re-planning")
+                    corrections = [problem]
+                    last_instruction = ""
+                    continue
+                if native_mode:
+                    return native_blocked("I keep suggesting the same step without confirming progress. Tell me what changed, or ask a more specific question.",
+                                          "inconsistent_planner_instruction")
+                self._trace("the planner keeps naming a control that is not there: handing over")
+                return None
+            corrections = []
+            shown_on.add(step_key)
             if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
                 instruction = f"{instruction} — type \"{plan['text']}\""
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:160],
@@ -727,24 +798,27 @@ class Intervention:
                     return native_blocked("You're still stuck on this step. Describe what you see, or ask a more specific question.",
                                           "user_reported_stuck")
                 return None  # the user is stuck: the caller decides (takeover / agent) from the autonomy level
-            history.append(f"Instruction shown: {instruction}. " + (note or "User reported an interaction; result not verified."))
-            self._wait_page_change(catalogue, bound, signature)
+            entry = f"Instruction shown: {instruction}. " + (note or "User reported an interaction; result not verified.")
+            after = self._wait_page_change(catalogue, bound, signature)
+            history.append(entry + " " + _page_change_note(items, after[1] if after else None))
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="unclear", summary="Step limit reached while guiding from the page; outcome to verify.",
             steps_taken=history))
 
-    def _wait_page_change(self, catalogue, bound, signature, timeout_s: float = 1.6) -> None:
+    def _wait_page_change(self, catalogue, bound, signature, timeout_s: float = 1.6):
         """After the user acted, give the page up to ~1.5 s to change (navigation, menu, dialog) before planning
-        the next step from it; planning on the old page would just repeat the step."""
+        the next step from it; planning on the old page would just repeat the step. Returns the last catalogue read."""
         deadline = time.time() + timeout_s
+        cat = None
         while time.time() < deadline and not self._stop.is_set():
             cat = catalogue(bound)
             if cat is None:
-                return
+                return None
             info, items = cat
             if (info.url, tuple(sorted(e.name for e in items))) != signature:
-                return
+                return cat
             time.sleep(0.2)
+        return cat
 
     def _on_guidance_nowait(self, step: GuidanceStep) -> None:
         """Publish an informational step without waiting for the user (e.g. 'bring the browser to the front')."""
