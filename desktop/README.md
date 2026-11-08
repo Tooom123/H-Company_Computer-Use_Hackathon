@@ -12,6 +12,7 @@ figure sitting on the edge of the bar, legs swinging:
 | Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ / ✗**, the chosen one circled in red pencil like a graded paper: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
 | Voice | Spoken notes on/off, voice (Sarah, Jessica, Bella, Matilda: plain American), speed, test; **push-to-talk key** (⌃⇧H, ⌘J, Right ⌥, F9), applied live. |
 | Vision | **Recalibrate**: opens Édouard's Vision Lab on the calibration screen. |
+| | **Gaze magnet** (optional): load `browser-extension/` unpacked in Chrome and the honeycomb snaps to the buttons of the web page you look at (see its README). |
 
 User side only: costs, H compute and the plan belong to the admin / IT side (support backend), not here.
 The window is excluded from screen capture (like the overlay): H never sees it and the guide's screen watcher

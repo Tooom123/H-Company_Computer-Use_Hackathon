@@ -43,6 +43,20 @@ function serve(root, onFeed) {
 }
 
 const TRACKER = "http://127.0.0.1:8769"; // tracker/gaze_tracker.py
+export const TARGETS_PORT = 8770; // browser-extension/ posts the clickable boxes of the focused page here
+const TARGETS_TTL_MS = 2500; // the extension sends a heartbeat each second while the browser has focus
+
+/** Boxes from the extension (screen pixels) -> heatmap targets in overlay coordinates. Bad input -> []. */
+export function parseTargets(data, bounds) {
+  const list = data && Array.isArray(data.targets) ? data.targets.slice(0, 300) : [];
+  const ok = (v) => typeof v === "number" && Number.isFinite(v);
+  return list
+    .filter((t) => t && ok(t.x) && ok(t.y) && ok(t.w) && ok(t.h) && t.w > 0 && t.h > 0)
+    .map((t, i) => ({
+      id: `web${i}`, label: String(t.label || "").slice(0, 40), weight: 1,
+      rect: { x: t.x - bounds.x, y: t.y - bounds.y, width: t.w, height: t.h },
+    }));
+}
 
 async function trackerCall(method, p, body) {
   try {
@@ -77,6 +91,33 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   let proc = null; // the tracker process
   let poll = null; // gaze polling while tracking
   let trackerState = null;
+  let targetsServer = null;
+  let targetsAt = 0; // last time the extension sent boxes (0 = none shown)
+
+  /** Receiver for the browser extension (fixed port, local only). The custom header makes any web page's attempt
+   * a CORS preflight, which is never granted: only the extension's service worker gets through. */
+  function startTargets() {
+    if (targetsServer) return;
+    targetsServer = http.createServer((req, res) => {
+      if (req.method !== "POST" || req.url !== "/targets" || req.headers["x-hcs-targets"] !== "1") {
+        res.writeHead(404).end();
+        return;
+      }
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 200000) req.destroy(); });
+      req.on("end", () => {
+        let data = null;
+        try { data = JSON.parse(body); } catch {}
+        res.writeHead(data ? 204 : 400).end();
+        if (!data || !overlay || overlay.isDestroyed()) return;
+        const list = parseTargets(data, overlay.getBounds());
+        targetsAt = list.length ? Date.now() : 0;
+        overlay.webContents.send("overlay:targets", list);
+      });
+    });
+    targetsServer.on("error", () => { targetsServer = null; }); // port taken: no magnet, the cloud still works
+    targetsServer.listen(TARGETS_PORT, "127.0.0.1");
+  }
   const onFeed = (url, d) => {
     if (url === "/accuracy" && Number.isFinite(d.px) && d.px > 0) {
       errorPx = Math.round(d.px);
@@ -115,6 +156,10 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     if (!overlay || overlay.isDestroyed()) return;
     const b = overlay.getBounds();
     overlay.webContents.send("overlay:gaze", { x: x - b.x, y: y - b.y });
+    if (targetsAt && Date.now() - targetsAt > TARGETS_TTL_MS) { // browser closed or extension gone: plain cloud
+      targetsAt = 0;
+      overlay.webContents.send("overlay:targets", []);
+    }
     clearTimeout(overlayIdle);
     overlayIdle = setTimeout(() => overlay && !overlay.isDestroyed() && overlay.webContents.send("overlay:gaze", null), 1500);
   }
@@ -149,6 +194,7 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
       overlay.on("closed", () => { overlay = null; });
       await overlay.loadURL(`http://127.0.0.1:${server.address().port}/overlay.html`);
       overlay.showInactive();
+      startTargets();
       if (Number.isFinite(errorPx)) overlay.webContents.send("overlay:accuracy", errorPx);
     }
   }
@@ -298,6 +344,8 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
     stop();
     if (server) server.close();
     server = null;
+    if (targetsServer) targetsServer.close();
+    targetsServer = null;
   }
 
   return { status, start, stop, dispose };

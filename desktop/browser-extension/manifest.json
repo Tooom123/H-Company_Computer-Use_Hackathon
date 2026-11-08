@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "H Companion: gaze magnet",
+  "version": "0.1.0",
+  "description": "Lets the H Companion gaze honeycomb snap to the buttons and links of the page you are looking at. Sends only boxes, never page content, to the app on 127.0.0.1.",
+  "host_permissions": ["http://127.0.0.1:8770/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": false }],
+  "icons": { "128": "icon.png" }
+}
