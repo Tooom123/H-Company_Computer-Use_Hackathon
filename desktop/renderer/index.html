@@ -15,10 +15,6 @@
 
     <!-- Browser-like tabs on top -->
     <header class="bar">
-      <div class="brand">
-        <span class="key">H</span>
-        <img class="head" src="companion.svg" alt="Companion" />
-      </div>
       <nav class="tabs" role="tablist">
         <button class="tab" data-go="home" role="tab">Home</button>
         <button class="tab" data-go="activity" role="tab">Activity</button>
@@ -50,6 +46,11 @@
         <g class="shin b"><path d="M30 47.2 C 29.4 52, 28.8 56, 28.2 60.5 L 31.6 61.4" /></g>
       </svg>
     </header>
+    <!-- logo on the page, top-left: the tab bar stays free for the tabs (and macOS's window buttons) -->
+    <div class="brand">
+      <span class="key">H</span>
+      <img class="head" src="companion.svg" alt="Companion" />
+    </div>
 
     <main>
       <!-- Home: ready for ⌘H; the task when one runs; how much I do for you -->

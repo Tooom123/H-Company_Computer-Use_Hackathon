@@ -70,6 +70,11 @@ async function syncPrefs() {
   if (key && status.voice && status.voice.ptt_key && key !== status.voice.ptt_key) {
     await api.agent("POST", "/ptt", { key });
   }
+  const level = Number(pref("autonomy")); // chosen in the app, possibly while the assistant was off
+  if (Number.isInteger(level) && level >= 0 && level < STOPS && level !== status.autonomy) {
+    const r = await api.agent("POST", "/autonomy", { level });
+    if (r.ok && r.data) status = r.data;
+  }
 }
 
 // tabs ------------------------------------------------------------------------------------------
@@ -116,7 +121,7 @@ function buildAutonomy() {
     return Math.max(0, Math.min(1, (x - a) / (b - a)));
   };
   box.addEventListener("pointerdown", (e) => {
-    if (!status || e.button !== 0) return;
+    if (e.button !== 0) return; // works without the assistant too: the choice is kept and applied when it starts
     try {
       box.setPointerCapture(e.pointerId); // keep following the pointer outside the scrap
     } catch {}
@@ -129,16 +134,22 @@ function buildAutonomy() {
     drag.pos = posAt(e.clientX);
     renderAutonomy();
   });
-  box.addEventListener("pointerup", () => {
+  // End of the gesture. On macOS the pointerup can be lost (pointer capture dropped, window focus change):
+  // a lost capture or a pointerup anywhere in the window ends it too, so the dot never stays "held".
+  const release = (e) => {
     if (!drag) return;
+    if (e && Number.isFinite(e.clientX) && e.type !== "lostpointercapture") drag.pos = posAt(e.clientX);
     const level = Math.round(drag.pos * (STOPS - 1));
     drag = null;
     setAutonomy(level);
-  });
+  };
+  box.addEventListener("pointerup", release);
+  box.addEventListener("lostpointercapture", release);
+  window.addEventListener("pointerup", release);
+  window.addEventListener("blur", () => release(null));
   box.addEventListener("pointercancel", () => ((drag = null), renderAutonomy()));
   box.addEventListener("keydown", (e) => {
-    if (!status) return;
-    const cur = pendingAutonomy ?? status.autonomy ?? 0;
+    const cur = pendingAutonomy ?? currentLevel() ?? 0;
     const next = { ArrowLeft: cur - 1, ArrowDown: cur - 1, ArrowRight: cur + 1, ArrowUp: cur + 1, Home: 0, End: STOPS - 1, 1: 0, 2: 1, 3: 2 }[e.key];
     if (next === undefined) return;
     e.preventDefault();
@@ -152,8 +163,20 @@ function sayAutonomy(text) {
   if (text) autMsgTimer = setTimeout(() => ($("autMsg").textContent = ""), 4000);
 }
 
+/** The level to show: being sent > the assistant's > the one chosen while it was not running (remembered). */
+function currentLevel() {
+  if (pendingAutonomy !== null) return pendingAutonomy;
+  if (status && Number.isInteger(status.autonomy)) return status.autonomy;
+  const saved = Number(pref("autonomy"));
+  return Number.isInteger(saved) && saved >= 0 && saved < STOPS ? saved : 1;
+}
+
 async function setAutonomy(level) {
-  if (!status) return;
+  pref("autonomy", level);
+  if (!status) { // no assistant: keep the choice, apply it when it connects (syncPrefs)
+    sayAutonomy("Saved: applies as soon as the assistant runs.");
+    return renderAutonomy();
+  }
   if (level === status.autonomy && pendingAutonomy === null) return renderAutonomy();
   const busy = isBusy(status);
   const guiding = busy && status.current.mode !== "act" && !status.current.takeover;
@@ -171,7 +194,7 @@ async function setAutonomy(level) {
 }
 
 function renderAutonomy() {
-  const level = pendingAutonomy ?? (status && Number.isInteger(status.autonomy) ? status.autonomy : null);
+  const level = currentLevel();
   const shown = drag ? Math.round(drag.pos * (STOPS - 1)) : level; // the level the dot would land on
   const key = drag ? `d${drag.pos.toFixed(3)}` : String(level);
   if (key !== drawnKey) {
@@ -182,7 +205,7 @@ function renderAutonomy() {
   const box = $("magnet");
   box.classList.toggle("off", !status);
   box.classList.toggle("dragging", Boolean(drag));
-  box.setAttribute("aria-disabled", String(!status));
+  box.setAttribute("aria-disabled", "false"); // always usable: without the assistant the choice waits for it
   if (shown !== null) {
     box.setAttribute("aria-valuenow", String(shown));
     box.setAttribute("aria-valuetext", LABELS[shown]);

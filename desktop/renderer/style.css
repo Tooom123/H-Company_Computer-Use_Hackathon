@@ -60,8 +60,8 @@ code { font-family: var(--mono); }
   -webkit-app-region: drag;
   z-index: 5;
 }
-.brand { position: absolute; left: 16px; top: 0; bottom: 0; display: flex; align-items: center; gap: 9px; }
-body.mac .brand { left: 84px; } /* room for the traffic lights */
+/* logo: on the white page just under the bar, top-left (not in the bar: macOS puts its buttons there) */
+.brand { position: fixed; left: 20px; top: 64px; display: flex; align-items: center; gap: 9px; z-index: 4; pointer-events: none; }
 body.mac .buddy { right: 34px; } /* no window buttons on macOS */
 .key {
   width: 26px; height: 26px; flex: none;
@@ -173,7 +173,7 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 .magnet { cursor: pointer; touch-action: none; outline: none; border-radius: 10px; }
 .magnet.dragging { cursor: grabbing; }
-.magnet.off { cursor: default; }
+.magnet.off { cursor: pointer; } /* still usable offline: the choice waits for the assistant */
 .magnet:focus-visible { outline: 2px dashed var(--pencil); outline-offset: 4px; }
 .magnet .held { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3)); }
 .aut-msg { min-height: 19px; margin: 6px 4px 0; text-align: center; }
