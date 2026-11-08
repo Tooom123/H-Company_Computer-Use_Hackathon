@@ -57,6 +57,9 @@ export class WebGazerTracker {
     api.saveDataAcrossSessions(false).setRegression("ridge").showPredictionPoints(false);
     api.applyKalmanFilter(true); // smooths the raw predictions a little; the heatmap does the rest
     api.showVideoPreview(true).showFaceOverlay(true).showFaceFeedbackBox(true);
+    // Smaller preview than the default 320x240 (read by begin(); setVideoViewerSize() only works after it).
+    api.params.videoViewerWidth = 240;
+    api.params.videoViewerHeight = 180;
     await api.clearData();
     api.setGazeListener((data) => {
       if (this.disposed) return;

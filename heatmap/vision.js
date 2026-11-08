@@ -92,6 +92,7 @@ function calibrate() {
   layer.append(dot);
   const place = () => {
     const t = targets[i];
+    cameraAwayFrom(t);
     dot.style.left = `${t.x}px`;
     dot.style.top = `${t.y}px`;
     dot.style.transform = `scale(${1 - clicks * 0.12})`;
@@ -118,6 +119,13 @@ function calibrate() {
     place();
   };
   place();
+}
+
+/** Put the camera preview in the corner opposite the dot, so it never hides the dot to look at. */
+function cameraAwayFrom(t) {
+  const corner = `cam-${t.y < innerHeight / 2 ? "b" : "t"}${t.x < innerWidth / 2 ? "r" : "l"}`;
+  document.body.classList.remove("cam-tl", "cam-tr", "cam-bl", "cam-br");
+  document.body.classList.add(corner);
 }
 
 // --- 2. validation: 4 other dots, just look; the error is measured, never learnt -----------------------
@@ -177,6 +185,7 @@ function test() {
   $("intro").hidden = true;
   stage.hidden = false;
   $("hud").hidden = false;
+  document.body.classList.remove("cam-tl", "cam-tr", "cam-bl", "cam-br"); // bottom-right, clear of the buttons
   tracker?.showPreview($("preview").checked);
   requestAnimationFrame(shuffle);
 }
