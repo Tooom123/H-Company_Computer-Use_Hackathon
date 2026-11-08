@@ -1,7 +1,7 @@
 // The "In action" screen: H Companion's overlay drawn the way the app draws it (agent/src/hcs_agent/overlay.py),
 // ported to SVG. Red pencil strokes in two jittered passes, notes on paper scraps, the main control framed from
-// its real bounds (like the agent does with the accessibility box), an arrow from the note to the frame, the
-// status badge at the bottom (live words while the user speaks) and the Magnet at the bottom left.
+// its real bounds (like the agent does with the accessibility box), and the
+// status badge at the bottom (live words while the user speaks).
 // Coordinates are the 1440x900 screen of the stage; the stage is scaled to the page with CSS.
 
 const W = 1440;
@@ -9,7 +9,6 @@ const H = 900;
 const NS = "http://www.w3.org/2000/svg";
 const TEXT_SCALE = 1.5; // overlay.py draws all handwriting 1.5x the base sizes
 const PAPER = "rgba(255,255,251,.93)";
-const PAPER_SOFT = "rgba(255,255,251,.80)";
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const stage = document.getElementById("stage");
@@ -86,23 +85,6 @@ function roundedBox(cx, cy, w, h, rnd) {
   stroke(pts, rnd, 1.6, 1.6);
 }
 
-function arrow(start, end, rnd, width = 1.4) {
-  const bend = rnd.choice([-26, -12, 10, 24]);
-  const mid = [(start[0] + end[0]) / 2 + bend * 0.4, (start[1] + end[1]) / 2 - bend];
-  const pts = [];
-  for (let k = 0; k < 9; k++) {
-    const t = k / 8;
-    pts.push([(1 - t) ** 2 * start[0] + 2 * (1 - t) * t * mid[0] + t * t * end[0],
-      (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * mid[1] + t * t * end[1]]);
-  }
-  stroke(pts, rnd, width, 1.2);
-  const ang = Math.atan2(end[1] - mid[1], end[0] - mid[0]);
-  for (const side of [-1, 1]) {
-    const a = ang + Math.PI + side * 0.45;
-    stroke([end, [end[0] + 20 * Math.cos(a), end[1] + 20 * Math.sin(a)]], rnd, width, 0.8);
-  }
-}
-
 /** A scrap of white paper: roughly cut edges, slight tilt, soft shadow. */
 function paper(x, y, w, h, rnd, color = PAPER, parent) {
   const tilt = rnd.uniform(-0.03, 0.03);
@@ -143,7 +125,7 @@ function note(px, py, text, rnd, { size = 19, color = PAPER, underline = true, p
   return { x: px, y: py, w: pw, h: ph, g };
 }
 
-// --- status badge (bottom centre) and Magnet (bottom left) --------------------------------------------------
+// --- status badge (bottom centre) ------------------------------------------------------------------------
 const badgeLayer = el("g", {});
 function badge(text, pulsing) {
   badgeLayer.replaceChildren();
@@ -164,35 +146,8 @@ function badge(text, pulsing) {
   t.textContent = text;
 }
 
-function magnet(level = 0) {
-  const labels = ["Show me", "Help if I'm stuck", "Do it, I watch"];
-  const rnd = rng(7);
-  const [mw, mh] = [330, 80];
-  const ox = 18;
-  const oy = H - 18 - mh;
-  const g = el("g", {});
-  const saved = strokes;
-  strokes = [];
-  paper(ox + 6, oy + 6, mw - 12, mh - 12, rnd, PAPER, g);
-  const t = el("text", { x: ox + 14, y: oy + 34, "font-size": 13 * TEXT_SCALE }, g);
-  t.textContent = `Magnet: ${labels[level]}`;
-  stroke([[ox + mw - 28, oy + 20], [ox + mw - 16, oy + 20]], rnd, 1.5, 0.4, g); // collapse handle
-  const y = oy + mh - 22;
-  stroke([[ox + 16, y], [ox + mw - 16, y]], rnd, 1.6, 1.0, g);
-  const seg = (mw - 24) / 3;
-  for (let i = 0; i < 3; i++) {
-    const cx = ox + 12 + seg * (i + 0.5);
-    stroke([[cx, y - 6], [cx, y + 6]], rnd, 1.4, 0.8, g);
-    if (i === level) {
-      el("circle", { cx, cy: y, r: 7, class: "dot" }, g);
-      for (let k = 0; k < 2; k++) circle(cx, y, rnd, 11 - k * 2, 10 - k * 2, g);
-    }
-  }
-  strokes = saved;
-}
-
 // --- the scene: step 2 of hcompany_platform_create_api_key ---------------------------------------------------
-const STEP = { step: 2, text: "Click Create an API key", why: "A dialog opens to name the key." };
+const STEP = { step: 1, text: "Click Create an API key" };
 const sceneLayer = el("g", {});
 
 /** The button's bounds in screen coordinates, read from the page itself (the agent gets them from a11y). */
@@ -222,23 +177,14 @@ function drawScene() {
   const right = tx + halfW + pw + 30 < W;
   const px = right ? tx + halfW + 10 : tx - halfW - 10 - pw;
   const py = ty - halfH - ph; // above the control
-  const main = note(px, py, label, rnd, { parent: sceneLayer });
-  note(px + 6, py + ph + 10, STEP.why, rnd, { size: 14, color: PAPER_SOFT, underline: false, parent: sceneLayer });
+  note(px, py, label, rnd, { parent: sceneLayer });
   // frame hugging the control (overlay.py _frame with the element box: w = bw + 18, h = bh + 16)
   const fw = bw + 18;
   const fh = bh + 16;
   svg.appendChild(sceneLayer);
   const parentBackup = svg;
   roundedBox(tx, ty, fw, fh, rnd);
-  // arrow from the bottom edge of the note to the nearest edge of the frame
-  const fx = bw / 2 + 12;
-  const fy = bh / 2 + 8;
-  const start = [main.x + (right ? 14 : main.w - 14), main.y + main.h + 3];
-  let ex = tx + (start[0] > tx + fx ? fx : start[0] < tx - fx ? -fx : 0);
-  let ey = ty + (start[1] > ty + fy ? fy : start[1] < ty - fy ? -fy : 0);
-  if (ex === tx && ey === ty) ey = ty - fy;
-  arrow(start, [ex, ey], rnd);
-  // strokes drawn outside sceneLayer (frame, arrow) move into it so the scene shows and hides as one
+  // strokes drawn outside sceneLayer (the frame) move into it so the scene shows and hides as one
   for (const g of strokes) for (const p of g) if (p.parentNode === parentBackup) sceneLayer.appendChild(p);
 }
 
@@ -290,7 +236,6 @@ async function play() {
 }
 
 await document.fonts.ready;
-magnet(0);
 if (reduce) {
   drawScene();
   reveal(0);
