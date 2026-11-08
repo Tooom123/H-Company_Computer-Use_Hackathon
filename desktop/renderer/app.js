@@ -181,7 +181,8 @@ async function setAutonomy(level) {
   pendingAutonomy = null;
   if (r.ok && r.data) {
     status = r.data;
-    sayAutonomy(stoppingActor ? "Stopping the automatic task. Ask again for guided steps."
+    sayAutonomy(status.engine === "coach-v2" && busy ? "Task stopped. Ask again to use the new mode."
+      : stoppingActor ? "Stopping the automatic task. Ask again for guided steps."
       : guiding && level === STOPS - 1 ? "I'm taking over this task now." : busy ? "Applied to the task in progress." : "");
   } else {
     sayAutonomy("The assistant did not answer: the setting is unchanged.");
@@ -223,7 +224,8 @@ function renderHome() {
   $("voiceStatus").textContent = b.sub ? `${b.text} ${b.sub}` : "";
   const context = status?.context;
   $("contextStatus").hidden = !context?.mode;
-  $("contextStatus").textContent = context?.mode === "automatic"
+  $("contextStatus").textContent = status?.engine === "coach-v2" ? "H Platform · Coach V2 · Holo4"
+    : context?.mode === "automatic"
     ? `Auto context · ${context.label}${context.software ? ` · ${context.sources || 0} documentation excerpts · selected at request start` : ""}` : "";
   if (status && !busy) {
     $("readyText").textContent = b.text;

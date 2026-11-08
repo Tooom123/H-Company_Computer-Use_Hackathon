@@ -24,6 +24,10 @@ const smoke = process.argv.includes("--smoke");
 // A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
 // preferences (voice, key) when it clicks around.
 if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
+else if (process.env.HCS_DESKTOP_USER_DATA && path.isAbsolute(process.env.HCS_DESKTOP_USER_DATA)) {
+  // An opt-in experimental coach must not reuse the main app's singleton or preferences.
+  app.setPath("userData", process.env.HCS_DESKTOP_USER_DATA);
+}
 const ownsInstance = smoke || app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
 const section = (process.argv.find((a) => a.startsWith("--section=")) || "").split("=")[1] || "home";
@@ -195,7 +199,7 @@ function showMainWindow() {
 function startDevinRuntime() {
   return new Promise((resolve) => {
     const child = spawn(process.env.HCS_PILOT_PYTHON,
-      [path.resolve(here, "../scripts/start-devin-companion.py"), "--backend-only"],
+      [process.env.HCS_RUNTIME_LAUNCHER || path.resolve(here, "../scripts/start-devin-companion.py"), "--backend-only"],
       { cwd: path.resolve(here, ".."), env: process.env, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     let settled = false;
@@ -222,12 +226,15 @@ if (ownsInstance) {
     if (process.platform === "darwin" && !smoke) {
       if (app.dock) app.dock.setIcon(path.join(here, "assets", "companion.png"));
       try {
-        const canStart = ["devin-native", "multi-product"].includes(process.env.HCS_PILOT_KIND)
+        const launcher = process.env.HCS_RUNTIME_LAUNCHER;
+        const canStart = ["devin-native", "multi-product", "coach-v2"].includes(process.env.HCS_PILOT_KIND)
           && path.isAbsolute(process.env.HCS_PILOT_PYTHON || "")
-          && fs.existsSync(process.env.HCS_PILOT_PYTHON);
+          && fs.existsSync(process.env.HCS_PILOT_PYTHON)
+          && (!launcher || path.isAbsolute(launcher) && fs.existsSync(launcher));
         menuBar = createMenuBar({ Tray, Menu, nativeImage, dialog,
           iconPath: path.join(here, "assets", "companionTemplate.png"), showWindow: showMainWindow,
-          coachLabel: process.env.HCS_PILOT_KIND === "multi-product" ? "H Companion coach" : "Devin coach",
+          coachLabel: process.env.HCS_PILOT_KIND === "coach-v2" ? "H Platform coach V2"
+            : process.env.HCS_PILOT_KIND === "multi-product" ? "H Companion coach" : "Devin coach",
           stopTask: () => call(AGENT, "POST", "/stop", {}, { "X-HCS-App": "1" }),
           startRuntime: canStart ? startDevinRuntime : null, quit: () => app.quit() });
       } catch (error) {

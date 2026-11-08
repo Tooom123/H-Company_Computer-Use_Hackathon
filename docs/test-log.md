@@ -1444,3 +1444,13 @@ fixture. Earlier clarification probes were too wordy and the instruction was
 tightened to one short question. These are prompt/interpretation tests, not an
 end-to-end Agents or microphone benchmark. No stored audio is available to
 prove improved recognition; a live voice retry is still needed.
+
+## 2026-11-08 — H Platform coach V2 isolated branch
+
+- Branch: `edouard/h-platform-coach-v2`, based on `0f1e727`. Previous harness kept intact for rollback.
+- Trigger: human photos showed a Skills explanation paginating through seven pages, including a Markdown table. The requested welcome tour also suffered off-topic ASR clarification.
+- New path: one bounded Holo4 Models API decision, compact H documentation, current AX controls/text, four recent interactions; existing PTT/TTS/overlay reused. No legacy procedure runner, automatic success verifier, or report narration.
+- Offline verification: 91 Python tests (core, journal, runtime) and 23 desktop tests passed. Includes stale response cancellation, actual target clicks, fresh control remapping, private traces and explicit human labels. These tests do not establish live task success.
+- Real provider probes: seven synthetic page/question cases, including the six proposed demos and an ASR-corrupted welcome request, all returned valid short decisions. API latency 6.0–10.7 s at concurrency 3. No real account contents, desktop effects or microphone in those probes. Private raw evidence retained outside Git.
+- Additional probes: interrupted answer panel follow-up avoids repeated clicking. Guide-mode doc opening without a visible link still rejects malformed output; documented limitation. Sessions follow-up can propose opening a listed run beyond the original stop-at-list criterion.
+- Startup: old idle runtime stopped without deleting its traces; dedicated V2 runtime and Electron profile launched on local port 8792. Real voice/guide/action rehearsal remains human validation, not yet marked successful.
