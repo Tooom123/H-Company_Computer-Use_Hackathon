@@ -166,7 +166,9 @@ app.whenReady().then(async () => {
     }
     if (picked.length < 3) { console.log(`skip ${src.name}: only ${picked.length} usable targets`); continue; }
     fs.writeFileSync(path.join(OUT, "screens", `${src.name}.png`), img.toPNG());
-    screens.push({ name: src.name, kind: src.kind, url: src.url || null, title: page.title, file: `screens/${src.name}.png`, width: W, height: H, n_elements: elements.length });
+    screens.push({ name: src.name, kind: src.kind, url: src.url || null, title: page.title, file: `screens/${src.name}.png`, width: W, height: H, n_elements: elements.length,
+      // every visible clickable element (box + label): the "clickable controls" signal, and the intent's candidates
+      elements: elements.map((e) => ({ label: e.text || e.named, role: e.role, rect: e.rect })) });
     const context = elements.map((e, i) => ({ id: `e${i}`, rect: e.rect }));
     picked.forEach((p, ti) => {
       const r = p.element.rect;
