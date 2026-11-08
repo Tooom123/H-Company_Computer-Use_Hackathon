@@ -4,23 +4,96 @@
 <meta charset="utf-8">
 <title>Gaze overlay</title>
 <style>
-  /* Full-screen, transparent, click-through window (desktop app): only the red honeycomb is drawn. */
-  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  /* Full-screen, transparent window of the desktop app. Calibration: dots on a light veil (clickable).
+     Tracking: only the red honeycomb, and the window lets every click through. */
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   #heat { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #veil { position: fixed; inset: 0; background: rgba(255, 255, 255, 0.9); display: none; }
+  body.calibrating #veil { display: block; }
+  .banner { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); background: rgba(20, 20, 20, 0.92); color: #fff;
+    border-radius: 999px; padding: 10px 20px; font: 600 15px system-ui, sans-serif; white-space: nowrap; display: none; }
+  body.calibrating .banner { display: block; }
+  .dot { position: fixed; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+    background: radial-gradient(circle, #e3242b 0 30%, rgba(227, 36, 43, 0.25) 31% 100%); display: none; transition: transform 0.15s; }
+  .dot.look { cursor: default; animation: pulse 1s ease-in-out infinite; }
+  .dot.miss { animation: shake 0.25s; }
+  @keyframes pulse { 50% { transform: scale(0.7); } }
+  @keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 </style>
 </head>
 <body>
 <canvas id="heat"></canvas>
+<div id="veil"></div>
+<div class="banner" id="banner"></div>
+<button class="dot" id="dot" aria-label="calibration dot"></button>
 <script type="module">
-// Shows the user where the assistant thinks they look: the same honeycomb as the test page, centred on the gaze
-// (screen points, relative to this window), as wide as the measured accuracy. Fed by the desktop app (gaze-window.mjs).
+// Calibration (9 dots clicked while looked at, then 4 dots only looked at, as on the vision page), then the
+// honeycomb follows the gaze over every app. The gaze itself comes from the background tracker (gaze_tracker.py);
+// this page only draws. Fed and driven by the desktop app (gaze-window.mjs).
 import { GazeHeatmap } from "./gaze-heatmap.js";
+import { CALIBRATION, CLICKS_PER_TARGET, VALIDATION, toPixels } from "./gaze-calibration.js";
 
-const heat = new GazeHeatmap({ canvas: document.getElementById("heat"), maxAlpha: 0.22 });
-heat.setTargets([]); // no page here: a pure gaze cloud (the agent adds the controls on its side)
+const api = window.hcsOverlay;
+const $ = (id) => document.getElementById(id);
+const heat = new GazeHeatmap({ canvas: $("heat"), maxAlpha: 0.22 });
+heat.setTargets([]); // no page here: a pure gaze cloud (the agent adds the screen's controls on its side)
 heat.start();
-window.hcsOverlay?.onGaze((p) => heat.push(p ? { x: p.x, y: p.y, emittedAt: performance.now() } : null));
-window.hcsOverlay?.onAccuracy((px) => heat.setUncertainty(px));
+api?.onGaze((p) => heat.push(p ? { x: p.x, y: p.y, emittedAt: performance.now() } : null));
+api?.onAccuracy((px) => heat.setUncertainty(px));
+api?.onMode((m) => { if (m === "calibrate") calibrate(); });
+
+async function calibrate() {
+  document.body.classList.add("calibrating");
+  heat.push(null);
+  const dot = $("dot");
+  dot.style.display = "block";
+  dot.classList.remove("look");
+  const targets = toPixels(CALIBRATION, innerWidth, innerHeight);
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    dot.style.left = `${t.x}px`;
+    dot.style.top = `${t.y}px`;
+    for (let k = 0; k < CLICKS_PER_TARGET;) {
+      dot.style.transform = `scale(${1 - k * 0.12})`;
+      $("banner").textContent = `Look at the red dot and click it ${CLICKS_PER_TARGET - k}× · point ${i + 1} of ${targets.length}`;
+      await new Promise((r) => (dot.onclick = r));
+      const res = await api.calibPoint(t.x, t.y);
+      if (res && res.ok) k += 1;
+      else {
+        $("banner").textContent = (res && res.error) || "Face not found: face the camera and click again";
+        dot.classList.remove("miss");
+        void dot.offsetWidth;
+        dot.classList.add("miss");
+        await new Promise((r) => setTimeout(r, 900));
+      }
+    }
+  }
+  dot.style.transform = "";
+  const fit = await api.fit();
+  if (!fit || !fit.ok) {
+    $("banner").textContent = (fit && fit.error) || "Calibration failed: try again";
+    return;
+  }
+  dot.classList.add("look");
+  dot.onclick = null;
+  const errs = [];
+  const checks = toPixels(VALIDATION, innerWidth, innerHeight);
+  for (let i = 0; i < checks.length; i++) {
+    dot.style.left = `${checks[i].x}px`;
+    dot.style.top = `${checks[i].y}px`;
+    $("banner").textContent = `Now just look at the dot, don't click · ${i + 1} of ${checks.length}`;
+    await new Promise((r) => setTimeout(r, 700));
+    const v = await api.validate(checks[i].x, checks[i].y);
+    if (v && v.ok) errs.push(v.error_px);
+  }
+  errs.sort((a, b) => a - b);
+  const median = errs.length ? errs[Math.floor((errs.length - 1) / 2)] : null;
+  dot.style.display = "none";
+  $("banner").textContent = median === null ? "No face during the check: recalibrate" : `Accuracy ~${Math.round(median)} px: tracking starts`;
+  await new Promise((r) => setTimeout(r, 1400));
+  document.body.classList.remove("calibrating");
+  api.done(median);
+}
 </script>
 </body>
 </html>

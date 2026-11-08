@@ -5,6 +5,7 @@
 // no image) goes to the agent's control point (POST /gaze), so the agent can crop its screenshots around it.
 
 import { BrowserWindow, ipcMain, screen, session, shell } from "electron";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -41,7 +42,19 @@ function serve(root, onFeed) {
   });
 }
 
-export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPreload }) {
+const TRACKER = "http://127.0.0.1:8769"; // tracker/gaze_tracker.py
+
+async function trackerCall(method, p, body) {
+  try {
+    const r = await fetch(TRACKER + p, { method, headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(method === "GET" ? 800 : 6000) });
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPreload, trackerScript, trackerPython }) {
   let win = null;
   let overlay = null; // the red honeycomb over the whole screen while the gaze is tracked
   let overlayIdle = null;
@@ -56,7 +69,14 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   let opened = 0;
   // Electron 45 crashes when WebGazer starts on Linux (checked on Wayland, every GPU/sandbox switch): there the
   // calibration opens in the user's browser instead, full screen, and the page posts its gaze to this server.
-  const mode = process.platform === "linux" && process.env.HCS_VISION_WINDOW !== "electron" ? "browser" : "electron";
+  // Preferred: the background tracker (tracker/gaze_tracker.py: camera + MediaPipe in a plain process), which keeps
+  // tracking whatever app is in front; the overlay window only draws (calibration dots, then the honeycomb).
+  const pythonOk = Boolean(trackerPython && fs.existsSync(trackerPython) && trackerScript && fs.existsSync(trackerScript));
+  const forced = process.env.HCS_VISION_WINDOW; // "native" | "browser" | "electron"
+  const mode = forced || (pythonOk ? "native" : process.platform === "linux" ? "browser" : "electron");
+  let proc = null; // the tracker process
+  let poll = null; // gaze polling while tracking
+  let trackerState = null;
   const onFeed = (url, d) => {
     if (url === "/accuracy" && Number.isFinite(d.px) && d.px > 0) {
       errorPx = Math.round(d.px);
@@ -72,6 +92,14 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   const ready = () => fs.existsSync(path.join(heatmapDir, "vision.html")) && fs.existsSync(path.join(heatmapDir, "vendor", "webgazer.js"));
 
   function status() {
+    if (mode === "native") {
+      if (!pythonOk) return { available: false, running: false, builtin: true, reason: "Install the gaze tracker once: see desktop/tracker/README.md." };
+      const alive = Boolean(proc && proc.exitCode === null);
+      const live = Date.now() - lastFeed < 2000;
+      const reason = trackerState && trackerState.state === "no_camera" ? trackerState.message : undefined;
+      return { available: true, running: alive, tracking: alive && live, builtin: true, native: true, errorPx, samples, reason,
+        face: trackerState ? trackerState.face : undefined };
+    }
     if (!ready()) return { available: false, running: false, builtin: true, reason: "Run `npm install && npm run assets` in heatmap/ once (local WebGazer)." };
     if (mode === "browser") {
       const live = Date.now() - lastFeed < 3000;
@@ -83,7 +111,31 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   /** Screen point -> the overlay (full screen, click-through, never captured): the user sees what is tracked. */
   async function showGaze(x, y) {
     if (!server) return;
+    await ensureOverlay(false);
+    if (!overlay || overlay.isDestroyed()) return;
+    const b = overlay.getBounds();
+    overlay.webContents.send("overlay:gaze", { x: x - b.x, y: y - b.y });
+    clearTimeout(overlayIdle);
+    overlayIdle = setTimeout(() => overlay && !overlay.isDestroyed() && overlay.webContents.send("overlay:gaze", null), 1500);
+  }
+
+  let overlayLoading = null;
+  /** The full-screen transparent window. interactive = calibration (takes clicks); else click-through. */
+  async function ensureOverlay(interactive) {
+    if (overlayLoading) await overlayLoading;
     if (!overlay || overlay.isDestroyed()) {
+      overlayLoading = createOverlay();
+      await overlayLoading;
+      overlayLoading = null;
+    }
+    if (!overlay || overlay.isDestroyed()) return;
+    overlay.setIgnoreMouseEvents(!interactive);
+    overlay.setFocusable(interactive);
+    if (interactive) overlay.focus();
+  }
+
+  async function createOverlay() {
+    {
       const { bounds } = screen.getPrimaryDisplay();
       overlay = new BrowserWindow({
         ...bounds, frame: false, transparent: true, resizable: false, movable: false, focusable: false,
@@ -99,11 +151,58 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
       overlay.showInactive();
       if (Number.isFinite(errorPx)) overlay.webContents.send("overlay:accuracy", errorPx);
     }
-    if (overlay.isDestroyed()) return;
-    const b = overlay.getBounds();
-    overlay.webContents.send("overlay:gaze", { x: x - b.x, y: y - b.y });
-    clearTimeout(overlayIdle);
-    overlayIdle = setTimeout(() => overlay && !overlay.isDestroyed() && overlay.webContents.send("overlay:gaze", null), 1500);
+  }
+
+  // --- native mode: calibration driven by the overlay page, gaze from the background tracker -------------------
+  const fromOverlay = (e) => overlay && !overlay.isDestroyed() && e.sender === overlay.webContents;
+  const toScreen = (p) => { const b = overlay.getBounds(); return { x: b.x + p.x, y: b.y + p.y }; };
+  ipcMain.handle("overlay:calib-point", (e, p) => (fromOverlay(e) ? trackerCall("POST", "/calibrate/point", toScreen(p)) : null));
+  ipcMain.handle("overlay:fit", (e) => (fromOverlay(e) ? trackerCall("POST", "/calibrate/fit", {}) : null));
+  ipcMain.handle("overlay:validate", (e, p) => (fromOverlay(e) ? trackerCall("POST", "/validate/point", toScreen(p)) : null));
+  ipcMain.on("overlay:done", async (e, px) => {
+    if (!fromOverlay(e)) return;
+    if (Number.isFinite(px) && px > 0) {
+      errorPx = Math.round(px);
+      overlay.webContents.send("overlay:accuracy", errorPx);
+      await trackerCall("POST", "/accuracy", { px: errorPx });
+    }
+    await ensureOverlay(false); // tracking: click-through from now on
+    startPolling();
+  });
+
+  function startPolling() {
+    clearInterval(poll);
+    poll = setInterval(async () => {
+      const g = await trackerCall("GET", "/gaze");
+      if (g && Number.isFinite(g.x) && Number.isFinite(g.y)) {
+        lastFeed = Date.now();
+        samples += 1;
+        forward(g.x, g.y);
+      }
+    }, 50);
+  }
+
+  async function startNative() {
+    if (!proc || proc.exitCode !== null) {
+      proc = spawn(trackerPython, [trackerScript], { stdio: "ignore" });
+      proc.on("exit", () => { proc = null; clearInterval(poll); });
+    }
+    for (let i = 0; i < 120; i++) { // first start downloads the face model (3.6 MB)
+      trackerState = await trackerCall("GET", "/status");
+      if (trackerState && trackerState.state !== "starting") break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (!trackerState || trackerState.state === "no_camera") { // camera busy or missing: say it, retry next time
+      const st = status();
+      trackerCall("POST", "/quit", {});
+      return { ...st, running: false, reason: trackerState ? trackerState.message : "The gaze tracker did not start." };
+    }
+    await trackerCall("POST", "/calibrate/start", {});
+    clearInterval(poll);
+    lastFeed = 0;
+    await ensureOverlay(true);
+    overlay.webContents.send("overlay:mode", "calibrate");
+    return status();
   }
 
   function forward(x, y) {
@@ -142,6 +241,11 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   ipcMain.on("gaze:close", (e) => { if (fromWindow(e)) stop(); });
 
   async function start() {
+    if (mode === "native") {
+      if (!pythonOk) return status();
+      if (!server) server = await serve(heatmapDir, onFeed); // overlay page + its scripts
+      return startNative();
+    }
     if (!ready()) return status();
     if (win && !win.isDestroyed()) {
       win.show();
@@ -172,6 +276,14 @@ export function createGazeCalibrator({ heatmapDir, agentUrl, preload, overlayPre
   }
 
   function stop() {
+    clearInterval(poll);
+    poll = null;
+    if (proc && proc.exitCode === null) {
+      trackerCall("POST", "/quit", {});
+      const p = proc;
+      setTimeout(() => { if (p.exitCode === null) p.kill(); }, 1500); // the camera is released with the process
+    }
+    proc = null;
     opened = 0;
     lastFeed = 0; // browser mode: the tab keeps running until the user closes it; the feed is ignored from now
     if (win && !win.isDestroyed()) win.destroy(); // the page's unload stops the camera

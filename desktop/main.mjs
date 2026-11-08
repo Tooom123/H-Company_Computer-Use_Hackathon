@@ -22,6 +22,8 @@ let quitting = false;
 const agentCache = new Map();
 
 const smoke = process.argv.includes("--smoke");
+// Linux: native Wayland gives no "always on top"; through XWayland the gaze honeycomb stays above every app.
+if (process.platform === "linux" && !process.env.HCS_OZONE_NATIVE) app.commandLine.appendSwitch("ozone-platform", "x11");
 // A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
 // preferences (voice, key) when it clicks around.
 if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
@@ -76,7 +78,9 @@ ipcMain.handle("agent", async (_e, method, p, body) => {
 // (gaze-window.mjs: heatmap/vision.html in a full-screen window that keeps tracking, click-through, afterwards).
 let vision = null;
 const gaze = createGazeCalibrator({ heatmapDir: path.resolve(here, "..", "heatmap"), agentUrl: AGENT,
-  preload: path.join(here, "gaze-preload.cjs"), overlayPreload: path.join(here, "gaze-overlay-preload.cjs") });
+  preload: path.join(here, "gaze-preload.cjs"), overlayPreload: path.join(here, "gaze-overlay-preload.cjs"),
+  trackerScript: path.join(here, "tracker", "gaze_tracker.py"),
+  trackerPython: process.env.HCS_TRACKER_PYTHON || path.join(here, "tracker", ".venv", "bin", "python") });
 function labStatus() {
   if (process.platform !== "darwin" || process.env.HCS_VISION_BUILTIN === "1") return null; // the lab needs macOS
   if (!fs.existsSync(path.join(VISION_DIR, "package.json")) || !fs.existsSync(path.join(VISION_DIR, "node_modules"))) return null;
