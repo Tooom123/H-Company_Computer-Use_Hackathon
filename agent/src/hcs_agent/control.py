@@ -11,6 +11,8 @@ usage and costs. This module is the only bridge: plain HTTP on 127.0.0.1, stdlib
     POST /stop       stop the current task (local gate first, as everywhere)
     POST /voice      {"enabled"?: bool, "voice"?: id, "speed"?: float}
     POST /voice/test say a sample sentence
+    POST /rate       {"id": run folder, "useful": true | false | null} the user's verdict on a finished task
+    POST /ptt        {"key": "cmd+h" | "cmd+j" | "alt_r" | "f9"} push-to-talk key, live
 
 Safety: bound to 127.0.0.1; every request must carry `X-HCS-App: 1` (a web page cannot add that header to a
 cross-origin request without a CORS preflight, which is never granted) and a local Host header (DNS rebinding).
@@ -20,11 +22,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from statistics import median
 from typing import Any, Callable
 
 DEFAULT_PORT = 8768
@@ -37,11 +41,18 @@ AUTONOMY_HINTS = (
     "I guide you. If you are stuck twice on a step, or ask me, I finish it myself and narrate.",
     "I do the task in front of you and annotate every action. Stop at any time.",
 )
-VOICES = (  # premade ElevenLabs voices, available on every account
+VOICES = (  # premade ElevenLabs voices (every account has them), all with a plain American accent
     {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah", "note": "warm, reassuring"},
     {"id": "cgSgspJ2msm6clMCkdW9", "name": "Jessica", "note": "bright, playful"},
-    {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily", "note": "velvety, British"},
-    {"id": "Xb7hH8MSUJpSbSDYk0k2", "name": "Alice", "note": "clear, British"},
+    {"id": "hpp4J3VqNfWAUOO0d1Us", "name": "Bella", "note": "professional, warm"},
+    {"id": "XrExE9yKIg1WjnnlVkGX", "name": "Matilda", "note": "upbeat, knowledgeable"},
+)
+# Push-to-talk keys the InputHub handles on macOS (combo = swallowed, plain key = held alone).
+PTT_KEYS = (
+    {"key": "cmd+h", "label": "⌘H"},
+    {"key": "cmd+j", "label": "⌘J"},
+    {"key": "alt_r", "label": "Right ⌥"},
+    {"key": "f9", "label": "F9"},
 )
 
 
@@ -67,7 +78,10 @@ def read_reports(runs_dir: Path, limit: int | None = None) -> list[dict[str, Any
         a, b = _parse_ts(t.get("approved_at") or t.get("started_at")), _parse_ts(t.get("finished_at"))
         v = r.get("verification") or {}
         esc = r.get("escalation") or {}
+        fb = r.get("feedback") or {}
         out.append({
+            "id": f.parent.name,  # the folder: what /rate takes
+            "useful": fb.get("useful"),
             "session_id": r.get("session_id") or f.parent.name,
             "case_id": r.get("case_id"),
             "procedure_id": r.get("procedure_id"),
@@ -86,6 +100,38 @@ def read_reports(runs_dir: Path, limit: int | None = None) -> list[dict[str, Any
     return out
 
 
+def rate_session(runs_dir: Path, run_id: str, useful: bool | None) -> dict[str, Any]:
+    """The user's verdict on a finished task (✓ useful / ✗ not useful / None = cleared), written into the
+    report's `feedback` (user-declared, never inferred) and sent again to the support backend, which updates
+    the case: material for debugging and for learning which tasks went well."""
+    if not re.fullmatch(r"[\w-]{1,80}", run_id or ""):
+        raise ValueError("bad id")
+    f = runs_dir / run_id / "report.json"
+    if not f.is_file():
+        raise FileNotFoundError(run_id)
+    data = json.loads(f.read_text(encoding="utf-8"))
+    fb = dict(data.get("feedback") or {})
+    fb["useful"] = useful
+    fb.setdefault("comment", None)
+    fb.setdefault("allow_screenshots_to_support", False)
+    data["feedback"] = fb
+    tmp = f.with_suffix(".json.part")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(f)
+    sent = False
+    try:
+        from .contract import InterventionReport
+        from .support import shared_uplink
+
+        up = shared_uplink()
+        if up is not None:
+            up.send_report(InterventionReport.model_validate(data))
+            sent = True
+    except Exception:  # noqa: BLE001 - the verdict is saved locally either way
+        pass
+    return {"id": run_id, "useful": useful, "sent_to_support": sent}
+
+
 def month_usage(reports: list[dict[str, Any]], now: datetime | None = None) -> dict[str, Any]:
     """This calendar month (UTC). Real sessions only for the plan and the spend; simulated counted apart."""
     now = now or datetime.now(timezone.utc)
@@ -99,6 +145,7 @@ def month_usage(reports: list[dict[str, Any]], now: datetime | None = None) -> d
         "verified": sum(1 for r in real if r["verified"]),
         "escalated": sum(1 for r in real if r["status"] == "escalated"),
         "simulated": len(this_month) - len(real),
+        "median_duration_s": median(durs) if (durs := [r["duration_s"] for r in real if r["duration_s"]]) else None,
         "h_spend_usd": round(sum(costs), 4) if costs else 0.0,
         "h_cost_per_session_usd": round(sum(costs) / len(costs), 4) if costs else None,
     }
@@ -159,21 +206,25 @@ class Controller:
     def __init__(self, runs_dir: Path, *, status: Callable[[], dict[str, Any]],
                  set_autonomy: Callable[[int], None], stop: Callable[[], bool],
                  set_voice: Callable[[dict[str, Any]], dict[str, Any]], test_voice: Callable[[], bool],
+                 set_ptt_key: Callable[[str], bool] = lambda _k: False,
                  on_app_presence: Callable[[bool], None] | None = None,
                  quota: Callable[[], Any] = h_quota, tts_usage: Callable[[], Any] = elevenlabs_usage) -> None:
         self.runs_dir = runs_dir
         self._status, self._set_autonomy, self._stop = status, set_autonomy, stop
-        self._set_voice, self._test_voice = set_voice, test_voice
+        self._set_voice, self._test_voice, self._set_ptt = set_voice, test_voice, set_ptt_key
         self._on_presence = on_app_presence
         self._quota, self._tts = _Cached(quota), _Cached(tts_usage)
         self.app_seen = 0.0
         self.app_present = False
+        self.app_bounds: tuple[float, float, float, float] | None = None  # app window, top-left screen points
         self._lock = threading.Lock()
 
     # The app's polling is its heartbeat: present while it polls, gone after APP_TIMEOUT_S of silence.
-    def seen(self) -> None:
+    def seen(self, bounds: tuple[float, float, float, float] | None = None) -> None:
         with self._lock:
             self.app_seen = time.time()
+            if bounds is not None:
+                self.app_bounds = bounds
             changed = not self.app_present
             self.app_present = True
         if changed and self._on_presence:
@@ -187,12 +238,20 @@ class Controller:
         if gone and self._on_presence:
             self._on_presence(False)
 
+    def app_contains(self, x: float, y: float) -> bool:
+        """A click in the app window is the user steering the assistant, not the user doing the step."""
+        b = self.app_bounds
+        if not self.app_present or b is None:
+            return False
+        return b[0] <= x <= b[0] + b[2] and b[1] <= y <= b[1] + b[3]
+
     def status(self) -> dict[str, Any]:
         s = dict(self._status())
         s["app_connected"] = self.app_present
         s["autonomy_labels"] = list(AUTONOMY_LABELS)
         s["autonomy_hints"] = list(AUTONOMY_HINTS)
         s["voices"] = list(VOICES)
+        s["ptt_keys"] = list(PTT_KEYS)
         return s
 
     def usage(self) -> dict[str, Any]:
@@ -233,9 +292,34 @@ class Controller:
                 except (TypeError, ValueError):
                     return 400, {"error": "speed must be a number"}
             return 200, self._set_voice(allowed)
+        if method == "POST" and path == "/rate":
+            useful = body.get("useful")
+            if useful is not None and not isinstance(useful, bool):
+                return 400, {"error": "useful must be true, false or null"}
+            try:
+                return 200, rate_session(self.runs_dir, str(body.get("id") or ""), useful)
+            except ValueError:
+                return 400, {"error": "bad id"}
+            except FileNotFoundError:
+                return 404, {"error": "no such task"}
+        if method == "POST" and path == "/ptt":
+            key = body.get("key")
+            if key not in {k["key"] for k in PTT_KEYS}:
+                return 400, {"error": "unknown key"}
+            if not self._set_ptt(key):
+                return 409, {"error": "push-to-talk runs with `hcs-agent talk` only"}
+            return 200, self.status()
         if method == "POST" and path == "/voice/test":
             return 200, {"spoken": self._test_voice()}
         return 404, {"error": "not found"}
+
+
+def _bounds(value: str | None) -> tuple[float, float, float, float] | None:
+    try:
+        x, y, w, h = (float(v) for v in (value or "").split(","))
+    except ValueError:
+        return None
+    return (x, y, w, h) if w > 0 and h > 0 else None
 
 
 def _handler(ctl: Controller) -> type[BaseHTTPRequestHandler]:
@@ -267,7 +351,7 @@ def _handler(ctl: Controller) -> type[BaseHTTPRequestHandler]:
                 except ValueError:
                     self._reply(400, {"error": "JSON object expected"})
                     return
-            ctl.seen()
+            ctl.seen(_bounds(self.headers.get("X-HCS-App-Bounds")))
             try:
                 code, payload = ctl.handle(method, self.path, body)
             except Exception as exc:  # noqa: BLE001 - one bad request must not kill the agent
