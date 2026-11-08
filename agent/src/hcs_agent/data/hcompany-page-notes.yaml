@@ -56,8 +56,16 @@
   at: ["5 Subagents", "Subagents"]
   text: "Subagents let this agent delegate"
   why: >-
-    With subagents, this agent becomes a manager: it splits a task into parallel child sessions, one per site or
-    source, then merges their results. Leave it empty for a simple agent.
+    Listing other agents here makes this one a manager: it splits the task across them, running in parallel,
+    then merges one answer. You still start one session and get one result, for example one subagent per city
+    when comparing stays in three cities.
+- step: Subagents
+  at: ["5 Subagents", "Subagents"]
+  text: "Each subagent works in its own cloud session"
+  why: >-
+    Every child is an isolated session with its own browser; the manager can start more to fill a gap or check a
+    finding, and picks agents by the description written in Details. Children count toward your limit of
+    sessions at once, so leave this empty for a simple task.
 
 - step: Session
   at: ["Prompt *", "Prompt"]
@@ -66,6 +74,24 @@
     Write it as an instruction, for example "Open example.com and read its main heading". Start session creates
     the agent and launches it in a cloud browser right away.
 
+- url: /sessions/
+  at: ["Running", "Awaiting input", "Pending", "Queued", "Completed", "Idle"]
+  text: "Your agent now runs in the cloud"
+  why: >-
+    H started a browser for this session on its own servers: nothing runs on your Mac, you can close this tab and
+    find the session again under Sessions. It uses credits while it runs.
+- url: /sessions/
+  at: ["Running", "Awaiting input", "Pending", "Queued", "Completed", "Idle"]
+  text: "A session goes through states"
+  why: >-
+    Queued when all your slots are busy (three at once on the Free plan), pending while its browser starts, then
+    running. Awaiting input means it waits for your message; completed, failed or interrupted means it is over.
+- url: /sessions/
+  at: ["Message agent", "Send message"]
+  text: "The cloud browser starts fresh each time"
+  why: >-
+    It has no cookies or logins of its own. A browser profile makes a session start already signed in to a site,
+    and a vault lets the agent fill a login safely when it meets one.
 - url: /sessions/
   at: ["Agent action", "Idle", "Answer"]
   text: "Every step the agent took is listed here"

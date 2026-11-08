@@ -23,7 +23,10 @@ Build an agent wizard (Details, Config, Instructions, Skills, Subagents, Session
 - Skills = Markdown instructions the agent loads only when a task matches them; H ships ready-made computer-use
   skills under h/. None are needed for a simple read task.
 - Subagents = other agents this one may delegate to: it becomes a manager that splits work into parallel child
-  sessions (one per site or source) and merges the result. Leave empty for a simple agent.
+  sessions (one per site or source) and merges the result. You still run one session and get one result. Each
+  child is an isolated session with its own browser; the manager may spawn follow-ups to fill gaps or verify
+  findings, and routes on each agent's description. Children count toward the concurrency limit (subagents fail
+  when it is reached). Leave empty for a simple agent.
 - Session = the first task. The prompt is the task, written as an imperative instruction. Starting it creates the
   agent and opens the session.
 
@@ -37,6 +40,10 @@ Sessions and Agent View
 - Steer a running agent: send a message (adds context or redirects it; picked up on the next step, also wakes an
   idle session and resumes a paused one); pause / resume (state preserved); cancel (ends it: interrupted).
 - A message to a finished session restarts it and is billed again.
+- Cloud session: H provisions a fresh browser on its servers for each session (nothing runs on the user's
+  machine; the tab can be closed and the session found again under Sessions). It starts with no cookies: a
+  browser profile (saved cookies and storage) makes it start signed in, a vault lets the agent fill a login
+  mid-session. Sign-in, proxies and viewport size are cloud-browser options; "your browser" uses your Chrome.
 
 Other sections
 - Sessions list: every past session with status, agent and cost; open one to replay it in Agent View.
