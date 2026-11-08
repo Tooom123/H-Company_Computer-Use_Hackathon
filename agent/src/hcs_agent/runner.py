@@ -87,6 +87,67 @@ def _label_matches(label: str, name: str) -> bool:
 _TEXT_ROLES = ("AXHeading", "AXStaticText")
 
 
+def _page_notes(software: str) -> list[dict]:
+    """Planned explanations per page of the site (data/<software>-page-notes.yaml)."""
+    try:
+        import yaml
+
+        data = yaml.safe_load((Path(__file__).parent / "data" / f"{software}-page-notes.yaml").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - notes are optional
+        return []
+    return [n for n in data or [] if isinstance(n, dict) and n.get("text") and n.get("at")]
+
+
+def _wizard_step(elements) -> str | None:
+    """Current step of a numbered stepper: done steps lose their number ("Details"), the current and the next
+    ones keep it ("2 Config", "3 Instructions"...): the current one is the lowest numbered."""
+    numbered = []
+    for e in elements or []:
+        if e.role == "AXRadioButton":
+            m = re.match(r"^\s*(\d+)\s+(\S.*)$", e.name)
+            if m:
+                numbered.append((int(m.group(1)), m.group(2).strip()))
+    return min(numbered)[1] if numbered else None
+
+
+def _next_page_note(notes, shown, info, items):
+    """(index, control) of the first note not yet shown whose page is on screen and whose control is visible."""
+    if not notes:
+        return None
+    step = _wizard_step(getattr(info, "elements", None) or items)
+    url = getattr(info, "url", "") or ""
+    for i, n in enumerate(notes):
+        if i in shown:
+            continue
+        if n.get("step") and (step or "").lower() != str(n["step"]).lower():
+            continue
+        if n.get("url") and str(n["url"]) not in url:
+            continue
+        if not n.get("text"):
+            continue
+        if n.get("has") and not all(_find_label([h], items) is not None for h in n["has"]):
+            continue
+        if not n.get("step") and not n.get("url") and not n.get("has"):
+            continue
+        at = _find_label(n["at"], items, prefer=n.get("prefer"))
+        if at is not None:
+            return i, at
+    return None
+
+
+def _find_label(labels, items, prefer: str | None = None):
+    """First label found among the listed elements: exact, then prefix, then contained; controls before text.
+    prefer="left": among equal hits, the leftmost (the sidebar's "Agents", not the breadcrumb's)."""
+    for label in labels if isinstance(labels, list) else [labels]:
+        low = str(label).lower()
+        for test in (lambda n: n == low, lambda n: n.startswith(low), lambda n: low in n):
+            hits = [e for e in items if test(e.name.lower().strip())]
+            if hits:
+                side = (lambda e: e.center[0]) if prefer == "left" else (lambda e: 0)
+                return min(hits, key=lambda e: (e.role in _TEXT_ROLES, side(e)))
+    return None
+
+
 def _platform_knowledge(software: str) -> str:
     """Reference knowledge about the whole site, for every task on it (not only the scripted ones)."""
     try:
@@ -352,7 +413,10 @@ class Intervention:
         last_attempt: AttemptResult | None = None
         verify: VerifyResult | None = None
         guide = bound.guide
-        max_attempts = 1 if guide else proc.max_attempts
+        plan_first_guide = guide and bool(bound.guide_script()) and _plan_first(bound.request.software)
+        # Guided from the page: when the screen check says the goal is not reached yet, keep guiding (up to twice)
+        # instead of escalating: the person may have wandered off, or the planner said done too early.
+        max_attempts = 3 if plan_first_guide else 1 if guide else proc.max_attempts
         self._set_state(State.running, "Guiding you step by step." if guide
                         else "Intervention approved. Working in the software now.")
         self._snapshot("before", "Screen before the intervention")
@@ -371,10 +435,17 @@ class Intervention:
                 hints = [(f"{st.instruction} (control: {st.element})" if st.element else st.instruction)
                          + (f" [done when: {st.done_when}]" if st.done_when else "")
                          for st in bound.guide_script()]
-                if not self._ensure_screen(bound):
-                    last_attempt = AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
-                else:
-                    last_attempt = self._dynamic_guide(bound, hints=hints)
+                resume = ([f"The guidance was ended too early: the screen check says the goal is not reached yet "
+                           f"({previous_failure[:300]}). Continue from the current page, keep what is done."]
+                          if attempt > 1 and previous_failure else None)
+                # No "show the expected screen first" wait here: the planner guides from whatever page is open
+                # (live 2026-11-08: on the platform, a docs question waited 40 checks for the docs site).
+                if bound.expected_screen and not resume:
+                    hints = [f"The task normally starts on: {bound.expected_screen}. If another page is open, "
+                             "first guide the person there (a link or menu on the current page)."] + hints
+                if resume:
+                    self._trace("goal not visible yet: guiding on")
+                last_attempt = self._dynamic_guide(bound, hints=hints, history=resume)
                 if last_attempt is None and self.autonomy == 0:
                     last_attempt = AttemptResult(None, "completed", DeclaredResult(
                         outcome="unclear", summary="Guided from the page without takeover; outcome to verify."))
@@ -458,6 +529,8 @@ class Intervention:
             failed = [k for k, v in verify.checks.items() if not v] or ["verification unavailable"]
             previous_failure = f"checks not satisfied: {', '.join(failed)}. Observed: {verify.observed}"
             self._set_state(State.running, f"Not verified after attempt {attempt}.")
+            if plan_first_guide and not any(v is False for v in verify.checks.values()):
+                break  # nothing observed as missing (check unavailable): guiding on would be blind
 
         self._snapshot("after", "Screen at escalation")
         if self.declared.blocker:
@@ -665,8 +738,13 @@ class Intervention:
         if max_steps is None:  # a wizard + its result page needs more than 14 steps (procedure says up to 40)
             max_steps = max(14, min(40, int(getattr(bound.procedure, "max_steps_per_attempt", 14) or 14)))
         context = bound.guide_instructions
+        notes: list[dict] = []
         if (bound.request.software or "").lower() in ("hcompany", "h-company"):
             context += "\n\n" + _platform_knowledge("hcompany")
+            # Site notes, plus the notes of this procedure (e.g. the newcomer tour); other procedures' notes are not.
+            notes = [n for n in _page_notes("hcompany") if n.get("procedure") in (None, bound.procedure.id)]
+            max_steps += len(notes)
+        notes_shown: set[int] = self.__dict__.setdefault("_notes_shown", set())  # across resumed attempts
         public_queries = {
             "h-company": ("H Company official documentation sessions review profiles skills usage", {"hub.hcompany.ai"}),
             "cognition": ("Devin official documentation session review playbooks knowledge", {
@@ -751,6 +829,32 @@ class Intervention:
                                                       kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                                                         blocker=message))
+            # Planned explanations of this page (wizard step, Agent View...), once each, before the next action.
+            # Only on pages reached during the guidance, so a question asked elsewhere does not start a tour.
+            # Site notes only on pages reached during the guidance (no tour for an unrelated question); notes that
+            # belong to this procedure (the tour itself) start at once.
+            note = _next_page_note([n if (history or n.get("procedure")) else {} for n in notes], notes_shown, info, items)
+            own = [i for i, n in enumerate(notes) if n.get("procedure") == bound.procedure.id]
+            if note is None and getattr(bound.procedure, "notes_only", False) and own and set(own) <= notes_shown:
+                # A short tour: once its notes are said, it is over (no extra planner steps).
+                return AttemptResult(None, "completed", DeclaredResult(
+                    outcome="done", summary="Tour given.", steps_taken=history))
+            if note is not None:
+                idx, at = note
+                notes_shown.add(idx)
+                n_ = notes[idx]
+                # Spoken and written: the title and one short line; the full explanation goes to the history.
+                say = (n_.get("say") or n_["why"])[:160]
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=n_["text"][:140], why=say,
+                                  prepared_speech=[n_["text"][:140]],  # only the title is said aloud
+                                  where=at.name, pointer=at.center, box=at.box, box_exact=True, kind="info",
+                                  keep_clear=_container_of(at, getattr(info, "elements", None), sw, sh))
+                self._trace(f"page note: {n_['text'][:60]}")
+                reply = self._on_guidance(gs)
+                if reply is None:
+                    return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                history.append(f"Explained to the person (planned page note, do not repeat it): {n_['text']}. {n_['why']}")
+                continue
             cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" + _field_state(e)
                      for e in items]
             parts = urlsplit(info.url)
@@ -865,7 +969,7 @@ class Intervention:
             corrections = []
             shown_on.add(step_key)
             if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
-                instruction = f"{instruction} — type \"{plan['text']}\""
+                instruction = f"{instruction} — for example \"{plan['text']}\""
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:320],
                               where=target.name if target else "", pointer=target.center if target else None,
                               box=target.box if target else None, box_exact=target is not None, kind=kind,
@@ -951,7 +1055,7 @@ class Intervention:
                 return True
             if not shown:
                 gs = GuidanceStep(index=len(self.guidance) + 1, kind="wait", pointer=None,
-                                  instruction=f"Bring {bound.request.software} (CRM pipeline) to the front",
+                                  instruction=f"Show {expected[:70]}" if expected else "Bring the software to the front",
                                   why=f"I see: {visible[:80]}")
                 self.guidance.append(gs)
                 self._set_state(State.awaiting_user, "Show the software first.")

@@ -172,10 +172,45 @@ def _is_stop_utterance(text: str) -> bool:
     return normalized in {"stop", "stop task", "stop the task", "arrete", "arrete la tache"}
 
 
+# Spoken mode switches, so nobody has to open the desktop app mid-demo. Short commands only: a sentence that
+# also asks for a task ("create an API key for me") goes to the router.
+_TO_AGENT = re.compile(r"^\W*(?:(?:ok|okay|hey|hey companion|companion|alright)[ ,]+)?(?:please[ ,]+)?(?:you )?"
+                       r"(?:do it(?: for me)?|take over|take the wheel|go ahead|you do it|do it yourself|switch to "
+                       r"(?:agent|auto|do it) mode|fais[- ]le(?: pour moi)?|fais[- ]le toi[- ]même|prends la main|"
+                       r"occupe[- ]t'en|à toi|a toi|passe en mode (?:agent|auto))(?: please| s'il te plaît| stp)?\W*$", re.I)
+_TO_USER = re.compile(r"^\W*(?:(?:ok|okay|hey|companion|alright|non|no)[ ,]+)?(?:let me do it|i'?ll do it(?: myself)?|"
+                      r"i do it|guide me|show me instead|just show me|switch to guide mode|je le fais(?: moi[- ]même)?|"
+                      r"laisse[- ]moi faire|montre[- ]moi plutôt|guide[- ]moi|passe en mode guide)\W*$", re.I)
+
+
+def _mode_command(text: str) -> int | None:
+    """2 = the agent acts, 1 = the person acts with guidance (and help if stuck), None = not a mode command."""
+    t = (text or "").strip()
+    if len(t.split()) > 8:
+        return None
+    if _TO_AGENT.search(t):
+        return 2
+    if _TO_USER.search(t):
+        return 1
+    return None
+
+
+def _apply_mode_command(level: int, ov=None) -> None:
+    _set_autonomy(level)
+    msg = "OK, I'm taking over: watch me do it." if level >= 2 else "OK, your turn: I'll show you each step."
+    print(f"  [voice] mode -> autonomy {level}: {msg}", flush=True)
+    _say(msg)
+    if ov is not None:
+        ov.badge(msg)
+
+
 def _consume_talk_control(text: str, ov=None) -> bool:
     """An explicitly armed feedback dictation wins, including a comment consisting of 'stop'."""
     if _FEEDBACK.consume_transcript(text):
         _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
+        return True
+    if (level := _mode_command(text)) is not None:
+        _apply_mode_command(level, ov)
         return True
     if not _is_stop_utterance(text):
         return False
@@ -306,9 +341,36 @@ _STEP_HELP = re.compile(
     r"je fais quoi|on fait quoi|et (là|la|maintenant)|aide|je comprends pas|je suis bloqu|répète|repete)\b", re.I)
 
 
+# An explicit request that the agent act (not "show me how"): only then a spoken request overrides the Magnet.
+_DO_IT = re.compile(r"\b(do it|for me|on my behalf|you do it|do this|fais[- ]le|fais[- ]moi|à ma place|a ma place|"
+                    r"vas[- ]y|occupe[- ]t'en|tu le fais|crée[- ]moi|cree[- ]moi|create (it|one) for me)\b", re.I)
+
+
+# A direct request ("can you build me an API key?", "peux-tu créer...") routed as act is a request to act; a "how"
+# question ("show me how", "comment") is a request to be shown.
+_ASK_TO_ACT = re.compile(r"\b(can you|could you|would you|will you|please|(build|make|create|get|generate|set up|"
+                         r"give) me|peux[- ]tu|tu peux|pourrais[- ]tu|tu pourrais|crée|cree|créer moi|fais|génère|genere)\b", re.I)
+_ASK_TO_SEE = re.compile(r"\b(show me|how (do|to|can|would|should)|walk me|teach me|explain|guide me|montre|comment|"
+                         r"explique|apprends)\b", re.I)
+
+
+def _is_tour(procedure_id: str | None) -> bool:
+    try:
+        return bool(procedure_id) and bool(getattr(ProcedureRegistry().get(procedure_id), "notes_only", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _wants_it_done(text: str, routed_act: bool) -> bool:
+    """Explicit "do it for me" always; otherwise a direct request the router read as act, unless it asks how."""
+    if _DO_IT.search(text):
+        return True
+    return routed_act and bool(_ASK_TO_ACT.search(text)) and not _ASK_TO_SEE.search(text)
+
+
 def _reading_time(*texts: str) -> float:
     """Seconds to say these texts aloud (about 14 characters per second), at least 4 s."""
-    return max(4.0, sum(len(t or "") for t in texts) / 14.0 + 1.0)
+    return max(3.0, sum(len(t or "") for t in texts) / 14.0 + 0.8)
 
 
 def _take_step_question() -> str | None:
@@ -421,10 +483,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_approve: bool = False,
              scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
-             overlay: bool = True, ov=None) -> int:
+             overlay: bool = True, ov=None, autonomy: int | None = None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
     # The Magnet is the authority: 0 = show only, 1 = guide + takeover when stuck, 2 = the agent does it.
-    request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else _MAGNET["level"]
+    # `autonomy` = an explicit spoken "do it for me" for this one request; observe-only still wins.
+    request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else \
+        (autonomy if autonomy is not None else _MAGNET["level"])
     request.mode = Mode.act if request.autonomy >= 2 else Mode.guide
     journal = RunJournal(runs_dir, request, _print_event, simulated=backend.simulated)
     it = Intervention(request, backend, ProcedureRegistry(), journal, runs_dir)
@@ -540,6 +604,28 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
         print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
+_PLAN_QUESTION = re.compile(r"\b(plan|plans|limit|limits|parallel|concurren\w*|at (the same )?once|simultan\w*|"
+                            r"en même temps|parall[eè]le|credits?|crédits?|price|pricing|cost|prix|tarif\w*|upgrade|"
+                            r"how many (agents|sessions))\b", re.I)
+
+
+def _plan_widget():
+    """(control to point at, current plan name) from the H platform sidebar: "Upgrade" and e.g. "Free plan"."""
+    try:
+        from . import a11y
+
+        info = a11y.page()
+    except Exception:  # noqa: BLE001
+        return None
+    if info is None or "hcompany.ai" not in (info.url or ""):
+        return None
+    els = info.elements
+    current = next((e.name.strip() for e in els if e.role == "AXStaticText" and re.fullmatch(r"\w+ plan", e.name.strip(), re.I)), None)
+    target = next((e for e in els if e.role in ("AXButton", "AXLink") and e.name.strip().lower() == "upgrade"), None) \
+        or next((e for e in els if current and e.name.strip() == current), None)
+    return (target, current) if target is not None else None
+
+
 def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
     """Information question: answer from the documentation map (hub pages), aloud and on screen, with the source.
     False when the documentation does not contain it (the caller then looks for it in the software)."""
@@ -563,13 +649,25 @@ def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
         return False
     answer, source = res["answer"].strip(), (res.get("source") or excerpts[0][0]).strip()
     print(f"  [docs] {answer}  (source: {source})")
-    _say(answer)
+    plan = _plan_widget() if _PLAN_QUESTION.search(question + " " + answer) else None
+    if plan is not None:
+        # A limit / plan / price question: also show where the person's own plan is, and how to change it.
+        target, current = plan
+        follow = (f"You are on the {current}. " if current else "") + "Upgrade, here, shows the other plans and their limits."
+        print(f"  [docs] plan shown: {current or 'unknown plan'} -> {target.name}")
+        _say(answer, follow)
+    else:
+        _say(answer)
     if ov is None:
         return True
     from .overlay import Scene
 
     ov.badge(None)
-    ov.show_scene(Scene(text=_short(answer, 110), why=f"Source: {source}"[:120]))
+    if plan is not None:
+        ov.show_scene(Scene(text=_short(answer, 110), why=follow[:140], target=plan[0].center, target_box=plan[0].box))
+        seconds = max(seconds, 14.0)
+    else:
+        ov.show_scene(Scene(text=_short(answer, 110), why=f"Source: {source}"[:120]))
     t0 = time.time()
     try:
         ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
@@ -918,10 +1016,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
             last_request = request
             if not coaching:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
+            do_it = bool(not coaching and request.procedure_id and _wants_it_done(text, request.mode is Mode.act)
+                         and not _is_tour(request.procedure_id))  # a tour is shown, never "done" by the agent
+            if do_it:
+                print("  [voice] explicit \"do it for me\": the agent acts for this request (autonomy 2)")
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                                overlay=not args.no_overlay, ov=ov)
+                                overlay=not args.no_overlay, ov=ov, autonomy=2 if do_it else None)
             except Exception:  # noqa: BLE001 - never die silently between two requests
                 import traceback
 
@@ -1368,6 +1470,16 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
 
     def tick() -> None:
         nonlocal shown_step, shown_key, prompted, guidance_scene_shown
+        if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
+            ptt = _VOICE.get("ptt")
+            try:
+                pending = ptt.transcripts.queue[0]
+            except (AttributeError, IndexError):
+                pending = None
+            if isinstance(pending, str) and (level := _mode_command(pending)) is not None:
+                ptt.transcripts.get_nowait()
+                _apply_mode_command(level, ov)  # "do it" mid-wizard: the agent takes over from this step
+                return
         if (not interrupted["done"] and _new_request_pending() and it.state is State.awaiting_user and it.guidance
                 and (question := _take_step_question())):
             # A question about the current step is not a new task: explain the step again, keep guiding.
@@ -1411,7 +1523,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     # Always explain: the voice says the whole explanation, the paper note keeps its first sentence.
                     why = g.why or ""
                     if not same_step:
-                        _say(g.instruction, why[:300] if not verbose else why)
+                        # Aloud: the step's title only; the line under it stays written (HCS_GUIDE_VERBOSE=1 reads it).
+                        _say(g.instruction, why) if verbose else _say(g.instruction)
                     shown["text"] = g.instruction
                     scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 140), step=g.index,
@@ -1444,7 +1557,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 advance(note=inputs.observation_note(g.kind))
                 return
             if g.kind == "info" and not g.last and g.pointer and shown.get("since") and \
-                    time.time() - shown["since"] >= _reading_time(g.instruction, g.why):
+                    time.time() - shown["since"] >= _reading_time(g.instruction) + len(_short(g.why or "", 140)) / 25:
                 # A tour step ("this panel shows the agent's screen"): nothing to click, move on once it is said.
                 advance(note="Explained this part of the page (nothing to click); moved on after the explanation.")
                 return

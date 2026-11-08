@@ -87,6 +87,52 @@
     </div>
   </section>
 
+  <section class="section" id="example">
+    <p class="eyebrow mono">In action · creating an API key on the H Platform</p>
+    <h2>“Show me how to create an API key.”</h2>
+    <figure class="cutout" id="demo" aria-label="A Mac screen: the H Platform API keys page in Chrome, with H Companion's red pencil overlay. It hears the request, then frames the Create an API key button with the note: 1. Click Create an API key.">
+      <span class="tape tape-l" aria-hidden="true"></span>
+      <span class="tape tape-r" aria-hidden="true"></span>
+      <div class="screen" aria-hidden="true">
+        <div class="stage" id="stage">
+          <div class="mac-bar"><b>Chrome</b><span>File</span><span>Edit</span><span>View</span><span>History</span><span>Bookmarks</span><span>Profiles</span><span>Tab</span><span>Window</span><span>Help</span><em>Sun 8 Nov  11:12</em></div>
+          <div class="chrome">
+            <div class="chrome-tabs"><i class="tl r"></i><i class="tl y"></i><i class="tl g"></i>
+              <div class="chrome-tab"><svg viewBox="838 195 197 220"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg>H Platform<span>×</span></div><span class="chrome-plus">+</span></div>
+            <div class="chrome-bar"><span class="nav">‹ › ↻</span><div class="omni">platform.hcompany.ai/settings/api-keys</div></div>
+          </div>
+          <div class="plat">
+            <aside class="plat-side">
+              <div class="plat-logo"><svg viewBox="838 195 197 220"><rect x="838" y="195" width="54" height="220"/><rect x="838" y="282" width="197" height="45"/><rect x="981" y="195" width="54" height="220"/></svg>H Platform</div>
+              <span>Agents</span><span>Sessions</span>
+              <small>Configure</small>
+              <span class="on">API keys</span><span>Billing</span>
+            </aside>
+            <div class="plat-main">
+              <div class="plat-head">
+                <div><h4>API keys</h4><p>Only a short prefix of each key is shown.</p></div>
+                <span class="plat-btn" id="target">Create an API key</span>
+              </div>
+              <div class="plat-card">
+                <div class="plat-row plat-th"><span>Name</span><span>Key</span><span>Expiry</span><span>Created</span></div>
+                <div class="plat-row"><span>hackathon-mac</span><span class="mono">3f9a••••••••</span><span>Never</span><span>Nov 7, 2026</span></div>
+              </div>
+              <div class="plat-card plat-use">
+                <h5>Use your API key</h5>
+                <dl><dt>Base URL</dt><dd class="mono">https://api.hcompany.ai/v1</dd>
+                  <dt>Authorization header</dt><dd class="mono">Authorization: Bearer &lt;your API key&gt;</dd></dl>
+                <h6>Example request</h6>
+                <pre class="mono">curl https://api.hcompany.ai/v1/models \
+  -H "Authorization: Bearer $H_API_KEY"</pre>
+              </div>
+            </div>
+          </div>
+          <svg class="pencil" id="pencil" viewBox="0 0 1440 900"></svg>
+        </div>
+      </div>
+    </figure>
+  </section>
+
   <section class="section" id="pricing" data-annotate>
     <p class="eyebrow mono">Pricing concept · hackathon demo</p>
     <h2>Pay for <span class="fix"><span data-mark="strike-through">tickets</span><span class="pen above" data-write>fixes</span></span>, not for hope.</h2>
@@ -128,5 +174,6 @@
 <script type="module" src="annotate.js"></script>
 <script type="module" src="margin.js"></script>
 <script type="module" src="billing.js"></script>
+<script type="module" src="companion-demo.js"></script>
 </body>
 </html>

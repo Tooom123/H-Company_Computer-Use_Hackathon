@@ -34,7 +34,11 @@
   kind: proc
   procedure: hcompany_hub_find_documentation
 - text: "Comment créer un skill sur H ?"
-  kind: task
+  kind: proc
+  procedure: hcompany_platform_create_skill
+- text: "How to build a skill?"
+  kind: proc
+  procedure: hcompany_platform_create_skill
 - text: "Comment je configure un webhook ?"
   kind: task
 - text: "Montre-moi comment partager ma dernière session"

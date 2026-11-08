@@ -213,9 +213,10 @@ class Grounder:
                 "done": {"type": "boolean", "description": "true when the goal is visibly reached on this page"},
                 "blocked": {"type": "boolean", "description": "true if the current coaching scope or unavailable evidence prevents continuing; not success"},
                 "instruction": {"type": "string", "description": "one short imperative sentence in English"},
-                "why": {"type": "string", "description": "the explanation read aloud, 1 to 2 sentences (max 260 "
-                        "characters): what this page or control is for and, when the page offers choices or "
-                        "fields, what they mean, what to pick for this goal and why; never just 'to proceed'"},
+                "why": {"type": "string", "description": "the explanation, 1 to 2 sentences: the FIRST sentence "
+                        "is read aloud and must stand alone in under 100 characters (what this page or control is "
+                        "for, or what to pick and why); the optional second adds detail on screen; never just "
+                        "'to proceed'"},
                 "kind": {"type": "string", "enum": ["click", "type", "info"]},
                 "target": {"type": "integer", "description": "1-based index of the control to act on; 0 if none"},
                 "text": {"type": "string", "description": "for kind=type: what to type"},
@@ -253,10 +254,21 @@ class Grounder:
                   "(what the person sees, how to follow the agent, how to steer, pause or stop it), with the "
                   "explanation in why; never repeat a tour step already in the history; then set done=true with a "
                   "one-sentence summary. "
+                  "The person chooses: values in the procedure are suggestions. Never ask to change or retype a field "
+                  "that already has a value; accept whatever the person typed or picked (only a format rule shown on "
+                  "the page can require a fix). For a dropdown or option list that matters, first point at it to open "
+                  "it, then explain the options now listed and let the person pick (kind=click on the list; any "
+                  "option is fine). "
+                  "Never give up because the person moved: if the current page is another page of the same site "
+                  "(they clicked elsewhere, closed a dialog, opened another section), say briefly where they are and "
+                  "guide them back to the task by the shortest path (the sidebar entry, then the button that reopens "
+                  "it), pointing at that control; resume where the task was, keeping what is already done. Being "
+                  "on another page is never a reason for blocked=true or done=true. Set done only when the goal's "
+                  "end state is visible on this page. "
                   "Fields show their content (value=\"...\") or EMPTY, and REQUIRED when mandatory. Before Next, "
                   "Continue, Save, Create or Start, every EMPTY REQUIRED field on the page must be filled first, one "
-                  "step each (kind=type): say exactly what to type, using the procedure's values when it gives "
-                  "them (for example the name), and mention the format rule shown under the field. "
+                  "step each (kind=type): say what it is for, offer the procedure's value as an example (the person "
+                  "may type anything else), and mention the format rule shown under the field. "
                   "If the goal is reached, set done=true with a summary. If this page is unrelated and nothing "
                   "listed leads to the goal, kind=info with an instruction telling the person where to go.")
         body = {

@@ -237,3 +237,133 @@ def test_step_limit_follows_the_procedure(guide):
     guide.it._wait_page_change = lambda *a: None
     guide.it._dynamic_guide(guide.bound)
     assert len(seen) > 14  # the wizard + result page tour no longer cut at 14 steps
+
+
+@pytest.mark.parametrize("names,step", [
+    (["1 Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"], "Details"),
+    (["Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"], "Config"),
+    (["Details", "Config", "Instructions", "Skills", "Subagents", "6 Session"], "Session"),
+    (["Agents", "Sessions"], None)])
+def test_wizard_step_from_the_stepper(names, step):
+    """Labels read on the live Build an agent wizard, 2026-11-08: done steps lose their number."""
+    from hcs_agent.runner import _wizard_step
+    assert _wizard_step([ctl("AXRadioButton", n) for n in names]) == step
+
+
+def test_planned_page_notes_explain_each_wizard_page_then_the_planner_acts(guide):
+    stepper = [ctl("AXRadioButton", n) for n in ["Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"]]
+    guide.page.items = stepper + [ctl("AXPopUpButton", "Web environment (default)", 600),
+                                  ctl("AXPopUpButton", "Platform default (holo4-27b)", 700),
+                                  ctl("AXPopUpButton", "Free-form text", 800), ctl("AXButton", "Next", 1040)]
+    plans = iter([{"done": False, "instruction": "Click 'Next'.", "kind": "click", "target": len(guide.page.items) - 1},
+                  {"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: guide.calls.append(a) or next(plans)
+    guide.it._dynamic_guide(guide.bound, history=["Instruction shown: Click 'Next'. ..."])
+    kinds = [(s.kind, s.where) for s in guide.shown]
+    assert kinds[:3] == [("info", "Web environment (default)"), ("info", "Platform default (holo4-27b)"),
+                         ("info", "Free-form text")]
+    assert kinds[3] == ("click", "Next")
+    assert any("planned page note" in h for h in guide.calls[0][4])
+
+
+def test_no_page_tour_before_the_guidance_reached_the_page(guide):
+    """A question asked while a session page is open must not start the Agent View tour."""
+    guide.page.items = [ctl("AXButton", "Agent action · Step 1 of 1", 700), ctl("AXButton", "Billing", 100)]
+    guide.backend.plan_step = lambda *a: {"done": True, "summary": "ok"}
+    info = SimpleNamespace(is_front=True, title="H", url="https://platform.hcompany.ai/agents/sessions/x", elements=None)
+    guide.backend.page_catalogue = lambda _: (info, list(guide.page.items))
+    guide.it._dynamic_guide(guide.bound)
+    assert all(s.kind != "info" or s.last for s in guide.shown)
+
+
+def test_guidance_resumes_when_the_screen_says_the_goal_is_not_reached(tmp_path, monkeypatch):
+    """User feedback 2026-11-08: "it stops too early, even if I change page it should notice and bring me back"."""
+    from hcs_agent.backend import AttemptResult, VerifyResult
+    from hcs_agent.contract import ApproveCommand, CaseStatus, DeclaredResult, InterventionRequest, Mode
+
+    req = InterventionRequest(software="hcompany", goal="Build an agent and run it", mode=Mode.guide,
+                              procedure_id="hcompany_platform_run_cloud_session")
+    it = Intervention(req, MockBackend(), ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    runs, checks = [], iter([{"session_open": False, "cloud_environment": True},
+                             {"session_open": True, "cloud_environment": True}])
+    monkeypatch.setattr(it, "_ensure_screen", lambda b: True)
+    monkeypatch.setattr(it, "_dynamic_guide", lambda b, hints=None, history=None, **k: runs.append(history) or
+                        AttemptResult(None, "completed", DeclaredResult(outcome="done")))
+    monkeypatch.setattr(it, "_fast_verify", lambda b: VerifyResult(None, "completed", checks=next(checks),
+                                                                   observed="Agents page"))
+    it.start(); it.approve(ApproveCommand()); it.wait(5)
+    assert len(runs) == 2 and runs[0] is None and "not reached yet" in runs[1][0]
+    assert it.report.status is CaseStatus.resolved
+
+
+def test_docs_question_from_the_platform_is_guided_not_waiting_for_the_docs_site(tmp_path, monkeypatch):
+    """Live 2026-11-08: "How to build a skill?" on the platform waited 40 screen checks for hub.hcompany.ai,
+    showing "Bring hcompany (CRM pipeline) to the front"."""
+    from hcs_agent.contract import ApproveCommand, InterventionRequest, Mode
+    from hcs_agent.backend import AttemptResult
+    from hcs_agent.contract import DeclaredResult
+
+    req = InterventionRequest(software="hcompany", goal="How to build a skill?", mode=Mode.guide,
+                              procedure_id="hcompany_hub_find_documentation",
+                              parameters={"topic": "build a skill", "page_title": "Skills"})
+    it = Intervention(req, MockBackend(), ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    monkeypatch.setattr(it, "_ensure_screen", lambda b: pytest.fail("must not wait for the expected screen"))
+    seen = {}
+    monkeypatch.setattr(it, "_dynamic_guide", lambda b, hints=None, history=None, **k: seen.setdefault("hints", hints)
+                        and AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary="x", blocker="x")))
+    it.start(); it.approve(ApproveCommand()); it.wait(5)
+    assert "hub.hcompany.ai" in seen["hints"][0] and "first guide the person there" in seen["hints"][0]
+
+
+def test_newcomer_tour_points_at_each_sidebar_section_not_the_breadcrumb():
+    """Sidebar and breadcrumb labels read on the live platform, 2026-11-08 ("Agents"/"Sessions" exist in both)."""
+    from hcs_agent.runner import _page_notes, _next_page_note
+    sidebar = [ctl("AXButton", n, 100) for n in ["Home", "Projects", "Agents", "Sessions", "Skills", "Environments",
+                                                 "Browser Profiles", "Vaults", "Schedules", "Organisation",
+                                                 "API keys", "Webhooks", "Upgrade"]]
+    crumbs = [ctl("AXButton", "Agents", 468), ctl("AXButton", "Sessions", 575)]
+    items = crumbs + sidebar + [ctl("AXButton", "Help and feedback", 1464)]
+    notes = [n for n in _page_notes("hcompany") if n.get("procedure") == "hcompany_platform_tour"]
+    info = SimpleNamespace(url="https://platform.hcompany.ai/", elements=items)
+    shown, order = set(), []
+    while (r := _next_page_note(notes, shown, info, items)):
+        shown.add(r[0]); order.append((r[1].name, r[1].center[0]))
+    assert [n for n, _ in order] == ["Agents", "Sessions", "Skills"]  # 20-second tour (demo feedback)
+    assert dict(order)["Agents"] == 100 and dict(order)["Sessions"] == 100  # sidebar, not breadcrumb
+
+
+def test_planned_notes_are_spoken_in_one_short_line(guide):
+    """User feedback 2026-11-08: the agent + cloud session flow was right but far too long to listen to."""
+    from hcs_agent.runner import _page_notes
+    notes = _page_notes("hcompany")
+    assert notes and all(n.get("say") and len(n["say"]) <= 90 for n in notes)
+    stepper = [ctl("AXRadioButton", n) for n in ["Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"]]
+    guide.page.items = stepper + [ctl("AXPopUpButton", "Web environment (default)", 600), ctl("AXButton", "Next", 1040)]
+    plans = iter([{"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: next(plans)
+    guide.it._dynamic_guide(guide.bound, history=["Instruction shown: Click 'Next'. ..."])
+    step = guide.shown[0]
+    assert step.why == next(n["say"] for n in notes if n["text"] == step.instruction)
+    assert step.prepared_speech == [step.instruction]  # the voice says the title; the line under it is written
+
+
+def test_tour_ends_after_its_three_notes_without_the_planner(tmp_path, monkeypatch):
+    """Demo feedback 2026-11-08: the tour must fit in about 20 seconds and then stop."""
+    from hcs_agent.contract import InterventionRequest, Mode
+
+    req = InterventionRequest(software="hcompany", goal="I'm new here, quick tour?", mode=Mode.guide,
+                              procedure_id="hcompany_platform_tour")
+    backend = MockBackend()
+    it = Intervention(req, backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    items = [ctl("AXButton", "Agents", 468), ctl("AXButton", "Sessions", 575)] + \
+            [ctl("AXButton", n, 100) for n in ["Home", "Agents", "Sessions", "Skills", "Environments"]]
+    info = SimpleNamespace(is_front=True, title="H Platform", url="https://platform.hcompany.ai/", elements=items)
+    backend.page_catalogue = lambda _: (info, items)
+    backend.plan_step = lambda *a: pytest.fail("the tour ends without the planner")
+    shown = []
+    monkeypatch.setattr(it, "_on_guidance", lambda step: shown.append(step) or (True, None))
+    monkeypatch.setattr("hcs_agent.overlay.screen_size_points", lambda: (1512, 982))
+    result = it._dynamic_guide(bound)
+    assert [s.where for s in shown] == ["Agents", "Sessions", "Skills"] and all(s.pointer[0] == 100 for s in shown)
+    assert result.declared.outcome == "done"

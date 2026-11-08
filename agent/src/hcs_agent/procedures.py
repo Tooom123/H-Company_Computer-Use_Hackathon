@@ -141,6 +141,8 @@ class Procedure(BaseModel):
     forbidden_actions: list[str]
     agent_instructions: str
     guide_steps: list[GuideStepSpec] = Field(default_factory=list)
+    notes_only: bool = Field(default=False, description="Planned page notes only (a short tour): when they are all "
+                                                       "shown, the guidance ends without the planner.")
     dynamic_tail: bool = Field(default=False, description="After the scripted steps, keep guiding from the page's "
                                                           "own controls (planner) until the objective is reached — "
                                                           "for flows whose later screens are not scripted (wizards).")

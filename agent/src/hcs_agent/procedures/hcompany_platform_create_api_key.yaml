@@ -1,5 +1,6 @@
-# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
-# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+# H Company platform — guided procedure. Labels read on the live platform 2026-11-08: sidebar Configure > API keys
+# (/settings/api-keys), button "Create an API key", dialog: Name *, Expiry, Create / Cancel (opened and
+# cancelled, nothing created). The one-time value screen after Create was not observed.
 id: hcompany_platform_create_api_key
 software: hcompany
 software_version: "2026-11"
@@ -14,7 +15,7 @@ parameters:
   - name: key_name
     description: Name for the new key, e.g. "hackathon-mac"
     required: false
-    default: "hackathon-mac"
+    default: "demo-video-key"
 preconditions:
   - The user is logged in on platform.hcompany.ai in the browser on the main display.
   - The user understands the key is shown once and must be stored in a password manager or .env.
@@ -36,24 +37,26 @@ forbidden_actions:
 agent_instructions: |
   You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
   Procedure:
-  1. Open the API keys section (left navigation, or the account menu at the top right, then API keys).
-  2. Click the button to create a key, type the name "{key_name}", confirm.
+  1. Open API keys in the left sidebar (under Configure). The page lists existing keys (only a short prefix of
+     each value is shown) and, below, how to use a key: Base URL, Authorization header, example request.
+  2. Click "Create an API key". A dialog opens: Name (required) and Expiry. Type the name "{key_name}" (or the
+     person's choice; a name already in the list is confusing), keep or explain the expiry, click Create.
   3. The key value is displayed once: tell the user to click Copy and paste it into their .env file. Never
      read the value, never write it anywhere, never describe its characters.
   4. Confirm the new key appears in the list with its name.
   If creation requires billing or a verified account, stop and report it as blocked with the exact message.
 guide_steps:
   - instruction: "Open API keys in the left navigation"
-    element: "the API keys entry in the left navigation menu of the platform"
+    element: "the API keys entry in the left sidebar, under Configure"
     why: "Keys are what your code uses to authenticate; each project should have its own."
     done_when: "an API keys page is displayed with a list (possibly empty) and a create button"
-  - instruction: "Click Create API key"
-    element: "the Create API key (or New key) button on the API keys page"
+  - instruction: "Click Create an API key"
+    element: "the Create an API key button at the top right of the API keys page"
     why: "A dialog opens to name the key."
     done_when: "a dialog or form to name a new API key is open"
   - instruction: "Type \"{key_name}\" as the name, then confirm"
     kind: type
-    element: "the name field in the create API key dialog"
+    element: "the Name field of the Create an API key dialog"
     why: "A clear name tells you later which machine or project uses it."
     done_when: "a new key named {key_name} is shown, with its value displayed once or a Copy button"
   - instruction: "Click Copy and paste the key in your .env — I look away"

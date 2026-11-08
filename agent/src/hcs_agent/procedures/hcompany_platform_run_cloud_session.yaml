@@ -27,10 +27,10 @@ preconditions:
 objective: >-
   Run an agent in a cloud browser session on platform.hcompany.ai: go through the Build an agent wizard
   (Details, Config with the web / cloud browser environment, Instructions, Skills, Subagents) and, at its last
-  step, Session, start a session with the task "{task}"; the session page or Agent View must then be displayed.
+  step, Session, start a session with a task of the person's choice (e.g. "{task}"); the session page or Agent View must then be displayed.
 
 planned_changes:
-  - One agent "{agent_name}" is created and one cloud session is started with the task "{task}".
+  - One agent (named by the person) is created and one cloud session is started with the person's task.
 
 allowed_actions:
   - Navigate to Agents, open the Build an agent wizard, fill its steps, start the session at the Session step.
@@ -48,10 +48,16 @@ agent_instructions: |
   "Build an agent" is a wizard with six steps shown at the top of the dialog: 1 Details, 2 Config, 3 Instructions,
   4 Skills, 5 Subagents, 6 Session. Procedure:
   1. Open Agents (left navigation) and click the button that opens the Build an agent wizard.
-  2. Details: name "{agent_name}", one-line description. Next.
-  3. Config: environment = web / cloud browser (never desktop, never your browser), default model. Next.
-  4. Instructions, Skills, Subagents: keep the defaults. Next each time.
-  5. Session: enter the task "{task}" and start the session. The session page (or Agent View) opens: that is the goal.
+  The person decides: names, texts and options are theirs. Values below are suggestions, never requirements:
+  if a field already holds something the person typed, keep it and move on. Teach the choices: for each setting
+  that matters (environment, model, answer format, instructions, skills, subagents), point at it, open its list
+  when it has one, explain the options shown, recommend one for this task and let the person pick any of them.
+  2. Details: a name of the person's choice (suggestion "{agent_name}"), a one-line description. Next.
+  3. Config: the environment must be a web / cloud browser one for a cloud session (explain the others, but not
+     desktop or your browser here); show the model list and let the person choose. Next.
+  4. Instructions, Skills, Subagents: explain what each adds, show what can be set, let the person decide. Next.
+  5. Session: a task prompt of the person's choice (suggestion "{task}"), then start the session. The session page
+     (or Agent View) opens: tour it, that is the goal.
   If the wizard asks for credits or a plan upgrade, stop and report it as blocked with the exact message.
   Platform reference knowledge (agents, wizard steps, sessions, Agent View) is added automatically.
 
@@ -64,11 +70,11 @@ guide_steps:
     element: "the Build an agent (or Create agent) button on the agents page"
     why: "A six-step wizard opens; the last step, Session, runs the agent in a cloud browser."
     done_when: "the Build an agent wizard is open on its Details step, with a name field"
-  - instruction: "Type \"{agent_name}\" as the name"
+  - instruction: "Type a name for the agent (for example \"{agent_name}\")"
     kind: type
     element: "the name field of the Build an agent wizard, Details step"
     why: "This is the id you pass when running sessions from code later."
-    done_when: "the name field of the wizard shows {agent_name}"
+    done_when: "the name field of the wizard holds a name"
 dynamic_tail: true
 
 expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
@@ -83,7 +89,7 @@ recovery_steps:
 
 postcondition:
   description: >-
-    A session of "{agent_name}" is running or finished in a cloud browser: its session page or Agent View is displayed.
+    A session of the new agent is running or finished in a cloud browser: its session page or Agent View is displayed.
   checks:
     - key: session_open
       prompt: A session page or Agent View is displayed (a status such as running / completed, and a timeline or live view), not the Build an agent wizard.

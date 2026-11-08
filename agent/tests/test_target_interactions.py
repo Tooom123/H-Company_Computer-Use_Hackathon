@@ -462,3 +462,38 @@ def test_match_keeps_the_field_content_for_the_tracker():
     field = a11y.Candidate("AXTextField", "Name *", (454, 528, 604, 20), value="demo-web-reader", required=True)
     best = a11y.match("Name *", [a11y.Candidate("AXStaticText", "Name", (445, 495, 40, 17)), field])[0]
     assert best.name == "Name *" and best.value == "demo-web-reader" and best.required
+
+
+@pytest.mark.parametrize("text,do_it", [("Create an API key for me and show me", True),
+                                        ("Fais-le à ma place : crée une clé API", True),
+                                        ("Show me how to create an API key", False),
+                                        ("Word. upload them with this session.", False)])
+def test_only_an_explicit_do_it_lets_a_spoken_request_act(text, do_it):
+    """A mis-transcribed sentence routed as 'act' must never move the mouse; an explicit 'do it for me' may."""
+    assert bool(cli._DO_IT.search(text)) is do_it
+
+
+@pytest.mark.parametrize("q,plan", [("How many agents can I run in parallel?", True),
+                                    ("Combien de sessions je peux lancer en même temps ?", True),
+                                    ("How much does a session cost?", True), ("What is a skill?", False)])
+def test_limit_and_price_questions_point_at_the_plan(q, plan):
+    assert bool(cli._PLAN_QUESTION.search(q)) is plan
+
+
+@pytest.mark.parametrize("text,routed_act,acts", [
+    ("Yeah can you build me a napper key?", True, True),   # live 2026-11-08: "an API key" heard as "a napper key"
+    ("Can you create an API key?", True, True),
+    ("Peux-tu créer une clé API ?", True, True),
+    ("Show me how to create an API key", True, False),
+    ("Comment je crée une clé API ?", True, False),
+    ("Can you create an API key?", False, False),           # router said guide: the Magnet decides
+    ("Create an API key for me", False, True),              # explicit "for me" always acts
+    ("Word. upload them with this session.", True, False),  # mis-transcription never acts
+])
+def test_direct_requests_act_how_questions_are_shown(text, routed_act, acts):
+    assert cli._wants_it_done(text, routed_act) is acts
+
+
+def test_a_tour_is_never_handed_to_the_acting_agent():
+    """'Fais-moi faire le tour' contains 'fais-moi', but a tour has nothing to do: it is shown."""
+    assert cli._is_tour("hcompany_platform_tour") and not cli._is_tour("hcompany_platform_create_api_key")

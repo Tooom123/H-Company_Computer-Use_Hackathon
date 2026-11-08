@@ -1,0 +1,218 @@
+# Planned explanations for pages of platform.hcompany.ai, shown by the guide for ANY task on the site, once each,
+# as soon as their page is on screen and before the next action. Each note points at a real control (labels read
+# from the live platform on 2026-11-08) and moves on by itself once said.
+#   step: current step of the Build an agent wizard (the first stepper item still numbered, e.g. "2 Config")
+#   url: substring of the page URL
+#   at: labels to point at, first one found wins (exact, then prefix, then contained; controls before text)
+#   say: the one short line read aloud (the longer why stays for the planner and the history)
+# Facts come from the official docs (data/hcompany-platform-knowledge.md).
+
+- step: Details
+  at: ["Build an agent"]
+  text: "Six steps build your agent"
+  say: "Six steps: name it, pick where it acts and its model, then give it a task."
+  why: >-
+    An agent is a saved configuration: Details names it, Config picks where it acts and which model drives it,
+    Instructions, Skills and Subagents shape how it works, and Session gives it its first task.
+- step: Details
+  at: ["Description *", "Description"]
+  text: "The description says what the agent can do"
+  say: "Say what it can do: other agents read this to delegate to it."
+  why: >-
+    Write it as a capability, for example "Reads a web page and reports its main heading": a manager agent reads
+    this line to decide whether to hand a task to this one.
+
+- step: Config
+  at: ["Web environment", "Environment"]
+  text: "The environment is where the agent acts"
+  say: "The web environment is a browser H runs in the cloud for you."
+  why: >-
+    The web environment is a cloud browser H starts for each session, nothing runs on your machine. The other
+    choices drive your own Chrome with your logins, or your desktop. Keep the web one for a cloud session.
+- step: Config
+  at: ["Platform default", "holo4", "Model"]
+  text: "The model is the brain of the agent"
+  say: "The model sees the screen and decides each action. The default is fine."
+  why: >-
+    Holo models see the screen and decide each action. The platform default is holo4-27b; holo4-35b-a3b answers
+    faster. Open the list to compare them, or follow the link to learn about each model.
+- step: Config
+  at: ["Free-form text", "Answer format"]
+  text: "The answer format shapes the final answer"
+  say: "Free text by default; a JSON schema gives structured data."
+  why: >-
+    Free-form text returns a sentence or a paragraph. A JSON schema makes the agent return structured data your
+    code can read directly.
+
+- step: Instructions
+  at: ["Instructions"]
+  text: "Instructions steer the agent"
+  say: "Extra rules for the agent. Optional for a first try."
+  why: >-
+    This text is added to the agent's system prompt: rules and output format, for example "Return one line: the
+    heading and the URL". Optional: leave it empty for a first try.
+
+- step: Skills
+  at: ["4 Skills", "Skills"]
+  text: "Skills are know-how loaded on demand"
+  say: "Short guides the agent reads only when a task needs them."
+  why: >-
+    A skill is a short Markdown guide the agent reads only when a task matches it. H ships ready-made computer-use
+    skills; a simple reading task needs none.
+
+- step: Subagents
+  at: ["5 Subagents", "Subagents"]
+  text: "Subagents let this agent delegate"
+  say: "Add agents here and this one splits the work between them, in parallel."
+  why: >-
+    Listing other agents here makes this one a manager: it splits the task across them, running in parallel,
+    then merges one answer. You still start one session and get one result, for example one subagent per city
+    when comparing stays in three cities.
+- step: Subagents
+  at: ["5 Subagents", "Subagents"]
+  text: "Each subagent works in its own cloud session"
+  say: "Each one runs in its own cloud browser. Leave it empty for now."
+  why: >-
+    Every child is an isolated session with its own browser; the manager can start more to fill a gap or check a
+    finding, and picks agents by the description written in Details. Children count toward your limit of
+    sessions at once, so leave this empty for a simple task.
+
+- step: Session
+  at: ["Prompt *", "Prompt"]
+  text: "The prompt is the agent's task"
+  say: "Write the task as an instruction, then start the session."
+  why: >-
+    Write it as an instruction, for example "Open example.com and read its main heading". Start session creates
+    the agent and launches it in a cloud browser right away.
+
+- url: /sessions/
+  at: ["Running", "Awaiting input", "Pending", "Queued", "Completed", "Idle"]
+  text: "Your agent now runs in the cloud"
+  say: "It runs on H's servers, not on your Mac. You can close this tab."
+  why: >-
+    H started a browser for this session on its own servers: nothing runs on your Mac, you can close this tab and
+    find the session again under Sessions. It uses credits while it runs.
+- url: /sessions/
+  at: ["Running", "Awaiting input", "Pending", "Queued", "Completed", "Idle"]
+  text: "A session goes through states"
+  say: "Queued, then running, then done. Free plan: three at once."
+  why: >-
+    Queued when all your slots are busy (three at once on the Free plan), pending while its browser starts, then
+    running. Awaiting input means it waits for your message; completed, failed or interrupted means it is over.
+- url: /sessions/
+  at: ["Message agent", "Send message"]
+  text: "The cloud browser starts fresh each time"
+  say: "It starts without logins: a browser profile signs it in."
+  why: >-
+    It has no cookies or logins of its own. A browser profile makes a session start already signed in to a site,
+    and a vault lets the agent fill a login safely when it meets one.
+- url: /sessions/
+  at: ["Agent action", "Idle", "Answer"]
+  text: "Every step the agent took is listed here"
+  say: "Every step the agent took, one by one. Click one to see its screen."
+  why: >-
+    This is Agent View: each entry is one step, what the agent saw and what it did. Click one to see the screen
+    at that moment.
+- url: /sessions/
+  at: ["AGENT ANSWER", "Copy answer"]
+  text: "Here is the agent's final answer"
+  say: "The final answer shows up here."
+  why: >-
+    When the agent finishes, its answer appears here; Copy answer puts it in your clipboard. The session's status
+    tells whether it is still running, waiting for input, or done.
+- url: /sessions/
+  at: ["Message agent", "Send message"]
+  text: "Talk to the agent while it works"
+  say: "Send a message to redirect the agent while it works."
+  why: >-
+    A message adds context or redirects the agent; it reads it at its next step. It also wakes a session waiting
+    for input. A message to a finished session restarts it and is billed again.
+- url: /sessions/
+  at: ["Resume trajectory", "Previous step", "Next step"]
+  text: "Replay what the agent did"
+  say: "Replay the run, step by step."
+  why: >-
+    These controls step through the recorded trajectory, one action at a time, so you can review the session
+    after the fact.
+
+# Skills page and the New skill dialog (labels read live 2026-11-08; rules from hub skills/create).
+#   has: labels that must all be on screen
+- url: /agents/skills
+  at: ["Name"]
+  text: "Ready-made skills and your own"
+  say: "h/ skills come from H; Org ones are yours."
+  why: >-
+    Skills starting with h/ are public ones H ships, like h/visual-browser or h/search. Skills your organization
+    builds show the scope Org and are private to it.
+- has: ["Create skill", "Body *"]
+  at: ["Name *"]
+  text: "The name is the skill's id"
+  say: "Lowercase and hyphens. It can't be changed later."
+  why: >-
+    Lowercase letters, digits and hyphens, like web-scraper. The h/ prefix is reserved for H, and the name
+    cannot be changed after creation.
+- has: ["Create skill", "Body *"]
+  at: ["Description *"]
+  text: "The description says when to use it"
+  say: "Say when to use it: the agent decides from this line."
+  why: >-
+    Write the situation, not the content: "Use when the task asks for data in an HTML table." The agent reads
+    this line to decide whether to load the skill.
+- has: ["Create skill", "Body *"]
+  at: ["Body *"]
+  text: "The body is the know-how itself"
+  say: "The instructions themselves, in Markdown. Keep it short."
+  why: >-
+    Markdown instructions loaded into the agent's context when the skill runs: steps, rules, output format.
+    Keep it short and concrete.
+
+# API keys page and the Create an API key dialog (labels read live 2026-11-08).
+- url: /settings/api-keys
+  at: ["Create an API key"]
+  text: "API keys let your code use H"
+  say: "Your code sends this key with every request."
+  why: >-
+    The SDK and the holo CLI send a key with every request, as a bearer token. The list only shows a short prefix
+    of each key: the full value is shown once, when it is created.
+- url: /settings/api-keys
+  at: ["Copy Header", "Authorization: Bearer"]
+  text: "How a key is used"
+  say: "Send it as a bearer token in the Authorization header."
+  why: >-
+    Every request carries the header "Authorization: Bearer" followed by your key, sent to the Base URL of your
+    region. A 401 means the header is missing; a 403 means the key was refused or has expired.
+- has: ["Create", "Expiry"]
+  at: ["Expiry"]
+  text: "Pick how long the key lives"
+  say: "An expiry limits the damage if it leaks."
+  why: >-
+    A key that expires limits the damage if it leaks. Store the value in a password manager or a .env file
+    that is never committed, and never paste it in a chat.
+
+# Newcomer tour (procedure hcompany_platform_tour): three sidebar sections, about 20 seconds in all, then the
+# tour ends (notes_only). Labels read live 2026-11-08; "prefer: left" = the sidebar entry, not the breadcrumb.
+- procedure: hcompany_platform_tour
+  has: ["Agents", "Sessions"]
+  at: ["Agents"]
+  prefer: left
+  text: "Here are your agents"
+  say: "Saved recipes: a model, instructions and skills."
+  why: >-
+    An agent is a saved recipe: where it acts, which Holo model drives it, its instructions and skills. Command B
+    builds a new one.
+- procedure: hcompany_platform_tour
+  has: ["Agents", "Sessions"]
+  at: ["Sessions"]
+  prefer: left
+  text: "Here, every run of an agent"
+  say: "Watch a session live, or replay it step by step."
+  why: >-
+    A session is one agent working on one task in a cloud browser; Agent View shows it live or replays it.
+- procedure: hcompany_platform_tour
+  has: ["Agents", "Sessions"]
+  at: ["Skills"]
+  prefer: left
+  text: "And here, skills"
+  say: "Know-how your agents load when a task needs it."
+  why: >-
+    Short Markdown guides an agent reads only when a task matches them; H ships some, you can write your own.

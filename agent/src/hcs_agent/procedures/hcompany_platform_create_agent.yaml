@@ -26,7 +26,7 @@ objective: >-
   Create an agent named "{agent_name}" with a {environment} environment and the default model, and save it.
 
 planned_changes:
-  - One agent "{agent_name}" is added to the catalog. It can be deleted afterwards.
+  - One agent (named by the person) is added to the catalog. It can be deleted afterwards.
 allowed_actions:
   - Navigate to Agents, click Create, fill name, description and environment, save.
 forbidden_actions:
@@ -40,11 +40,16 @@ agent_instructions: |
   "Build an agent" is a wizard with six steps shown at the top of the dialog: 1 Details, 2 Config, 3 Instructions,
   4 Skills, 5 Subagents, 6 Session. Procedure:
   1. Open Agents (left navigation) and click the button that opens the Build an agent wizard.
-  2. Details: name "{agent_name}" (lowercase letters, digits, hyphens), one-line description. Go to the next step.
-  3. Config: environment {environment}, keep the default model. Instructions, Skills, Subagents: keep defaults,
-     go to the next step each time.
+  The person decides: names, texts and options are theirs. Values below are suggestions, never requirements:
+  if a field already holds something the person typed, keep it and move on. Teach the choices: for each setting
+  that matters (environment, model, answer format, instructions, skills, subagents), point at it, open its list
+  when it has one, explain the options shown, recommend one for this task and let the person pick any of them.
+  2. Details: a name of the person's choice (suggestion "{agent_name}"; lowercase letters, digits, hyphens), a
+     one-line description. Go to the next step.
+  3. Config: environment (suggestion: {environment}) and model, shown and explained, the person chooses.
+     Instructions, Skills, Subagents: explain each, let the person decide, then go to the next step.
   4. Session (last step): save the agent WITHOUT starting a session in this procedure.
-  5. Confirm "{agent_name}" appears in the agents list and the wizard is closed.
+  5. Confirm the new agent appears in the agents list and the wizard is closed.
   Do not run a session from it in this procedure.
   Platform reference knowledge (agents, wizard steps, sessions, Agent View) is added automatically.
 guide_steps:
@@ -56,11 +61,11 @@ guide_steps:
     element: "the Build an agent (or Create agent) button on the agents page"
     why: "A six-step wizard opens: Details, Config, Instructions, Skills, Subagents, Session."
     done_when: "the Build an agent wizard is open on its Details step, with a name field"
-  - instruction: "Type \"{agent_name}\" as the name"
+  - instruction: "Type a name for the agent (for example \"{agent_name}\")"
     kind: type
     element: "the name field of the Build an agent wizard, Details step"
     why: "Names use lowercase letters, digits and hyphens; this is the id you pass when running sessions."
-    done_when: "the name field of the wizard shows {agent_name}"
+    done_when: "the name field of the wizard holds a name"
 dynamic_tail: true
 
 expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
@@ -75,12 +80,12 @@ recovery_steps:
 
 postcondition:
   description: >-
-    The wizard is closed and the agents list shows "{agent_name}".
+    The wizard is closed and the agents list shows the agent just created (named by the person; "{agent_name}" was only a suggestion).
   checks:
     - key: wizard_closed
       prompt: The Build an agent wizard (Details / Config / Instructions / Skills / Subagents / Session) is closed; the agents list is displayed in full.
     - key: agent_listed
-      prompt: The agents list contains a row or card named "{agent_name}" (in the list itself, not in a form field).
+      prompt: The agents list contains a row or card for a newly created agent (in the list itself, not in a form field).
   verification_instructions: |
     You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
     and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
