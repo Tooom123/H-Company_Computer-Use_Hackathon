@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gaze heatmap test</title>
+<style>
+  :root{--red:#e3242b;--grey:#7a7a8a;--line:#ebebf1;--ink:#1c1c26}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#fff;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+  #stage{position:fixed;inset:0}
+  #stage button{position:absolute;padding:12px 22px;border-radius:999px;border:1px solid var(--line);background:#fff;
+    font:600 15px system-ui,sans-serif;color:var(--ink);cursor:pointer;box-shadow:0 6px 20px -12px rgba(0,0,0,.25)}
+  #heat{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+  .hud{position:fixed;left:12px;bottom:12px;z-index:10;font:12px/1.5 ui-monospace,"Fira Code",monospace;color:var(--grey);
+    background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:250px}
+  .hud b{color:var(--ink);font-weight:600}
+  .hud label{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .hud input[type=range]{width:110px}
+  .bar{height:4px;background:var(--line);border-radius:2px;margin:2px 0 4px}.bar i{display:block;height:100%;background:var(--red);border-radius:2px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <button id="save">Save</button>
+  <button id="export">Export</button>
+  <button id="delete">Delete</button>
+</div>
+<canvas id="heat"></canvas>
+
+<div class="hud" id="hud">
+  <div>signal <b>mouse → GazeSample @30 Hz</b></div>
+  <div id="out">move the mouse…</div>
+  <label><input type="checkbox" id="noise" checked> tracker noise <span id="noiseV"></span></label>
+  <input type="range" id="noiseAmt" min="0" max="80" value="28">
+  <label>context <input type="range" id="ctx" min="0" max="10" step="0.5" value="4"> <span id="ctxV"></span></label>
+  <label><input type="checkbox" id="hex" checked> hexagonal cells</label>
+  <div>clicks predicted <b id="score">0/0</b> · <b>R</b> shuffle</div>
+</div>
+
+<script type="module">
+import { GazeHeatmap, scanTargets } from "./gaze-heatmap.js";
+
+const stage = document.getElementById("stage");
+const out = document.getElementById("out");
+const $ = (id) => document.getElementById(id);
+
+// --- 3 buttons at random, non-overlapping places ------------------------------------------------
+let seed = Number(new URLSearchParams(location.search).get("seed")) || 0;
+const rand = () => (seed ? ((seed = (seed * 16807) % 2147483647) / 2147483647) : Math.random());
+function shuffle() {
+  const placed = [];
+  for (const b of stage.querySelectorAll("button")) {
+    const w = b.offsetWidth, h = b.offsetHeight;
+    for (let tries = 0; tries < 200; tries++) {
+      const x = 40 + rand() * (innerWidth - w - 80);
+      const y = 40 + rand() * (innerHeight - h - 80);
+      const ok = placed.every((p) => Math.hypot(p.x - x, p.y - y) > 260) && !(x < 300 && y > innerHeight - 260);
+      if (ok || tries === 199) { b.style.left = `${x}px`; b.style.top = `${y}px`; placed.push({ x, y }); break; }
+    }
+  }
+  heat.setTargets(scanTargets(stage));
+}
+
+// --- heatmap ------------------------------------------------------------------------------------
+let lastBest = null;
+const heat = new GazeHeatmap({ canvas: $("heat"), onUpdate: show });
+shuffle();
+addEventListener("resize", () => heat.setTargets(scanTargets(stage)));
+heat.start();
+addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "r") shuffle(); });
+
+// --- the mouse plays the eyes: sampled at 30 Hz like a webcam tracker, with optional jitter ----------
+let mx = null, my = null;
+addEventListener("pointermove", (e) => { mx = e.clientX; my = e.clientY; heat.setPointer(mx, my); });
+// ?at=x,y pins a fake gaze point (screenshots, tests)
+const at = new URLSearchParams(location.search).get("at");
+if (at) { [mx, my] = at.split(",").map(Number); heat.setPointer(mx, my); }
+addEventListener("pointerleave", () => { mx = null; heat.setPointer(null); });
+document.addEventListener("mouseleave", () => { mx = null; heat.setPointer(null); });
+const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+setInterval(() => {
+  if (mx === null) return heat.push(null);
+  const n = $("noise").checked ? Number($("noiseAmt").value) : 0;
+  heat.push({ x: mx + gauss() * n, y: my + gauss() * n, emittedAt: performance.now() });
+}, 33);
+
+if (new URLSearchParams(location.search).get("shape") === "circle") $("hex").checked = false;
+function syncControls() {
+  heat.opts.shape = $("hex").checked ? "hex" : "circle";
+  $("noiseV").textContent = `σ ${$("noiseAmt").value}px`;
+  $("ctxV").textContent = $("ctx").value;
+  heat.opts.contextWeight = Number($("ctx").value);
+}
+["noiseAmt", "ctx", "hex"].forEach((id) => $(id).addEventListener("input", syncControls));
+syncControls();
+
+// --- readout --------------------------------------------------------------------------------------
+function show(s) {
+  stage.querySelectorAll("button").forEach((b) => b.classList.toggle("best", s?.best?.id === b.id));
+  if (!s) { out.textContent = "no gaze"; lastBest = null; return; }
+  lastBest = s.best?.id ?? null;
+  const rows = s.targets.map((t) =>
+    `<div>${t.label.padEnd(7)} <b>${(t.p * 100).toFixed(0).padStart(3)}%</b> · intent ${(t.intent * 100).toFixed(0)}%</div><div class="bar"><i style="width:${(t.p * 100).toFixed(1)}%"></i></div>`).join("");
+  out.innerHTML = `σ <b>${s.sigma.toFixed(0)}px</b> · nothing <b>${(s.pNone * 100).toFixed(0)}%</b>${rows}`;
+}
+
+// --- did we predict the click? ----------------------------------------------------------------------
+let hits = 0, total = 0;
+stage.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  total++;
+  if (lastBest === b.id) hits++;
+  $("score").textContent = `${hits}/${total}`;
+});
+</script>
+</body>
+</html>

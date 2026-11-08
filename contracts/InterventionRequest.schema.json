@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "Mode": {
+      "description": "`act`: the agent performs the steps. `guide`: the agent explains and points, the user performs.",
+      "enum": [
+        "act",
+        "guide"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
     "SessionType": {
       "enum": [
         "onboarding",
@@ -89,6 +98,19 @@
     "session_type": {
       "$ref": "#/$defs/SessionType",
       "default": "support"
+    },
+    "mode": {
+      "$ref": "#/$defs/Mode",
+      "default": "act",
+      "description": "act: agent does it; guide: agent explains, user does it."
+    },
+    "autonomy": {
+      "default": 1,
+      "description": "0: show only, never take over; 1: guide, take over when stuck; 2: do it, narrate.",
+      "maximum": 2,
+      "minimum": 0,
+      "title": "Autonomy",
+      "type": "integer"
     },
     "user_id": {
       "anyOf": [

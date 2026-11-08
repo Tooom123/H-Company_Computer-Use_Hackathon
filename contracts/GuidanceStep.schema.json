@@ -1,0 +1,207 @@
+{
+  "$defs": {
+    "Annotation": {
+      "description": "An extra mark drawn on screen with a step: a box around a zone, a circled element, a label.",
+      "properties": {
+        "shape": {
+          "default": "label",
+          "enum": [
+            "circle",
+            "box",
+            "underline",
+            "label"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pointer"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Element bounds (x, y, w, h) in screen points.",
+          "title": "Box"
+        }
+      },
+      "title": "Annotation",
+      "type": "object"
+    }
+  },
+  "description": "One step explained to the user in guide mode.",
+  "properties": {
+    "index": {
+      "title": "Index",
+      "type": "integer"
+    },
+    "instruction": {
+      "description": "What the user should do now, in plain words.",
+      "title": "Instruction",
+      "type": "string"
+    },
+    "where": {
+      "default": "",
+      "description": "Where the control is on screen.",
+      "title": "Where",
+      "type": "string"
+    },
+    "why": {
+      "default": "",
+      "description": "What this step achieves.",
+      "title": "Why",
+      "type": "string"
+    },
+    "pointer": {
+      "anyOf": [
+        {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Screen coordinates the agent pointed at.",
+      "title": "Pointer"
+    },
+    "box": {
+      "anyOf": [
+        {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Element bounds (x, y, w, h) in screen points.",
+      "title": "Box"
+    },
+    "kind": {
+      "default": "click",
+      "description": "click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.",
+      "enum": [
+        "click",
+        "type",
+        "key",
+        "info",
+        "wait"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "annotations": {
+      "items": {
+        "$ref": "#/$defs/Annotation"
+      },
+      "title": "Annotations",
+      "type": "array"
+    },
+    "last": {
+      "default": false,
+      "title": "Last",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "index",
+    "instruction"
+  ],
+  "title": "GuidanceStep",
+  "type": "object"
+}

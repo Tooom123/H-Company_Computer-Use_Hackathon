@@ -1,0 +1,200 @@
+{
+  "case_id": "case_805324494e62",
+  "session_id": "sess_e22f677660ac",
+  "software": "odoo",
+  "software_version": "19.0",
+  "os": "Linux 7.0.0-38-generic",
+  "role": "new sales rep",
+  "session_type": "support",
+  "goal": "Schedule the follow-up on Acme Demo",
+  "symptom": null,
+  "mode": "act",
+  "procedure_id": "odoo_crm_followup_activity",
+  "approved_scope": {
+    "objective": "Create a \"To Do\" activity titled \"Follow up\" due on 2026-11-14 on the opportunity \"Acme Demo\" in Odoo CRM, assigned to me.",
+    "planned_changes": [
+      "Open the opportunity \"Acme Demo\" in the CRM pipeline.",
+      "Add one activity of type \"To Do\", title \"Follow up\", due 2026-11-14, assigned to me.",
+      "Save the opportunity. Nothing else is modified."
+    ],
+    "allowed_actions": [
+      "Navigate inside the Odoo CRM app (pipeline, opportunity form, activity dialog).",
+      "Fill the activity dialog fields and click Schedule / Save.",
+      "Use the CRM search bar to find the opportunity."
+    ],
+    "forbidden_actions": [
+      "Sending any email, SMS or external message.",
+      "Deleting or archiving any record.",
+      "Changing opportunity stage, amount, customer or any field other than activities.",
+      "Leaving the Odoo browser tab or opening other applications.",
+      "Entering credentials. If a login screen appears, stop and report it."
+    ],
+    "reversible": true,
+    "max_attempts": 2,
+    "explanation": "As a new sales rep, you asked: \"Schedule the follow-up on Acme Demo\". I will create a \"To Do\" activity titled \"Follow up\" due on 2026-11-14 on the opportunity \"Acme Demo\" in Odoo CRM, assigned to me. This change is reversible. I will stop and hand over to support if I cannot complete it within 2 attempt(s).",
+    "mode": "act",
+    "documentation": null,
+    "sources": [],
+    "observes": "Screenshots of the main display are sent to H during the intervention."
+  },
+  "guidance": [],
+  "knowledge": [
+    {
+      "purpose": "agent_lookup",
+      "query": "How to schedule an activity in Odoo CRM?",
+      "answer": "[simulated] Documentation summary for: How to schedule an activity in Odoo CRM?",
+      "sources": [
+        {
+          "name": "Odoo docs (simulated)",
+          "url": "https://www.odoo.com/documentation/19.0/",
+          "snippet": ""
+        }
+      ],
+      "simulated": true
+    }
+  ],
+  "scope_note": null,
+  "steps": [
+    {
+      "index": 0,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:26.941193Z",
+      "kind": "observation",
+      "summary": "[simulated] screen observed: Odoo CRM pipeline",
+      "detail": {}
+    },
+    {
+      "index": 1,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:27.341608Z",
+      "kind": "action",
+      "summary": "[simulated] click on opportunity 'Acme Demo'",
+      "detail": {}
+    },
+    {
+      "index": 2,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:27.741975Z",
+      "kind": "observation",
+      "summary": "[simulated] screen observed: opportunity form",
+      "detail": {}
+    },
+    {
+      "index": 3,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:28.142325Z",
+      "kind": "action",
+      "summary": "[simulated] click 'Activities'",
+      "detail": {}
+    },
+    {
+      "index": 4,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:28.542674Z",
+      "kind": "observation",
+      "summary": "[simulated] fill activity dialog",
+      "detail": {}
+    },
+    {
+      "index": 5,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:28.943028Z",
+      "kind": "action",
+      "summary": "[simulated] click 'Schedule'",
+      "detail": {}
+    },
+    {
+      "index": 6,
+      "attempt": 1,
+      "timestamp": "2026-11-07T21:38:29.343346Z",
+      "kind": "observation",
+      "summary": "[simulated] screen observed: activity listed",
+      "detail": {}
+    },
+    {
+      "index": 7,
+      "attempt": 0,
+      "timestamp": "2026-11-07T21:38:29.743858Z",
+      "kind": "observation",
+      "summary": "[simulated] reload page",
+      "detail": {}
+    },
+    {
+      "index": 8,
+      "attempt": 0,
+      "timestamp": "2026-11-07T21:38:30.144205Z",
+      "kind": "action",
+      "summary": "[simulated] open opportunity",
+      "detail": {}
+    },
+    {
+      "index": 9,
+      "attempt": 0,
+      "timestamp": "2026-11-07T21:38:30.544569Z",
+      "kind": "observation",
+      "summary": "[simulated] read activities",
+      "detail": {}
+    }
+  ],
+  "declared": {
+    "outcome": "done",
+    "summary": "Activity scheduled.",
+    "blocker": null,
+    "blocker_category": null,
+    "steps_taken": [
+      "screen observed: Odoo CRM pipeline",
+      "click on opportunity 'Acme Demo'",
+      "screen observed: opportunity form",
+      "click 'Activities'",
+      "fill activity dialog",
+      "click 'Schedule'",
+      "screen observed: activity listed"
+    ]
+  },
+  "verification": {
+    "performed": true,
+    "satisfied": true,
+    "postcondition": "After reopening the opportunity \"Acme Demo\", an activity with summary \"Follow up\", type \"To Do\", due 2026-11-14, assigned to me is listed in its planned activities.",
+    "observed": "[simulated] all checks visible",
+    "checks": {
+      "opportunity_opened": true,
+      "activity_present": true,
+      "due_date_correct": true,
+      "type_todo": true
+    },
+    "evidence_refs": [
+      "sim_verify_sess_e22f677660ac"
+    ],
+    "user_confirmed": null
+  },
+  "status": "resolved",
+  "category": "usage",
+  "suspected_cause": null,
+  "needs_human": false,
+  "escalation": null,
+  "evidence": [
+    {
+      "ref": "sim_sess_e22f677660ac",
+      "kind": "h_session",
+      "description": "H session trace (steps and screenshots)",
+      "path": null,
+      "url": null,
+      "shareable_with_support": false
+    }
+  ],
+  "feedback": null,
+  "h_session_ids": [
+    "sim_sess_e22f677660ac",
+    "sim_verify_sess_e22f677660ac"
+  ],
+  "timings": {
+    "started_at": "2026-11-07T21:38:26.539164Z",
+    "approved_at": "2026-11-07T21:38:26.540411Z",
+    "finished_at": "2026-11-07T21:38:30.545144Z",
+    "stop_requested_at": null,
+    "stop_effective_at": null
+  },
+  "cost_usd": 0.0,
+  "simulated": true,
+  "demo_data": true
+}

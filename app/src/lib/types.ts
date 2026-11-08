@@ -62,6 +62,8 @@ export interface CompanionBridge {
   annotateObservation(input: { frameId: string; label: ObservationLabel }): Promise<void>;
   clearObservations(): Promise<void>;
   onState(callback: (state: LiveState) => void): () => void;
+  /** Overlay only: accepted gaze points relayed by main for the gaze halo (null = tracking lost). */
+  onGaze?(callback: (sample: GazeSample | null) => void): () => void;
   // Restricted by main process to the tracker window; viewport coordinates on the primary display.
   reportGaze(sample: GazeSample | null): void;
   reportHead(sample: HeadSample | null): void;

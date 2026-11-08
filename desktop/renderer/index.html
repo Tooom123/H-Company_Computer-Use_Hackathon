@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
+    <title>H Companion</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <aside class="side">
+      <div class="drag"></div>
+      <div class="brand">
+        <span class="key">H</span>
+        <span class="word">Comp<span class="struck">any</span><span class="pen">anion</span></span>
+      </div>
+      <nav>
+        <button data-go="home">Home</button>
+        <button data-go="activity">Activity</button>
+        <button data-go="usage">Usage &amp; plan</button>
+        <button data-go="voice">Voice</button>
+        <button data-go="vision">Vision</button>
+      </nav>
+      <div class="agent-line"><i id="agentDot"></i><span id="agentLine">Connecting…</span></div>
+    </aside>
+
+    <main>
+      <!-- Home: what is happening now, and how much I do for you -->
+      <section class="view" id="view-home">
+        <div class="pill" id="pill"><i></i><span id="pillText">…</span></div>
+        <p class="pill-sub" id="pillSub"></p>
+
+        <div class="card now" id="now" hidden>
+          <div class="now-top">
+            <div>
+              <p class="eyebrow" id="nowProc"></p>
+              <h2 id="nowGoal"></h2>
+            </div>
+            <button class="btn stop" id="stopBtn">Stop</button>
+          </div>
+          <div class="steps" id="nowSteps"></div>
+        </div>
+
+        <div class="card offline" id="offline" hidden>
+          <h2>Start the assistant</h2>
+          <p class="muted">The app shows and steers the agent running on this Mac. Start it from the repo root:</p>
+          <div class="cmd"><code id="cmdText">uv run hcs-agent talk</code><button class="btn ghost" id="copyCmd">Copy</button></div>
+          <p class="muted small">The app connects by itself as soon as it runs. While the app is open, the autonomy slider leaves the screen and lives here.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-h">
+            <h2>Autonomy</h2>
+            <span class="muted small">How much I do for you · applies right away, even mid-task</span>
+          </div>
+          <div class="rail" id="rail" role="radiogroup" aria-label="Autonomy">
+            <span class="track"></span>
+          </div>
+          <p class="hand hint" id="autHint"></p>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><b id="stSessions">—</b><span>sessions this month</span></div>
+          <div class="stat"><b id="stVerified">—</b><span>verified in the software</span></div>
+          <div class="stat"><b id="stSpend">—</b><span>H compute this month</span></div>
+        </div>
+        <p class="said muted small" id="said"></p>
+      </section>
+
+      <!-- Activity: the last sessions, from the agent's reports -->
+      <section class="view" id="view-activity" hidden>
+        <div class="view-h">
+          <h1>Activity</h1>
+          <button class="btn ghost" id="openDash">Support dashboard ↗</button>
+        </div>
+        <p class="muted">Every session ends with a check in the software itself. "Verified" means the result was observed, not just claimed.</p>
+        <div class="list" id="sessions"></div>
+      </section>
+
+      <!-- Usage & plan: credits and what each service costs -->
+      <section class="view" id="view-usage" hidden>
+        <div class="view-h"><h1>Usage &amp; plan</h1><span class="muted small" id="usageMonth"></span></div>
+        <div class="card">
+          <div class="card-h">
+            <h2>Your plan</h2>
+            <div class="seg" id="planSeg"></div>
+          </div>
+          <div class="meter-line"><b id="planUsed">—</b><span class="muted" id="planUnit"></span></div>
+          <div class="meter"><span id="planBar"></span></div>
+          <div class="plans" id="plans"></div>
+          <p class="hand msg" id="planMsg" role="status"></p>
+        </div>
+        <h2 class="sec">What it costs</h2>
+        <div class="grid" id="providers"></div>
+        <p class="muted small" id="simNote"></p>
+      </section>
+
+      <!-- Voice: spoken notes and push-to-talk -->
+      <section class="view" id="view-voice" hidden>
+        <div class="view-h"><h1>Voice</h1></div>
+        <div class="card">
+          <div class="row">
+            <div>
+              <h2>Read the notes aloud</h2>
+              <p class="muted small">Each note drawn on screen is spoken as it appears. It stops when you act or speak.</p>
+            </div>
+            <button class="switch" id="ttsSwitch" role="switch" aria-checked="false"><i></i></button>
+          </div>
+          <div class="voices" id="voices"></div>
+          <div class="row speed">
+            <label for="speed">Speed</label>
+            <input type="range" id="speed" min="0.8" max="1.2" step="0.05" />
+            <span id="speedVal" class="muted small"></span>
+            <button class="btn ghost" id="testVoice">Test the voice</button>
+          </div>
+          <p class="muted small" id="ttsNote"></p>
+        </div>
+        <div class="card">
+          <h2>Push to talk</h2>
+          <p><span class="kbd" id="pttKey">⌘H</span> hold, say what you need, release. Speaking during a task stops it and starts your new request.</p>
+        </div>
+      </section>
+
+      <!-- Vision: Édouard's lab -->
+      <section class="view" id="view-vision" hidden>
+        <div class="view-h"><h1>Vision</h1></div>
+        <div class="card">
+          <h2>Where you look, where you are stuck</h2>
+          <p class="muted">The Vision Lab follows your gaze with the camera to frame the part of the screen you are looking at.
+            Your face never leaves this Mac: only the screen region goes to Holo. The gaze halo is hidden from screenshots.</p>
+          <div class="row">
+            <span class="badge" id="visionState">—</span>
+            <button class="btn" id="visionBtn">Open the Vision Lab</button>
+          </div>
+          <p class="muted small" id="visionNote"></p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

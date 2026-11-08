@@ -242,6 +242,11 @@ ipcMain.on('companion:gaze', (event, sample) => {
   // Receipt clock, NOT a camera-frame capture timestamp. The upstream callback
   // does not expose a reliable camera timestamp; never call this tracker latency.
   gaze = acceptGazeSample(sample, display.bounds, performance.now());
+  // Gaze halo (Tom): relay the accepted point to the overlay window only. Coordinates, no image;
+  // the overlay is excluded from captures, so the halo never reaches Holo.
+  if (overlay && !overlay.isDestroyed() && overlay.isVisible()) {
+    overlay.webContents.send('companion:gaze-updated', gaze ? { x: gaze.x, y: gaze.y, emittedAt: gaze.receivedAt } : null);
+  }
 });
 ipcMain.on('companion:head', (event, sample) => {
   try { authorize(event, tracker); } catch { return; }

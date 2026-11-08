@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('companion', {
     ipcRenderer.on('companion:state-updated', listener);
     return () => ipcRenderer.removeListener('companion:state-updated', listener);
   },
+  onGaze: callback => {
+    const listener = (_event, sample) => callback(sample);
+    ipcRenderer.on('companion:gaze-updated', listener);
+    return () => ipcRenderer.removeListener('companion:gaze-updated', listener);
+  },
   reportGaze: sample => ipcRenderer.send('companion:gaze', sample),
   reportHead: sample => ipcRenderer.send('companion:head', sample),
   reportTargetPresented: sample => ipcRenderer.send('companion:target-presented', sample),

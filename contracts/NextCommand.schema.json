@@ -1,0 +1,25 @@
+{
+  "description": "Guide mode: the user reports on the step they were asked to perform.",
+  "properties": {
+    "done": {
+      "default": true,
+      "title": "Done",
+      "type": "boolean"
+    },
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "What the user saw, or why they could not do it.",
+      "title": "Note"
+    }
+  },
+  "title": "NextCommand",
+  "type": "object"
+}
