@@ -4,6 +4,11 @@ This is navigation guidance, not the state of an account or an expected test
 answer. Confirm labels and the selected resource on the current screen. Account
 access is prepared by the human separately. Never read or display key values.
 
+When consulting H documentation from H Platform, preserve the user's working tab:
+open the documentation in a separate tab, then select it. In Show me, explain the
+new-tab action and let the human perform it. Once in the documentation, reuse that
+tab for its sections instead of opening duplicates.
+
 ## Cloud browser versus the user's computer
 
 Choose the environment according to where the work should run. A cloud browser

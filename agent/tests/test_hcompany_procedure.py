@@ -92,3 +92,23 @@ def test_question_cannot_replace_the_procedure_scope_or_select_another_workflow(
     assert hostile.forbidden_actions == clean.forbidden_actions
     assert hostile.mode is Mode.guide
     assert req.autonomy == 0
+
+
+@pytest.mark.parametrize('procedure_id,software', [
+    ('hcompany_general_guide', 'h-company'), ('generic', 'h-company'), ('generic', 'hcompany'),
+])
+def test_h_documentation_preserves_product_tab_for_actor_and_human(procedure_id, software):
+    req = request('Show me the cloud browser documentation.')
+    req.procedure_id, req.software = procedure_id, software
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    for instructions in (bound.agent_instructions, bound.guide_instructions):
+        assert 'open it in a new browser tab' in instructions
+        assert 'original product tab open and unchanged' in instructions
+        assert 'In GUIDE, do not open a tab yourself' in instructions
+        assert 'If already on H documentation' in instructions
+
+
+def test_h_tab_policy_does_not_route_other_products_to_h_docs():
+    req = InterventionRequest(software='odoo', goal='Read an order', procedure_id='generic')
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    assert 'hub.hcompany.ai' not in bound.agent_instructions

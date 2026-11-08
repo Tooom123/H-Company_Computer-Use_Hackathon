@@ -164,6 +164,17 @@ def test_dynamic_ax_invalid_planner_target_never_indexes_wrong_control(dynamic):
     assert dynamic.shown[0].pointer is None and dynamic.shown[0].box is None
 
 
+def test_dynamic_ax_retains_complete_note_for_overlay_pagination(dynamic):
+    instruction = "Open Details to inspect the session result. " * 6
+    why = "Keep the original session open while checking its answer. " * 5
+    dynamic.backend.plan_step = lambda *args: {
+        "done": False, "instruction": instruction, "why": why, "kind": "click", "target": 0,
+    }
+    dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    assert dynamic.shown[0].instruction == instruction.strip()
+    assert dynamic.shown[0].why == why
+
+
 def test_dynamic_ax_uses_public_cognition_documentation_once_without_private_query(dynamic):
     from hcs_agent.knowledge import DocAnswer, Source
     lookups = []

@@ -216,7 +216,10 @@ class BoundProcedure(BaseModel):
 
     @property
     def agent_instructions(self) -> str:
-        return self._r(self.procedure.agent_instructions)
+        instructions = self._r(self.procedure.agent_instructions)
+        if self.request.software in {"h-company", "hcompany"}:
+            instructions += "\n\n" + H_DOCUMENTATION_TABS
+        return instructions
 
     @property
     def postcondition_description(self) -> str:
@@ -363,6 +366,19 @@ Rules:
 # ---------------------------------------------------------------------- generic (unscripted) tasks
 
 GENERIC_ID = "generic"
+
+H_DOCUMENTATION_TABS = """Documentation navigation: preserve the user's working tab.
+When moving from H Platform to official H documentation at https://hub.hcompany.ai,
+open it in a new browser tab, leaving the original product tab open and unchanged.
+Never replace the product tab by typing a documentation URL into its address bar.
+In ACT, open a new tab first (Command+T on macOS) before entering a documentation URL,
+or use a visible link that explicitly opens documentation in a new tab. Then select
+the documentation tab. If already on H documentation, navigate inside that docs tab;
+do not create another tab for each section or inspect unrelated personal tabs.
+In GUIDE, do not open a tab yourself: guide the human to the visible documentation
+link and ask them to open it in a new tab, then select that tab. If its new-tab behavior
+is not explicit, explain Command-click on macOS. Do not suggest a normal click that
+replaces the working page. Preserve the user's current autonomy level and scope."""
 
 SITE_HINTS = {
     "hcompany": "The software is the H Company website: platform.hcompany.ai (agents, sessions, Agent View, API keys, "

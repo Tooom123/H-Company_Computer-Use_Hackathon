@@ -270,12 +270,18 @@ class Intervention:
         self._user_event.set()  # unblock a pending guide step
 
     def set_autonomy(self, level: int) -> None:
-        """Live change from the slider. Raising to the max while guiding hands the task to the agent."""
+        """Raise to take over; lowering an active actor cancels it before a new guided request."""
         if self.observe_only:
             self.autonomy = 0
             self._emit("state_changed", "Observation-only GUIDE: autonomy remains 0.", autonomy=0)
             return
+        previous = self.autonomy
         self.autonomy = max(0, min(2, int(level)))
+        if (self.autonomy < previous and not self.state.terminal
+                and (self.request.mode is Mode.act or self.takeover)):
+            # Updating a number cannot revoke a provider session already acting.
+            # Use the same stop/cancel path as Stop, preserving the original trace.
+            self.stop(StopCommand(reason="Autonomy reduced. Stopping the automatic task; ask again for guided steps."))
         self._emit("state_changed", f"Autonomy set to {self.autonomy}", autonomy=self.autonomy)
         if self.autonomy >= 2 and self.state is State.awaiting_user:
             self._user_reply = (False, "autonomy raised to max")
@@ -877,7 +883,7 @@ class Intervention:
             rejected_plans = 0
             if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
                 instruction = f"{instruction} — type \"{plan['text']}\""
-            gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:160],
+            gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction, why=(plan.get("why") or ""),
                               where=target.name if target else "", pointer=target.center if target else None,
                               box=target.box if target else None, box_exact=target is not None, kind=kind)
             reply = self._on_guidance(gs)

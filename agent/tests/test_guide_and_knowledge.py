@@ -1,6 +1,8 @@
 import threading
 import time
 
+import pytest
+
 from hcs_agent.backend import MockBackend
 from hcs_agent.contract import ApproveCommand, CaseStatus, Category, InterventionRequest, Mode, NextCommand, State
 from hcs_agent.procedures import ProcedureRegistry
@@ -141,6 +143,43 @@ def test_lowering_autonomy_mid_guide_keeps_guiding(tmp_path):
     _auto_next(it, events, [])
     it.wait(5)
     assert it.report.status is CaseStatus.resolved and it.takeover is False
+
+
+@pytest.mark.parametrize('level', [0, 1])
+def test_lowering_autonomy_cancels_running_actor_and_preserves_report(tmp_path, monkeypatch, level):
+    from hcs_agent.backend import AttemptResult
+    from hcs_agent.contract import DeclaredResult
+    entered, cancelled = threading.Event(), threading.Event()
+    backend = MockBackend(step_delay_s=0)
+
+    def act(bound, task, attempt, on_step, stop_event, on_lookup):
+        entered.set()
+        if stop_event.wait(3):
+            cancelled.set()
+        return AttemptResult('simulated-active-actor', 'interrupted', DeclaredResult(outcome='not_run'))
+
+    monkeypatch.setattr(backend, 'run_attempt', act)
+    monkeypatch.setattr(backend, 'verify', lambda *a: pytest.fail('No verification may launch after cancellation'))
+    req = _request('odoo_crm_followup_activity', Mode.act).model_copy(update={'autonomy': 2})
+    it = Intervention(req, backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    it.start()
+    it.approve(ApproveCommand())
+    assert entered.wait(2)
+    it.set_autonomy(level)
+    assert it._stop.is_set() and it.autonomy == level
+    it.wait(3)
+    assert cancelled.is_set()
+    assert it.report.status is CaseStatus.abandoned
+    assert it.report.autonomy == level
+    assert (it.runs_dir / 'report.json').exists()
+
+
+def test_show_me_also_cancels_help_if_stuck_after_takeover(tmp_path):
+    it = Intervention(_request('odoo_crm_followup_activity'), MockBackend(),
+                      ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    it.autonomy, it.takeover, it.state = 1, True, State.running
+    it.set_autonomy(0)
+    assert it._stop.is_set() and it.state is State.stopping
 
 
 def test_new_voice_request_mid_task_stops_the_current_one(tmp_path, monkeypatch):

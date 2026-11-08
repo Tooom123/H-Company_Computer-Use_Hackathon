@@ -1223,3 +1223,26 @@ note or desktop status. No extra model call is needed for these transformations.
 pages at 800×600 were visually inspected: text and the page indicator fit,
 and the last sentence is retained. These renders are synthetic UI fixtures,
 not screenshots of a successful human task. A live user retry remains pending.
+
+### Documentation tabs and live autonomy reduction — 2026-11-08
+
+The H profile now instructs GUIDE and ACT to preserve the product tab when
+opening official H documentation. GUIDE asks the human to open/select a new
+tab; ACT opens one before navigating. Once on the docs, subsequent navigation
+reuses that tab. This is a model instruction, not deterministic tab interception;
+the resulting Holo browser behavior still needs a live trial.
+
+Audit confirmed that autonomy 0 starts GUIDE without takeover, 1 starts GUIDE
+with takeover on a supported stuck condition, and 2 starts ACT. Lowering the
+level previously did not stop an actor already running. It now invokes the
+normal local stop gate and provider cancellation, silences narration, and asks
+for a new guided request. Completed actions are not undone; cancellation of an
+in-flight provider action is asynchronous. Traces are preserved.
+
+192 targeted Python tests and 21 desktop tests passed, including actor
+cancellation, takeover reduction, existing mid-guide escalation and docs policy
+propagation. One additional regression passed for a remaining dynamic-guidance
+140-character slice: complete notes now reach overlay pagination. The live
+desktop keyboard control was observed delivering autonomy 1 to the running
+engine while idle; a complete live three-level round trip was not established.
+These checks are not human success/usefulness labels or a new task benchmark.

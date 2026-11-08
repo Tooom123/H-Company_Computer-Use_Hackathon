@@ -108,7 +108,10 @@ def _set_autonomy(level: int) -> None:
         _MAGNET["widget"].set_level(level)
     it = _MAGNET["current"]
     if it is not None and not it.state.terminal:
+        reducing_actor = level < it.autonomy and (it.request.mode is Mode.act or it.takeover)
         it.set_autonomy(level)
+        if reducing_actor:
+            _hush()
 
 
 def _control_status() -> dict:

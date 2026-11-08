@@ -170,13 +170,15 @@ async function setAutonomy(level) {
   if (level === status.autonomy && pendingAutonomy === null) return renderAutonomy();
   const busy = isBusy(status);
   const guiding = busy && status.current.mode !== "act" && !status.current.takeover;
+  const stoppingActor = busy && !guiding && level < status.autonomy;
   pendingAutonomy = level;
   renderAutonomy();
   const r = await api.agent("POST", "/autonomy", { level });
   pendingAutonomy = null;
   if (r.ok && r.data) {
     status = r.data;
-    sayAutonomy(guiding && level === STOPS - 1 ? "I'm taking over this task now." : busy ? "Applied to the task in progress." : "");
+    sayAutonomy(stoppingActor ? "Stopping the automatic task. Ask again for guided steps."
+      : guiding && level === STOPS - 1 ? "I'm taking over this task now." : busy ? "Applied to the task in progress." : "");
   } else {
     sayAutonomy("The assistant did not answer: the setting is unchanged.");
   }

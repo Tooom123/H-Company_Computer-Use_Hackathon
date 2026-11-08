@@ -101,6 +101,15 @@ test("step fallback sends the exact displayed session, step and human answer", a
   assert.equal(r.calls.length, before, "a stale confirmation does not start another request");
 });
 
+test("lowering the slider during ACT explains cancellation and a new guided request", async () => {
+  const current = { session_id: "actor-1", terminal: false, state: "running", mode: "act", takeover: true };
+  const r = await renderer({ observeOnly: false, current });
+  r.status.autonomy = 2;
+  await vm.runInContext("setAutonomy(0)", r.context);
+  assert.equal(r.status.autonomy, 0);
+  assert.match(r.ids.get("autMsg").textContent, /Stopping the automatic task.*Ask again/);
+});
+
 test("feedback requires two explicit labels and preserves separate consent flags", async () => {
   const r = await renderer();
   assert.equal(r.ids.get("feedbackSave").disabled, true);
