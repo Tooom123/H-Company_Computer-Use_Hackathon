@@ -22,8 +22,9 @@ SOURCE = ROOT.parent / 'h-companion'
 PRIVATE = Path.home() / 'Library/Application Support/HCompanionResearch/h-platform-coach-v2'
 DEFAULT_PYTHON = '/private/tmp/hcompanion-matteo-pilot-venv/bin/python'
 ENGINE = 'coach-v2'
-SECRET_NAMES = {'HAI_API_KEY', 'GLADIA_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVEN'}
+SECRET_NAMES = {'HAI_API_KEY', 'GLADIA_API_KEY', 'MISTRAL_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVEN'}
 SPEECH_NAMES = {'HCS_TTS_PROVIDER', 'HCS_TTS_VOICE', 'HCS_TTS_MODEL', 'HCS_TTS_MACOS_VOICE'}
+STT_NAMES = {'HCS_STT_PROVIDER', 'HCS_STT_LIVE', 'HCS_VOICE_LANGUAGE', 'HCS_VOXTRAL_FILE_MODEL', 'HCS_VOXTRAL_REALTIME_MODEL'}
 
 
 def read_json(path):
@@ -105,7 +106,8 @@ def runtime_environment(python, private, port, key):
     source = Path(os.environ.get('HCS_V2_ENV_SOURCE', str(SOURCE))).expanduser().absolute()
     research = PRIVATE.parent
     paths = [source / 'app/.env', source / 'agent/.env',
-             research / 'human-cognition/speech.env', research / 'human-h-company/speech.env']
+             research / 'human-cognition/speech.env', research / 'human-h-company/speech.env',
+             private / 'stt.env']
     # Capture the dotenv parser's output in a local pipe. It is never logged or
     # forwarded to Electron; external exceptions likewise never reveal content.
     loader = ('import json,sys; from dotenv import dotenv_values; values={}; '
@@ -120,11 +122,15 @@ def runtime_environment(python, private, port, key):
     if not isinstance(values, dict):
         raise RuntimeError('The private environment could not be loaded. No values were printed.')
     env = dict(os.environ)
-    for name in SECRET_NAMES | SPEECH_NAMES:
+    for name in SECRET_NAMES | SPEECH_NAMES | STT_NAMES:
         if values.get(name):
             env.setdefault(name, values[name])
-    if not env.get('HAI_API_KEY') or not env.get('GLADIA_API_KEY'):
-        raise RuntimeError('HAI_API_KEY and GLADIA_API_KEY are required in the existing private environment.')
+    provider = env.get('HCS_STT_PROVIDER', 'gladia').strip().lower()
+    if provider not in {'gladia', 'voxtral'}:
+        raise RuntimeError('HCS_STT_PROVIDER must be gladia or voxtral.')
+    stt_key = 'MISTRAL_API_KEY' if provider == 'voxtral' else 'GLADIA_API_KEY'
+    if not env.get('HAI_API_KEY') or not env.get(stt_key):
+        raise RuntimeError(f'HAI_API_KEY and {stt_key} are required in the private environment.')
     env.pop('HCS_AX_NATIVE_BUNDLE_ID', None)
     env.update(PYTHONPATH=os.pathsep.join([str(ROOT / 'agent/src'), str(ROOT / 'backend/src'), str(ROOT)]),
                HCS_CONTROL_URL=f'http://127.0.0.1:{port}', HCS_CONTROL_PORT=str(port),

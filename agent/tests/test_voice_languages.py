@@ -9,6 +9,27 @@ import pytest
 from hcs_agent import voice
 
 
+def test_voxtral_selection_keeps_live_and_file_audio_on_mistral(monkeypatch):
+    from hcs_agent.voxtral import VoxtralLiveTranscriber, VoxtralTranscriber
+    monkeypatch.setenv("HCS_STT_PROVIDER", "voxtral")
+    monkeypatch.delenv("GLADIA_API_KEY", raising=False)
+    provider, file_factory, live_factory = voice.transcription_backends()
+    assert provider == "voxtral"
+    assert file_factory is VoxtralTranscriber and live_factory is VoxtralLiveTranscriber
+    assert file_factory(api_key="test-only").api_key == "test-only"
+
+
+def test_existing_callers_keep_gladia_by_default(monkeypatch):
+    monkeypatch.delenv("HCS_STT_PROVIDER", raising=False)
+    assert voice.transcription_backends() == ("gladia", voice.Transcriber, voice.LiveTranscriber)
+
+
+def test_unknown_transcription_provider_fails_without_falling_back(monkeypatch):
+    monkeypatch.setenv("HCS_STT_PROVIDER", "unknown")
+    with pytest.raises(ValueError, match="HCS_STT_PROVIDER"):
+        voice.transcription_backends()
+
+
 @pytest.mark.parametrize("language,expected", [
     ("fr-en", {"languages": ["fr", "en"], "code_switching": True}),
     ("fr", {"languages": ["fr"], "code_switching": False}),

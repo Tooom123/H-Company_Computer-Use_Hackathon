@@ -1,7 +1,7 @@
-"""Voice entry point: push-to-talk -> Gladia transcription -> intent (procedure + parameters) -> request.
+"""Voice entry point: push-to-talk -> selected transcription -> intent -> request.
 
-Hold the push-to-talk key, say what you want, release. The audio is transcribed by Gladia
-(pre-recorded API, solaria-3), then Holo (H Models API, same key as the agent) maps the sentence onto
+Hold the push-to-talk key, say what you want, release. The audio is transcribed by Gladia or Voxtral
+(live streaming with a same-provider file fallback), then Holo (H Models API, same key as the agent) maps the sentence onto
 one of the known procedures and fills its parameters. The user still approves the plan before anything runs.
 """
 
@@ -112,6 +112,17 @@ def _language_config(language: str) -> dict:
     if language == "fr-en":
         return {"languages": ["fr", "en"], "code_switching": True}
     return {"languages": [language], "code_switching": False}
+
+
+def transcription_backends():
+    """Select one provider for both live and file fallback; never cross-send audio."""
+    provider = os.environ.get("HCS_STT_PROVIDER", "gladia").strip().lower()
+    if provider == "voxtral":
+        from .voxtral import VoxtralLiveTranscriber, VoxtralTranscriber
+        return provider, VoxtralTranscriber, VoxtralLiveTranscriber
+    if provider == "gladia":
+        return provider, Transcriber, LiveTranscriber
+    raise ValueError("HCS_STT_PROVIDER must be gladia or voxtral")
 
 
 class LiveTranscriber:
@@ -567,7 +578,8 @@ class PushToTalk:
         self._hub = InputHub.get()
         self._hub.set_combo(self.key_name)
         self._recorder = Recorder()
-        self._transcriber = Transcriber()
+        self.stt_provider, transcriber, self._live_factory = transcription_backends()
+        self._transcriber = transcriber()
         self._live: LiveTranscriber | None = None
         self.use_live = os.environ.get("HCS_STT_LIVE", "1").lower() not in {"0", "false", "no"}
         self._recording = False
@@ -628,7 +640,7 @@ class PushToTalk:
             try:
                 self.on_state("starting")
                 if self.use_live:
-                    self._live = LiveTranscriber()
+                    self._live = self._live_factory()
                     self._live.on_partial = lambda t: self._state_if_current(generation, f"partial: {t}")
                     self._live.open(self.vocabulary)
                     self._recorder.on_chunk = self._live.feed

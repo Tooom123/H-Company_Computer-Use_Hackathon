@@ -86,7 +86,7 @@ python3 scripts/run-h-platform-coach-v2.py
 
 Maintenir **Option droite** pour dicter. Dans la barre de menus, **Start H Platform coach V2** relance le même moteur V2; **Stop task** interrompt seulement sa tâche.
 
-La dictée accepte français et anglais par défaut (`HCS_VOICE_LANGUAGE=fr-en`); les consignes demandent une narration anglaise. Le mode reste celui du slider : demander « create for me » en **Show me** ne déclenche pas d'exécution autonome. Passer à **Do it, I watch** avant les scènes de création, puis dicter la demande.
+La dictée accepte français et anglais par défaut (`HCS_VOICE_LANGUAGE=fr-en`); les consignes demandent une narration anglaise. Avec Voxtral, ce réglage laisse le modèle détecter la langue parlée, sans traduction. Le mode reste celui du slider : demander « create for me » en **Show me** ne déclenche pas d'exécution autonome. Passer à **Do it, I watch** avant les scènes de création, puis dicter la demande.
 
 Pour démarrer uniquement le moteur :
 
@@ -97,6 +97,8 @@ python3 scripts/run-h-platform-coach-v2.py --backend-only
 Le lanceur réutilise par défaut Python dans `/private/tmp/hcompanion-matteo-pilot-venv/bin/python` et Electron déjà installé dans le checkout voisin `../h-companion`. Les options d'environnement `HCS_PYTHON`, `HCS_ELECTRON` et `HCS_V2_ENV_SOURCE` permettent de changer ces chemins. Aucun téléchargement n'est effectué.
 
 Les clés sont lues depuis `app/.env` et `agent/.env` de ce checkout voisin, puis les configurations vocales privées `human-cognition/speech.env` et `human-h-company/speech.env`. La configuration H prend priorité sur celle de Cognition; les variables explicitement définies dans le shell gardent priorité. Les clés ne sont ni affichées ni transmises au renderer Electron.
+
+Le fichier privé V2 `stt.env` est lu en dernier : `HCS_STT_PROVIDER=voxtral` et `MISTRAL_API_KEY` activent Voxtral Mini Transcribe Realtime 3 pendant la dictée, avec Mini Transcribe 3 pour le repli fichier chez Mistral. `HCS_STT_PROVIDER=gladia` conserve l'ancien fournisseur; un échec Voxtral n'envoie jamais l'audio à Gladia. La clé Mistral reste hors dépôt et hors Electron. La synthèse vocale reste configurée séparément.
 
 Logs, métadonnées de PID, profil desktop et traces restent dans `~/Library/Application Support/HCompanionResearch/h-platform-coach-v2/`, hors dépôt. Les traces sont dans `episodes/`, le journal moteur dans `runtime-*.log`, celui de la fenêtre dans `desktop.log`. Le lanceur refuse un port occupé par un moteur différent et vérifie l'identité `coach-v2` avant de réutiliser un processus.
 
@@ -112,6 +114,8 @@ L'arrêt vérifie le moteur, le port, le PID et le worktree enregistrés. Il ne 
 ## Portée et état de validation
 
 La V2 utilise Holo4, un briefing H ciblé, l’observation AX actuelle et un court historique. La voix, les repères et l’accessibilité macOS sont réutilisés; l’ancien moteur de procédures et sa narration de rapports ne sont pas chargés.
+
+Le contexte permanent est limité à 540 mots : consignes essentielles, trois distinctions produit, carte de navigation et six liens documentaires. Ce n'est pas toute la documentation. Les 106 contrôles de la page de test restent présents; une requête de tour représente encore environ 5 200 tokens avec l'arbre AX, le texte visible et le schéma de réponse. Réduire les tokens ne garantit pas de réduire le temps de génération des trois commentaires.
 
 Les instructions couvrent désormais les cinq scènes. La séquence de tour est une présentation de trois contrôles maximum, sans trois navigations. Les créations de Skill et de clé sont des parcours distincts; les achats, suppressions, révocations, secrets et lancements de jobs restent hors de cette démonstration.
 
