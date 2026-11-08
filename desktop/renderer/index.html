@@ -11,20 +11,19 @@
     <script type="module" src="app.js"></script>
   </head>
   <body>
+    <div class="frame" aria-hidden="true"></div>
     <aside class="side">
       <div class="drag"></div>
       <div class="brand">
         <span class="key">H</span>
-        <span class="word">Comp<span class="struck">any</span><span class="pen">anion</span></span>
+        <span class="word">Compan<span class="ion">ion</span></span>
       </div>
       <nav>
         <button data-go="home">Home</button>
         <button data-go="activity">Activity</button>
-        <button data-go="usage">Usage &amp; plan</button>
         <button data-go="voice">Voice</button>
         <button data-go="vision">Vision</button>
       </nav>
-      <div class="agent-line"><i id="agentDot"></i><span id="agentLine">Connecting…</span></div>
     </aside>
 
     <main>
@@ -46,26 +45,27 @@
 
         <div class="card offline" id="offline" hidden>
           <h2>Start the assistant</h2>
-          <p class="muted">The app shows and steers the agent running on this Mac. Start it from the repo root:</p>
+          <p class="muted">The app shows and steers the assistant running on this Mac. Start it from the repo root:</p>
           <div class="cmd"><code id="cmdText">uv run hcs-agent talk</code><button class="btn ghost" id="copyCmd">Copy</button></div>
-          <p class="muted small">The app connects by itself as soon as it runs. While the app is open, the autonomy slider leaves the screen and lives here.</p>
+          <p class="muted small">The app connects by itself as soon as it runs. While the app is open, the Magnet leaves the screen and lives here.</p>
         </div>
 
-        <div class="card">
+        <div class="magnet-block">
           <div class="card-h">
             <h2>Autonomy</h2>
             <span class="muted small">How much I do for you · applies right away, even mid-task</span>
           </div>
-          <div class="rail" id="rail" role="radiogroup" aria-label="Autonomy">
-            <span class="track"></span>
+          <div class="magnet" id="magnet">
+            <svg id="magnetSvg" role="img" aria-label="Autonomy"></svg>
+            <div class="magnet-hit" id="magnetHit" role="radiogroup" aria-label="Autonomy"></div>
           </div>
-          <p class="hand hint" id="autHint"></p>
+          <p class="muted small hint" id="autHint"></p>
         </div>
 
         <div class="stats">
-          <div class="stat"><b id="stSessions">—</b><span>sessions this month</span></div>
-          <div class="stat"><b id="stVerified">—</b><span>verified in the software</span></div>
-          <div class="stat"><b id="stSpend">—</b><span>H compute this month</span></div>
+          <div class="stat"><b id="stSessions">—</b><span>tasks this month</span></div>
+          <div class="stat"><b id="stVerified">—</b><span>checked in the software</span></div>
+          <div class="stat"><b id="stTime">—</b><span>typical task time</span></div>
         </div>
         <p class="said muted small" id="said"></p>
       </section>
@@ -74,28 +74,9 @@
       <section class="view" id="view-activity" hidden>
         <div class="view-h">
           <h1>Activity</h1>
-          <button class="btn ghost" id="openDash">Support dashboard ↗</button>
         </div>
-        <p class="muted">Every session ends with a check in the software itself. "Verified" means the result was observed, not just claimed.</p>
+        <p class="muted">Every task ends with a check in the software itself: "Checked" means the change was really seen there, not just claimed.</p>
         <div class="list" id="sessions"></div>
-      </section>
-
-      <!-- Usage & plan: credits and what each service costs -->
-      <section class="view" id="view-usage" hidden>
-        <div class="view-h"><h1>Usage &amp; plan</h1><span class="muted small" id="usageMonth"></span></div>
-        <div class="card">
-          <div class="card-h">
-            <h2>Your plan</h2>
-            <div class="seg" id="planSeg"></div>
-          </div>
-          <div class="meter-line"><b id="planUsed">—</b><span class="muted" id="planUnit"></span></div>
-          <div class="meter"><span id="planBar"></span></div>
-          <div class="plans" id="plans"></div>
-          <p class="hand msg" id="planMsg" role="status"></p>
-        </div>
-        <h2 class="sec">What it costs</h2>
-        <div class="grid" id="providers"></div>
-        <p class="muted small" id="simNote"></p>
       </section>
 
       <!-- Voice: spoken notes and push-to-talk -->
@@ -120,20 +101,23 @@
         </div>
         <div class="card">
           <h2>Push to talk</h2>
-          <p><span class="kbd" id="pttKey">⌘H</span> hold, say what you need, release. Speaking during a task stops it and starts your new request.</p>
+          <p class="muted small">Hold the key, say what you need, release. Speaking during a task stops it and starts your new request.</p>
+          <div class="keys" id="pttKeys" role="radiogroup" aria-label="Push-to-talk key"></div>
+          <p class="muted small" id="pttNote"></p>
         </div>
       </section>
 
-      <!-- Vision: Édouard's lab -->
+      <!-- Vision: Édouard's lab, still in testing -->
       <section class="view" id="view-vision" hidden>
-        <div class="view-h"><h1>Vision</h1></div>
+        <div class="view-h"><h1>Vision</h1><span class="badge test">In testing</span></div>
         <div class="card">
-          <h2>Where you look, where you are stuck</h2>
-          <p class="muted">The Vision Lab follows your gaze with the camera to frame the part of the screen you are looking at.
-            Your face never leaves this Mac: only the screen region goes to Holo. The gaze halo is hidden from screenshots.</p>
+          <h2>Gaze calibration</h2>
+          <p class="muted">The camera follows your gaze to frame the part of the screen you are looking at, so I see where you are stuck.
+            Your face never leaves this Mac: only the screen region goes to Holo.</p>
+          <p class="muted">Recalibrate when the gaze drifts: new seat, new light, glasses on or off.</p>
           <div class="row">
             <span class="badge" id="visionState">—</span>
-            <button class="btn" id="visionBtn">Open the Vision Lab</button>
+            <button class="btn" id="visionBtn">Recalibrate</button>
           </div>
           <p class="muted small" id="visionNote"></p>
         </div>

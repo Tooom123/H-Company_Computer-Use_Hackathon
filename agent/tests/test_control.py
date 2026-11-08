@@ -33,9 +33,12 @@ class Rig:
         self.voice: dict = {}
         self.tested = 0
         self.presence: list[bool] = []
+        self.ptt: list[str] = []
+        self.ptt_ok = True
         self.ctl = Controller(
             runs, status=lambda: {"autonomy": self.level, "current": None},
             set_autonomy=self._set, stop=self._stop, set_voice=self._voice, test_voice=self._test,
+            set_ptt_key=self._ptt,
             on_app_presence=self.presence.append, quota=lambda: {"active": 1, "limit": 3},
             tts_usage=lambda: {"tier": "creator", "characters_used": 10, "characters_limit": 100})
         self.srv = ControlServer(self.ctl, port=0).start()
@@ -51,6 +54,10 @@ class Rig:
     def _voice(self, opts):
         self.voice.update(opts)
         return dict(self.voice)
+
+    def _ptt(self, key):
+        self.ptt.append(key)
+        return self.ptt_ok
 
     def _test(self):
         self.tested += 1
@@ -133,7 +140,7 @@ def test_sessions_and_usage(rig, tmp_path):
     code, u = rig.call("GET", "/usage")
     m = month_usage(read_reports(tmp_path), datetime(2026, 11, 20, tzinfo=timezone.utc))
     assert m == {"month": "2026-11", "sessions": 2, "verified": 1, "escalated": 1, "simulated": 1,
-                 "h_spend_usd": 1.0, "h_cost_per_session_usd": 0.5}
+                 "median_duration_s": 90.0, "h_spend_usd": 1.0, "h_cost_per_session_usd": 0.5}
     assert u["h_quota"] == {"active": 1, "limit": 3} and u["elevenlabs"]["tier"] == "creator"
     assert set(u["configured"]) == {"h", "gladia", "linkup"}
     assert "key" not in json.dumps(u).lower().replace("api_key", "")  # never a secret in the payload
@@ -153,3 +160,27 @@ def test_failing_external_reads_show_unknown(tmp_path):
                      set_voice=lambda o: o, test_voice=lambda: False, quota=boom, tts_usage=boom)
     u = ctl.usage()
     assert u["h_quota"] is None and u["elevenlabs"] is None
+
+
+def test_push_to_talk_key(rig):
+    code, s = rig.call("POST", "/ptt", {"key": "alt_r"})
+    assert code == 200 and rig.ptt == ["alt_r"] and {k["key"] for k in s["ptt_keys"]} >= {"cmd+h", "alt_r"}
+    assert rig.call("POST", "/ptt", {"key": "cmd+q"})[0] == 400  # never a key that quits apps
+    rig.ptt_ok = False
+    assert rig.call("POST", "/ptt", {"key": "f9"})[0] == 409  # `run` has no push-to-talk
+
+
+def test_clicks_in_the_app_window_are_not_user_steps(rig):
+    req = urllib.request.Request(rig.base + "/status", headers={"X-HCS-App": "1", "X-HCS-App-Bounds": "100,50,900,600"})
+    urllib.request.urlopen(req, timeout=5).read()
+    assert rig.ctl.app_contains(500, 300) and not rig.ctl.app_contains(50, 300)
+    rig.call("GET", "/status", headers={"X-HCS-App": "1", "X-HCS-App-Bounds": "garbage"})
+    assert rig.ctl.app_bounds == (100, 50, 900, 600)  # a bad header keeps the last known window
+    rig.ctl.app_present = False
+    assert not rig.ctl.app_contains(500, 300)  # app closed: every click counts again
+
+
+def test_key_labels():
+    from hcs_agent.cli import _key_label
+
+    assert [_key_label(k) for k in ("cmd+h", "cmd+j", "alt_r", "f9", None)] == ["⌘H", "⌘J", "Right ⌥", "F9", "⌘H"]

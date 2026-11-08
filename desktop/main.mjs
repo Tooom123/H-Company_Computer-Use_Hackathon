@@ -3,7 +3,7 @@
 // It talks to the running agent (`hcs-agent talk`) on 127.0.0.1:8768 and to the support backend on :8766.
 // No key ever lives here: the agent and the backend keep them; the renderer only sees JSON via IPC.
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,8 +13,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
 const BACKEND = process.env.HCS_BACKEND_URL || "http://127.0.0.1:8766";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test)$/;
-const PLANS = new Set(["pro", "fixpack"]);
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test|ptt)$/;
+let mainWin = null;
 
 const smoke = process.argv.includes("--smoke");
 const section = (process.argv.find((a) => a.startsWith("--section=")) || "").split("=")[1] || "home";
@@ -38,33 +38,13 @@ ipcMain.handle("agent", (_e, method, p, body) => {
   if (!["GET", "POST"].includes(method) || typeof p !== "string" || !AGENT_PATHS.test(p)) {
     return { ok: false, status: 400, data: { error: "not allowed" } };
   }
-  return call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, { "X-HCS-App": "1" });
-});
-
-ipcMain.handle("plans", () => call(BACKEND, "GET", "/billing/plans"));
-
-ipcMain.handle("checkout", async (_e, plan) => {
-  if (!PLANS.has(plan)) return { ok: false, error: "unknown plan" };
-  const r = await call(BACKEND, "POST", "/billing/checkout", { plan });
-  const url = r.data && r.data.url;
-  if (r.ok && typeof url === "string" && url.startsWith("https://checkout.stripe.com/")) {
-    await shell.openExternal(url);
-    return { ok: true };
+  // The window's place on screen: the agent ignores clicks in it (steering the assistant is not doing the step).
+  const headers = { "X-HCS-App": "1" };
+  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized()) {
+    const b = mainWin.getBounds();
+    headers["X-HCS-App-Bounds"] = `${b.x},${b.y},${b.width},${b.height}`;
   }
-  if (r.offline) return { ok: false, error: "Support backend offline: run hcs-backend serve" };
-  if (r.status === 503) return { ok: false, error: "Stripe is not set up: add a test key in backend/.env" };
-  return { ok: false, error: `Checkout failed (${r.status})` };
-});
-
-ipcMain.handle("open-case", (_e, caseId) => {
-  if (typeof caseId !== "string" || !/^[\w-]{1,80}$/.test(caseId)) return false;
-  shell.openExternal(`${BACKEND}/dashboard/cases/${caseId}`);
-  return true;
-});
-
-ipcMain.handle("open-dashboard", () => {
-  shell.openExternal(`${BACKEND}/dashboard`);
-  return true;
+  return call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, headers);
 });
 
 // Vision Lab (Édouard): started as its own process from app/, stopped with this app.
@@ -114,7 +94,11 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  mainWin = win;
   win.setMenuBarVisibility(false);
+  // Like Matteo's overlay: invisible to screen capture, so H never sees (or clicks) the app and the guide's
+  // screen watcher does not mistake the app's live updates for the user acting. HCS_APP_CAPTURABLE=1 to record it.
+  if (process.env.HCS_APP_CAPTURABLE !== "1") win.setContentProtection(true);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
   win.loadFile(path.join(here, "renderer", "index.html"), { hash: section });

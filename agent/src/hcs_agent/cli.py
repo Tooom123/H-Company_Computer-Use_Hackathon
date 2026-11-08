@@ -179,6 +179,23 @@ def _control_voice(opts: dict) -> dict:
     return _control_status()["speech"]
 
 
+def _key_label(key: str | None) -> str:
+    """cmd+h -> ⌘H, alt_r -> Right ⌥, f9 -> F9: what the badge and the app show."""
+    if not key:
+        return "⌘H"
+    names = {"cmd": "⌘", "ctrl": "⌃", "alt": "⌥", "shift": "⇧", "alt_r": "Right ⌥", "cmd_r": "Right ⌘"}
+    return "".join(names.get(p, p.upper()) for p in key.lower().split("+"))
+
+
+def _control_ptt(key: str) -> bool:
+    ptt = _VOICE.get("ptt")
+    if ptt is None or not hasattr(ptt, "set_key"):
+        return False
+    ptt.set_key(key)
+    print(f"\n  [app] push-to-talk key: {_key_label(key)}", flush=True)
+    return True
+
+
 def _control_test_voice() -> bool:
     sp = _SPEECH["speaker"]
     if sp is None or sp.muted:
@@ -205,7 +222,8 @@ def _start_control(runs_dir: Path, command: str, backend) -> None:
     _CONTROL.update(command=command, backend=backend, since=time.strftime("%Y-%m-%dT%H:%M:%S"))
     _speaker()  # the app's Voice page can set and test the voice even before the first note is shown
     ctl = Controller(runs_dir, status=_control_status, set_autonomy=_set_autonomy, stop=_control_stop,
-                     set_voice=_control_voice, test_voice=_control_test_voice, on_app_presence=_app_presence)
+                     set_voice=_control_voice, test_voice=_control_test_voice, set_ptt_key=_control_ptt,
+                     on_app_presence=_app_presence)
     try:
         port = int(os.environ.get("HCS_CONTROL_PORT", DEFAULT_PORT))
         _CONTROL["server"] = ControlServer(ctl, port).start()
@@ -390,7 +408,8 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
     ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
     ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
-    ov.badge("⌘H: new request")
+    ptt = _VOICE.get("ptt")
+    ov.badge(f"{_key_label(getattr(ptt, 'key_name', None))}: new request")
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
@@ -466,7 +485,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
     print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
           f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
     if ov is not None:
-        ov.badge("Hold ⌘H and say what you need" if "cmd" in ptt.key_name else f"Hold {ptt.key_name} and speak")
+        ov.badge(f"Hold {_key_label(ptt.key_name)} and say what you need")
 
     def next_transcript() -> str:
         """Wait for a transcript while keeping the overlay (badge) alive on the main thread."""
@@ -541,7 +560,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if _new_request_pending():
                 continue  # the user spoke during the task: it was stopped, run the new request right away
             if ov is not None:
-                ov.badge(f"⌘H: new request" if "cmd" in ptt.key_name else f"{ptt.key_name}: new request")
+                ov.badge(f"{_key_label(ptt.key_name)}: new request")
             print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
     except KeyboardInterrupt:
         print("\nbye")
@@ -647,6 +666,9 @@ class _InputWatcher:
             magnet = _MAGNET.get("widget")
             if magnet is not None and payload and magnet.contains(*payload):
                 return  # changing the Magnet level is not the user doing the step
+            srv = _CONTROL.get("server")
+            if srv is not None and payload and srv.ctl.app_contains(*payload):
+                return  # same for a click in the desktop app (autonomy, Stop, voice...)
             self.last_click = now
         elif event == "key_down":
             if payload in (self._kb.Key.enter, self._kb.Key.tab):

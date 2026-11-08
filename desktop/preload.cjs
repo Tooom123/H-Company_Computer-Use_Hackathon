@@ -3,10 +3,6 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("hcs", {
   agent: (method, path, body) => ipcRenderer.invoke("agent", method, path, body),
-  plans: () => ipcRenderer.invoke("plans"),
-  checkout: (plan) => ipcRenderer.invoke("checkout", plan),
-  openCase: (caseId) => ipcRenderer.invoke("open-case", caseId),
-  openDashboard: () => ipcRenderer.invoke("open-dashboard"),
   vision: {
     status: () => ipcRenderer.invoke("vision:status"),
     start: () => ipcRenderer.invoke("vision:start"),
