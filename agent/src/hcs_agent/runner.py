@@ -57,6 +57,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _catalogue_signature(info, items) -> tuple:
+    """Compare visible metadata, including selection/geometry, without reading input values."""
+    return (getattr(info, "bundle_id", None), getattr(info, "is_front", True), info.title, info.url,
+            getattr(info, "viewport", None),
+            tuple((e.role, e.name, e.box, getattr(e, "enabled", None), getattr(e, "selected", None))
+                  for e in items))
+
+
 PLAN_FIRST = {x.strip().lower() for x in os.environ.get("HCS_PLAN_FIRST", "hcompany").split(",") if x.strip()}
 """Software guided from the live page for every task (scripts are hints), instead of script-first.
 Script-first stays for software whose scripts were validated live step by step (Odoo)."""
@@ -536,7 +544,7 @@ class Intervention:
         """Guide without a script: each step is planned from the controls actually on the page (accessibility
         tree) and the local site knowledge, in one text-only model call; the box is exact. None = could not
         read the page or got lost -> the caller falls back to the H agent."""
-        from .a11y import native_target
+        from .a11y import INPUT_ROLES, INTERACTIVE, native_target
 
         native_mode = bool(native_target())
 
@@ -600,6 +608,9 @@ class Intervention:
         repeats = 0
         last_instruction = ""
         last_plan_observation = None
+        ineffective_targets = set()
+        rejected_plans = 0
+        reobservations = 0
         waited_front = 0
         for n in range(max_steps):
             if self._stop.is_set():
@@ -647,7 +658,9 @@ class Intervention:
                                                       kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                                                         blocker=message))
-            cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" for e in items]
+            cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)}); "
+                     f"enabled={getattr(e, 'enabled', None)}; selected={getattr(e, 'selected', None)}; "
+                     f"{'interactive role' if e.role in INTERACTIVE else 'information only'}" for e in items]
             parts = urlsplit(info.url)
             page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
             page_description = (f"Native application: Devin Desktop; bundle_id={info.bundle_id}; focused window: {info.title[:80]}"
@@ -662,9 +675,7 @@ class Intervention:
                     return native_blocked("The Devin window could no longer be read. Bring its window to the front and ask again.",
                                           "catalogue_lost_after_planning")
                 current, current_items = fresh
-                signature = lambda p, es: (getattr(p, "bundle_id", None), p.is_front, p.title, p.url,
-                                          p.viewport, tuple((e.name, e.box) for e in es))
-                if signature(info, items) != signature(current, current_items):
+                if _catalogue_signature(info, items) != _catalogue_signature(current, current_items):
                     self._trace("Native window changed while planning; discard the stale instruction.")
                     continue
             if not isinstance(plan, dict):
@@ -695,8 +706,7 @@ class Intervention:
                     return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
                                           "empty_planner_instruction")
                 return None
-            plan_observation = (getattr(info, "bundle_id", None), info.title, info.url, getattr(info, "viewport", None),
-                                tuple((e.role, e.name, e.box) for e in items))
+            plan_observation = _catalogue_signature(info, items)
             if instruction == last_instruction and plan_observation == last_plan_observation:
                 repeats += 1
                 if repeats >= 2:
@@ -712,39 +722,89 @@ class Intervention:
             kind = plan.get("kind") if plan.get("kind") in ("click", "type", "info") else "click"
             target_index = plan.get("target")
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None
+            # Input values/focus are intentionally not observed. Focusing/typing in a field can
+            # therefore succeed without changing this catalogue; do not ban a subsequent edit.
+            target_key = ((plan_observation, kind, target.role, target.name, target.box)
+                          if target and kind == "click" and target.role not in INPUT_ROLES else None)
+            invalid = None
+            if kind in ("click", "type"):
+                if target is None:
+                    invalid = "The proposed action has no visible target."
+                elif target.role not in INTERACTIVE or getattr(target, "enabled", None) is False:
+                    invalid = f"Target '{target.name[:50]}' is information-only or explicitly disabled."
+                elif kind == "type" and target.role not in INPUT_ROLES:
+                    invalid = f"Target '{target.name[:50]}' is not a text input."
+                elif target_key in ineffective_targets:
+                    invalid = f"Target '{target.name[:50]}' was already tried with no observed change on this page."
+            if invalid:
+                rejected_plans += 1
+                self._trace(f"guidance action rejected: {invalid}")
+                history.append(f"Instruction NOT shown: {instruction}. {invalid} Choose a different visible route, "
+                               "or report blocked. Do not treat an interaction as proof of success.")
+                if rejected_plans >= 2:
+                    message = "I couldn't identify a useful next action on this page. Tell me what you want to achieve, or ask about a specific visible feature."
+                    self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1,
+                                                         instruction=message, kind="info", last=True))
+                    return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
+                                                                            blocker=invalid, steps_taken=history))
+                continue  # One bounded correction before showing any unusable/repeated action.
+            rejected_plans = 0
             if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
                 instruction = f"{instruction} — type \"{plan['text']}\""
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:160],
                               where=target.name if target else "", pointer=target.center if target else None,
                               box=target.box if target else None, box_exact=target is not None, kind=kind)
-            signature = (info.url, tuple(sorted(e.name for e in items)))
             reply = self._on_guidance(gs)
             if reply is None:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             did, note = reply
+            if not did and (note or "").startswith("Observation only: target invalidated; reobserve requested."):
+                history.append(note)
+                self._trace(note)
+                reobservations += 1
+                if reobservations <= 1:
+                    continue  # Fresh planning, not a confirmation that the previous action happened.
             if not did:
                 if native_mode:
                     return native_blocked("You're still stuck on this step. Describe what you see, or ask a more specific question.",
                                           "user_reported_stuck")
                 return None  # the user is stuck: the caller decides (takeover / agent) from the autonomy level
             history.append(f"Instruction shown: {instruction}. " + (note or "User reported an interaction; result not verified."))
-            self._wait_page_change(catalogue, bound, signature)
+            change = self._wait_page_change(catalogue, bound, plan_observation)
+            if change == "stopped":
+                return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run", steps_taken=history))
+            observation = {
+                "changed": "Visible accessibility metadata changed after the interaction; goal completion is not verified.",
+                "unchanged": ("No visible accessibility change was observed after the interaction. "
+                              + ("Do not repeat the same target on this unchanged page; choose another route or report blocked."
+                                 if target_key is not None else
+                                 "Field values and focus are not observed; this is not proof that an edit failed. Inspect other visible evidence or ask the user.")),
+                "unavailable": "The authorized foreground page could not be observed after the interaction; progress is unknown.",
+            }.get(change)
+            if observation:
+                history.append(observation)
+                self._trace(observation)
+            if change == "unchanged" and kind in ("click", "type") and target_key is not None:
+                ineffective_targets.add(target_key)
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="unclear", summary="Step limit reached while guiding from the page; outcome to verify.",
             steps_taken=history))
 
-    def _wait_page_change(self, catalogue, bound, signature, timeout_s: float = 1.6) -> None:
+    def _wait_page_change(self, catalogue, bound, signature, timeout_s: float = 1.6) -> str:
         """After the user acted, give the page up to ~1.5 s to change (navigation, menu, dialog) before planning
         the next step from it; planning on the old page would just repeat the step."""
-        deadline = time.time() + timeout_s
-        while time.time() < deadline and not self._stop.is_set():
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline and not self._stop.is_set():
             cat = catalogue(bound)
             if cat is None:
-                return
+                return "unavailable"
             info, items = cat
-            if (info.url, tuple(sorted(e.name for e in items))) != signature:
-                return
+            if not getattr(info, "is_front", True) or not items:
+                return "unavailable"
+            if _catalogue_signature(info, items) != signature:
+                return "changed"
             time.sleep(0.2)
+        return "stopped" if self._stop.is_set() else "unchanged"
 
     def _on_guidance_nowait(self, step: GuidanceStep) -> None:
         """Publish an informational step without waiting for the user (e.g. 'bring the browser to the front')."""

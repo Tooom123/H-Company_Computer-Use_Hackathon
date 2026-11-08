@@ -916,3 +916,28 @@ remplacent pas la recette humaine des scénarios Devin/Odoo.
 L'historique est conservé par fusion, sans squash : certains lanceurs extraient
 des révisions épinglées. Le lanceur macOS reste dépendant du checkout et de son
 environnement local. Les secrets et épisodes privés ne sont pas inclus.
+
+## 2026-11-08 — Devin : clic sans effet sur « Current plan »
+
+Essai réel `sess_842b62fa7faa`, demande « What can I do here? ». Le coach a
+proposé de cliquer sur « Current plan ». Edouard rapporte dans le chat :
+« Rien ne change après le clic ». Le moteur était toujours en attente de la
+première étape et aucune interaction cible n'avait été enregistrée. L'essai
+a été arrêté proprement ; ses traces privées sont conservées. Son statut est
+interrompu/abandonné, sans réussite vérifiée. Ce constat humain porte sur cette
+étape ; aucun label d'utilité ni feedback saisi dans l'app n'a été inventé.
+La durée d'attente de cet essai ne mesure pas la latence du modèle.
+
+Deux défauts de code ont été identifiés : le catalogue AX ne transmettait pas
+l'état activé/sélectionné des contrôles, et une cible invalidée pendant l'attente
+ne pouvait plus déclencher de progression. Le nom « Current plan » ne prouve
+pas que ce contrôle ouvre un écran ; nous n'avons pas établi qu'il était désactivé.
+
+Le correctif conserve les états AX inconnus comme inconnus, refuse les clics sur
+du texte ou un contrôle explicitement désactivé, et transmet au planificateur
+l'absence de changement observé. Une reformulation ne suffit plus à recommander
+à nouveau le même clic inefficace. Les champs restent un cas distinct : leurs
+valeurs ne sont pas lues, donc un catalogue inchangé ne prouve pas l'échec d'une
+saisie. Après invalidation de cible, une seule reprise de planification est
+autorisée sur observation AX fraîche, sans confirmer l'action précédente.
+Ces contrôles logiciels restent à confirmer par un nouvel essai humain.

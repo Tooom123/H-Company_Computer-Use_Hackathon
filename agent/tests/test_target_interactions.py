@@ -126,6 +126,62 @@ def test_ax_box_follows_layout_but_does_not_resurrect_invalidated_coordinates(ri
     assert not rig.w.acted("click")
 
 
+def test_fresh_ax_after_invalidation_can_request_replan_but_never_restore_click_target(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    rig.w.update_target_box(None)
+    rig.clock[0] += 0.2
+    measured_at = rig.clock[0]
+    measurement = (1, measured_at, 123, (80, 80, 40, 40))
+    rig.w.update_target_box(measurement[3])
+    click(rig)
+    assert not rig.w.acted("click")
+    assert rig.w.reobservation_ready(measurement, 1)
+    assert rig.w._target is None
+
+
+@pytest.mark.parametrize("failure", ["predates", "stale", "wrong_step", "wrong_app", "focus_changed",
+                                      "missing_box", "unknown_app"])
+def test_replan_requires_fresh_same_step_and_same_app_ax_measurement(rig, failure):
+    arm(rig, box=(80, 80, 40, 40))
+    rig.w.update_target_box(None)
+    rig.clock[0] += 0.2
+    step, started_at, app, box = 1, rig.clock[0], 123, (80, 80, 40, 40)
+    if failure == "predates":
+        started_at = rig.w.invalidated_at
+    elif failure == "stale":
+        rig.clock[0] += 2
+    elif failure == "wrong_step":
+        step = 2
+    elif failure == "wrong_app":
+        app = 456
+    elif failure == "focus_changed":
+        rig.app[0] = 456
+    elif failure == "missing_box":
+        box = None
+    elif failure == "unknown_app":
+        rig.w._expected_app = None
+    assert not rig.w.reobservation_ready((step, started_at, app, box), 1)
+
+
+def test_uninvalidated_target_never_requests_automatic_replan(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    assert not rig.w.reobservation_ready((1, rig.clock[0], 123, (80, 80, 40, 40)), 1)
+
+
+def test_tracker_does_not_read_ax_when_a_different_app_is_foreground(monkeypatch):
+    from hcs_agent import a11y
+    monkeypatch.setattr(a11y, "available", lambda: True)
+    monkeypatch.setattr(a11y, "find", lambda _: pytest.fail("Must not inspect another app"))
+    monkeypatch.setattr(cli._InputWatcher, "_frontmost_app", staticmethod(lambda: 456))
+    tracker = cli._TargetTracker()
+    tracker.description, tracker.step, tracker.box = "Current plan", 1, (80, 80, 40, 40)
+    tracker._expected_app = 123
+    waits = iter([False, True])
+    tracker._stop = SimpleNamespace(wait=lambda _: next(waits))
+    tracker._run()
+    assert tracker.box is None and tracker.measurement is None
+
+
 def test_ax_control_disappearing_after_target_click_still_requests_verification(rig):
     arm(rig, box=(80, 80, 40, 40))
     click(rig)
@@ -261,6 +317,58 @@ def test_loop_target_interaction_requests_reobservation_not_claimed_success(loop
     assert len(r.it.replies) == 1
     assert r.it.replies[0].note.startswith("Observed interaction:")
     assert "Result not verified" in r.it.replies[0].note
+
+
+def test_loop_replans_once_from_fresh_ax_without_confirming_action(loop_rig, monkeypatch):
+    r = loop_rig
+    monkeypatch.setenv("HCS_AX_NATIVE_BUNDLE_ID", "com.exafunction.windsurf")
+    r.it.request.software, r.it.request.autonomy, r.it.request.mode = "cognition", 0, cli.Mode.guide
+    tracker = SimpleNamespace(measurement=None)
+
+    def follow(step, description, box, **kwargs):
+        tracker.measurement = None
+        assert kwargs["expected_app"] == 123
+
+    tracker.follow, tracker.stop = follow, lambda: None
+    monkeypatch.setattr(cli, "_TargetTracker", lambda: tracker)
+
+    def invalidate_then_measure():
+        r.rig.w._on_event("scroll", (0, 0, 0, 1))
+        r.rig.clock[0] += 0.2
+        tracker.measurement = (r.it.guidance[-1].index, r.rig.clock[0], 123, (80, 80, 40, 40))
+
+    def next_(command):
+        r.it.replies.append(command)
+        r.it.guidance.append(GuidanceStep(index=2, instruction="Use the freshly observed target",
+                                          pointer=(100, 100)))
+
+    r.it.next = next_
+    r.actions.extend([invalidate_then_measure, lambda: None, invalidate_then_measure, lambda: None])
+    cli._guide_loop(r.it, auto=False, overlay=False)
+    assert len(r.it.replies) == 1  # a second invalidation needs explicit confirmation or Stop
+    reply = r.it.replies[0]
+    assert reply.done is False
+    assert reply.note.startswith("Observation only: target invalidated; reobserve requested.")
+    assert "No user action was confirmed" in reply.note
+    assert r.rig.w._target is None
+
+
+@pytest.mark.parametrize("software,autonomy,mode,bundle", [
+    ("odoo", 0, cli.Mode.guide, "com.exafunction.windsurf"),
+    ("cognition", 1, cli.Mode.guide, "com.exafunction.windsurf"),
+    ("cognition", 0, cli.Mode.act, "com.exafunction.windsurf"),
+    ("cognition", 0, cli.Mode.guide, ""),
+    ("cognition", 0, cli.Mode.guide, "other.native.app"),
+])
+def test_other_modes_keep_explicit_confirmation_without_automatic_replan(
+        loop_rig, monkeypatch, software, autonomy, mode, bundle):
+    r = loop_rig
+    monkeypatch.setenv("HCS_AX_NATIVE_BUNDLE_ID", bundle)
+    r.it.request.software, r.it.request.autonomy, r.it.request.mode = software, autonomy, mode
+    monkeypatch.setattr(r.rig.w, "reobservation_ready", lambda *args: pytest.fail("Replan is outside this pilot"))
+    r.actions.append(lambda: r.rig.w._on_event("scroll", (0, 0, 0, 1)))
+    cli._guide_loop(r.it, auto=False, overlay=False)
+    assert r.it.replies == []
 
 
 @pytest.mark.parametrize("stdin,expected", [("", 0), ("\n", 1)])

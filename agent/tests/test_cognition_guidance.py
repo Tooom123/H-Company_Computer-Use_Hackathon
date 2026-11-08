@@ -393,6 +393,155 @@ def test_native_human_stuck_does_not_claim_accessibility_was_lost(dynamic, monke
     assert len(dynamic.calls) == 1
 
 
+@pytest.mark.parametrize('role,enabled,kind,target', [
+    ('AXStaticText', None, 'click', 0),
+    ('AXButton', False, 'click', 0),
+    ('AXButton', True, 'type', 0),
+    ('AXButton', None, 'click', None),
+])
+def test_unusable_action_is_replanned_once_without_showing_an_arrow(dynamic, monkeypatch, role, enabled, kind, target):
+    _make_native(dynamic, monkeypatch)
+    _, items = dynamic.backend.page_catalogue(None)
+    items[0].role, items[0].enabled = role, enabled
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    dynamic.backend.plan_step = lambda *args: dynamic.calls.append(args) or {
+        'done': False, 'instruction': 'Use Details', 'kind': kind, 'target': target}
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert len(dynamic.calls) == 2
+    assert len(dynamic.shown) == 1 and dynamic.shown[0].last
+    assert dynamic.shown[0].pointer is None
+    assert 'Instruction NOT shown' in '\n'.join(result.declared.steps_taken)
+
+
+def test_unknown_enabled_and_selected_button_remain_usable_context(dynamic):
+    _, items = dynamic.backend.page_catalogue(None)
+    items[0].enabled, items[0].selected = None, True
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert dynamic.shown[0].box_exact
+    assert 'enabled=None' in dynamic.calls[0][3][0] and 'selected=True' in dynamic.calls[0][3][0]
+
+
+def test_no_change_prevents_reworded_click_on_same_target_and_is_traced(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    monkeypatch.setattr(dynamic.it, '_wait_page_change', lambda *args: 'unchanged')
+    plans = iter(['Click Details', 'Open Details', 'Press Details'])
+    histories = []
+
+    def plan(*args):
+        histories.append(list(args[4]))
+        return {'done': False, 'instruction': next(plans), 'kind': 'click', 'target': 0}
+
+    dynamic.backend.plan_step = plan
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert [s.instruction for s in dynamic.shown[:-1]] == ['Click Details']
+    assert 'No visible accessibility change' in '\n'.join(histories[1])
+    assert 'was already tried' in '\n'.join(histories[2])
+    assert any('No visible accessibility change' in step.summary for step in dynamic.it.steps)
+
+
+def test_no_change_can_recover_through_different_visible_target(dynamic, monkeypatch):
+    _, items = dynamic.backend.page_catalogue(None)
+    alternative = SimpleNamespace(role='AXPopUpButton', name='More', center=(200, 100), box=(180, 80, 40, 40))
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [items[0], alternative])
+    plans = iter([
+        {'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0},
+        {'done': False, 'instruction': 'Open More', 'kind': 'click', 'target': 1},
+        {'done': True, 'summary': 'The menu is visible.'},
+    ])
+    changes = iter(['unchanged', 'changed'])
+    dynamic.backend.plan_step = lambda *args: next(plans)
+    monkeypatch.setattr(dynamic.it, '_wait_page_change', lambda *args: next(changes))
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert [s.instruction for s in dynamic.shown[:2]] == ['Open Details', 'Open More']
+    assert any('goal completion is not verified' in step.summary for step in dynamic.it.steps)
+
+
+def test_unchanged_input_focus_does_not_block_typing_in_the_same_field(dynamic, monkeypatch):
+    _, items = dynamic.backend.page_catalogue(None)
+    items[0].role = 'AXTextField'
+    plans = iter([
+        {'done': False, 'instruction': 'Click Search', 'kind': 'click', 'target': 0},
+        {'done': False, 'instruction': 'Type an example', 'kind': 'type', 'target': 0, 'text': 'example'},
+        {'done': True, 'summary': 'The result is visible.'},
+    ])
+    histories = []
+
+    def plan(*args):
+        histories.append(list(args[4]))
+        return next(plans)
+
+    dynamic.backend.plan_step = plan
+    monkeypatch.setattr(dynamic.it, '_wait_page_change', lambda *args: 'unchanged')
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert [s.kind for s in dynamic.shown[:2]] == ['click', 'type']
+    assert 'not proof that an edit failed' in '\n'.join(histories[1])
+    assert not any('action rejected' in step.summary for step in dynamic.it.steps)
+
+
+@pytest.mark.parametrize('change', ['selection', 'position', 'enabled', 'title'])
+def test_accessibility_change_detects_more_than_label_changes(dynamic, change):
+    from hcs_agent.runner import _catalogue_signature
+    info, items = dynamic.backend.page_catalogue(None)
+    before = _catalogue_signature(info, items)
+    if change == 'selection':
+        items[0].selected = True
+    elif change == 'position':
+        items[0].box = (80, 140, 40, 40)
+    elif change == 'enabled':
+        items[0].enabled = False
+    else:
+        info.title = 'A new view with the same labels'
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == 'changed'
+
+
+@pytest.mark.parametrize('unavailable', ['missing', 'background', 'empty'])
+def test_lost_page_is_unknown_progress_not_a_change(dynamic, unavailable):
+    from hcs_agent.runner import _catalogue_signature
+    info, items = dynamic.backend.page_catalogue(None)
+    before = _catalogue_signature(info, items)
+    if unavailable == 'background':
+        info.is_front = False
+    catalogue = lambda _: None if unavailable == 'missing' else (info, [] if unavailable == 'empty' else items)
+    assert Intervention._wait_page_change(dynamic.it, catalogue, dynamic.bound, before) == 'unavailable'
+
+
+def test_unchanged_wait_is_bounded_and_stop_is_preserved(dynamic, monkeypatch):
+    from hcs_agent.runner import _catalogue_signature
+    before = _catalogue_signature(*dynamic.backend.page_catalogue(None))
+    clock = iter([0.0, 0.1, 1.7])
+    monkeypatch.setattr('hcs_agent.runner.time.monotonic', lambda: next(clock))
+    monkeypatch.setattr('hcs_agent.runner.time.sleep', lambda _: None)
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == 'unchanged'
+    monkeypatch.setattr('hcs_agent.runner.time.monotonic', lambda: 0.0)
+    dynamic.it._stop.set()
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == 'stopped'
+
+
+def test_invalidated_target_can_be_reobserved_once_without_claiming_an_action(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    note = 'Observation only: target invalidated; reobserve requested. No target interaction confirmed.'
+    dynamic.it._on_guidance = lambda step: dynamic.shown.append(step) or (False, note)
+    histories = []
+
+    def plan(*args):
+        histories.append(list(args[4]))
+        return {'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0}
+
+    dynamic.backend.plan_step = plan
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert len(histories) == 2  # Repeated invalidations cannot create an unbounded paid planning loop.
+    assert histories[1] == [note]
+    assert result.declared.outcome == 'blocked'
+    assert not any('Instruction shown:' in entry for entry in histories[1])
+
+
 def test_native_front_window_timeout_has_specific_observation(dynamic, monkeypatch):
     _make_native(dynamic, monkeypatch)
     dynamic.info.is_front = False

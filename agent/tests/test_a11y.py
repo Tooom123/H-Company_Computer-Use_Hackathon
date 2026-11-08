@@ -7,6 +7,13 @@ def _el(role, name, x=0, y=0, w=80, h=30):
     return Candidate(role=role, name=name, frame=(x, y, w, h))
 
 
+def test_candidate_optional_states_preserve_existing_positional_callers():
+    ref = object()
+    candidate = Candidate("AXButton", "Review", (0, 0, 80, 30), 0.5, "label match", ref)
+    assert candidate.ref is ref and candidate.score == 0.5 and candidate.why == "label match"
+    assert candidate.enabled is None and candidate.selected is None
+
+
 CHATTER = [
     _el("AXButton", "Send message", 1000, 270), _el("AXButton", "Log note", 1120, 270),
     _el("AXButton", "Activity", 1230, 270), _el("AXStaticText", "Log note", 300, 600, 60, 16),

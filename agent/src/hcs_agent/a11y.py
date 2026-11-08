@@ -65,6 +65,8 @@ class Candidate:
     score: float = 0.0
     why: str = ""
     ref: object = None  # the AXUIElement, for hit-testing
+    enabled: bool | None = None  # None means the accessibility API did not provide a Boolean state.
+    selected: bool | None = None
 
     @property
     def center(self) -> tuple[int, int]:
@@ -125,6 +127,15 @@ def _frame(el):
 
 def _text(v) -> str:
     return v.strip() if isinstance(v, str) else ""
+
+
+def _boolean_state(value) -> bool | None:
+    """Only explicit Boolean/bridged 0-or-1 states are evidence; AX errors are unknown."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    return None
 
 
 def _browsers():
@@ -234,7 +245,8 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
     """Every element with a name and an on-screen frame. One IPC per node (multiple attributes at once)."""
     import ApplicationServices as AS
 
-    attrs = ["AXRole", "AXTitle", "AXDescription", "AXPlaceholderValue", "AXChildren", "AXFrame"]
+    attrs = ["AXRole", "AXTitle", "AXDescription", "AXPlaceholderValue", "AXChildren", "AXFrame",
+             "AXEnabled", "AXSelected"]
     out: list[Candidate] = []
     stack = [web]
     count = 0
@@ -244,7 +256,7 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
         err, vals = AS.AXUIElementCopyMultipleAttributeValues(el, attrs, 0, None)
         if err != 0 or vals is None:
             continue
-        role, title, desc, placeholder, children, frame_v = vals
+        role, title, desc, placeholder, children, frame_v, enabled, selected = vals
         role = role if isinstance(role, str) else ""
         # Electron editors expose typed values as AXStaticText descendants as well as AXValue.
         # Preserve only the input's own label/placeholder; never walk into its content subtree.
@@ -267,7 +279,10 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
                 frame = (float(r.origin.x), float(r.origin.y), float(r.size.width), float(r.size.height))
         if frame is None or frame[2] < 2 or frame[3] < 2:
             continue
-        out.append(Candidate(role=role, name=name, frame=frame, ref=el))
+        # Disabled/selected controls remain useful evidence in the page catalogue.
+        # Selection does not imply either disabled state or a successful action.
+        out.append(Candidate(role=role, name=name, frame=frame, ref=el,
+                             enabled=_boolean_state(enabled), selected=_boolean_state(selected)))
     return out
 
 

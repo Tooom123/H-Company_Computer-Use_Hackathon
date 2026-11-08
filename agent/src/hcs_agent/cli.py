@@ -93,6 +93,7 @@ _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": Non
 _FEEDBACK = DesktopFeedback()
 _RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
 _GUIDE_REPLY_LOCK = threading.Lock()
+_REOBSERVE_GUIDANCE_NOTE = "Observation only: target invalidated; reobserve requested."
 _TEST_SENTENCE = "Hello, I am H Companion. I can now read the guidance aloud."
 
 
@@ -985,10 +986,17 @@ class _TargetTracker:
         self.step: int | None = None
         self.box: tuple[int, int, int, int] | None = None  # latest measured box (None = not visible)
         self.measured_at = 0.0
+        # (step, read-start monotonic time, foreground PID, box); never a reused prior read.
+        self.measurement = None
+        self._expected_app = None
+        self._generation = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def follow(self, step: int, description: str | None, box) -> None:
+    def follow(self, step: int, description: str | None, box, *, expected_app=None) -> None:
+        self._generation += 1
+        self.measurement = None
+        self._expected_app = expected_app
         self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
         if self._thread is None and description and sys.platform == "darwin":
             self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
@@ -1006,16 +1014,26 @@ class _TargetTracker:
             desc, step = self.description, self.step
             if not desc:
                 continue
+            generation, expected_app = self._generation, self._expected_app
+            # Do not inspect a different app while recovering from focus loss.
+            if expected_app is None or _InputWatcher._frontmost_app() != expected_app:
+                self.box, self.measurement = None, None
+                continue
+            started_at = time.monotonic()
             try:
                 best, ties, info = a11y.find(desc)
             except Exception:  # noqa: BLE001
                 continue
-            if (self.description, self.step) != (desc, step):
+            if self._generation != generation:
                 continue  # the step changed meanwhile
+            if _InputWatcher._frontmost_app() != expected_app:
+                self.box, self.measurement = None, None
+                continue
             if info is None or len(info.elements) <= 1:
                 continue  # no page to compare with: keep what we have
             self.box = best.box if (best and not ties and info.is_front) else None
             self.measured_at = time.time()
+            self.measurement = (step, started_at, expected_app, self.box)
 
     def stop(self) -> None:
         self._stop.set()
@@ -1044,6 +1062,7 @@ class _InputWatcher:
         self._target_click = False
         self._field_focused = False
         self._expected_app = None
+        self.invalidated_at = None
         self._hub, self._kb = None, keyboard
         try:
             if self._kb is None:
@@ -1089,6 +1108,8 @@ class _InputWatcher:
 
     def _invalidate(self) -> None:
         # A coordinate from a previous page/focus is no longer evidence. Only a new step re-arms it.
+        if self._target is not None and self.invalidated_at is None:
+            self.invalidated_at = self._clock()
         self._target = None
         self._target_click = self._field_focused = False
         self.typed, self.last_submit = 0, 0.0
@@ -1145,6 +1166,7 @@ class _InputWatcher:
 
     def arm(self, guidance) -> None:
         self.armed_at = self._clock()
+        self.invalidated_at = None
         self._kind = getattr(guidance, "kind", "click")
         self.typed, self.last_submit = 0, 0.0
         self._target_click = self._field_focused = False
@@ -1155,6 +1177,20 @@ class _InputWatcher:
             self._target = ("box", tuple(box))
         elif self._finite(pointer, 2):
             self._target = ("point", tuple(pointer))
+
+    @property
+    def expected_app(self):
+        return self._expected_app
+
+    def reobservation_ready(self, measurement, step: int) -> bool:
+        """A fresh AX read may request a new plan, never restore or confirm the old target."""
+        if self.invalidated_at is None or self._expected_app is None or measurement is None:
+            return False
+        measured_step, started_at, app, box = measurement
+        return (measured_step == step and started_at > self.invalidated_at
+                and 0 <= self._clock() - started_at <= 1.5
+                and app == self._expected_app and self._focus_probe() == self._expected_app
+                and self._finite(box, 4) and box[2] > 0 and box[3] > 0)
 
     def update_target_box(self, box) -> None:
         """Follow an AX box without resurrecting a target invalidated by scroll/navigation."""
@@ -1214,13 +1250,21 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     tracker = _TargetTracker()
     prompted = False
     guidance_scene_shown = False
+    reobservations = 0
+    # Only the observation-only native pilot has an explicit no-action replan contract in the runner.
+    reobserve_allowed = (getattr(it.request, "software", None) == "cognition"
+                         and getattr(it.request, "autonomy", None) == 0
+                         and getattr(it.request, "mode", None) is Mode.guide
+                         and os.environ.get("HCS_AX_NATIVE_BUNDLE_ID") == "com.exafunction.windsurf")
     inputs = _InputWatcher()
 
-    def advance(done: bool = True, note: str = "") -> None:
+    def advance(done: bool = True, note: str = "") -> bool:
         nonlocal guidance_scene_shown
-        if _submit_guidance(it, shown_step, done=done, note=note) and ov:
+        accepted = _submit_guidance(it, shown_step, done=done, note=note)
+        if accepted and ov:
             ov.hide()
             guidance_scene_shown = False
+        return accepted
 
     def status_badge() -> None:
         if ov is None:
@@ -1228,7 +1272,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         if _VOICE.get("state") in ("recording", "transcribing"):
             return  # the voice badge is already shown; do not overwrite it mid-sentence
         if it.state is State.awaiting_user:
-            ov.badge(None)
+            ov.badge("Target changed. Confirm in H Companion or stop." if inputs.invalidated_at is not None else None)
         elif time.time() - _LAST_LOOKUP_AT < 4:
             ov.badge("Searching the web…", pulsing=True)
         elif it.state is State.running:
@@ -1264,7 +1308,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     interrupted = {"done": False}
 
     def tick() -> None:
-        nonlocal shown_step, shown_key, prompted, guidance_scene_shown
+        nonlocal shown_step, shown_key, prompted, guidance_scene_shown, reobservations
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
             print("\n>> voice received: stopping the current task before routing", flush=True)
@@ -1311,7 +1355,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     ov.show_scene(scene)
                     shown.update(scene=scene, box=g.box, hidden=False)
                     guidance_scene_shown = True
-                tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None, g.box)
+                tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None,
+                               g.box, expected_app=inputs.expected_app)
                 speaker = _SPEECH.get("speaker")
                 if speaker is not None:
                     speaker.prefetch(list(getattr(g, "prepared_speech", [])), replace=True)
@@ -1330,6 +1375,12 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if inputs.acted(g.kind):
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
+                return
+            if reobserve_allowed and reobservations < 1 and inputs.reobservation_ready(tracker.measurement, g.index):
+                if advance(done=False, note=_REOBSERVE_GUIDANCE_NOTE + " No user action was confirmed."):
+                    reobservations += 1
+                    print("\n  target invalidated; fresh AX observation requests one new plan, not a completed action",
+                          flush=True)
                 return
             try:
                 ready, _, _ = select.select([sys.stdin], [], [], 0)
