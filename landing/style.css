@@ -12,6 +12,13 @@ a{color:inherit}
 .mono{font-family:var(--mono)}
 .muted{color:var(--grey-600)}
 
+.company-portal{position:fixed;top:22px;right:24px;z-index:100;display:flex;flex-direction:column;gap:2px;padding:12px 20px;border:1px solid #deded9;border-radius:18px;background:#fff;color:#171717;text-decoration:none;font-weight:650;box-shadow:0 4px 20px #0002}
+.company-portal[hidden]{display:none}
+.company-portal small{font-size:11px;font-weight:400;color:#666}
+.company-portal:hover{border-color:#df2a23}
+.company-portal:focus-visible{outline:3px solid #df2a23;outline-offset:4px}
+@media(max-width:600px){.company-portal{top:12px;right:12px;padding:10px 14px}}
+
 /* hero ---------------------------------------------------------------------------------------- */
 .hero{min-height:100vh;background:var(--black);color:var(--grey-100);display:flex;flex-direction:column;
   align-items:center;justify-content:center;padding:48px 16px;text-align:center;position:relative;overflow:hidden;
