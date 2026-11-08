@@ -515,6 +515,11 @@ class PushToTalk:
                 pass
         self.transcripts.put(text)
 
+    def set_key(self, key_name: str) -> None:
+        """Change the hotkey live (desktop app). A recording in progress ends with the old key."""
+        self.key_name = key_name
+        self._hub.set_combo(key_name)
+
     def start(self) -> None:
         self._hub.subscribe(self._on_event)
 
