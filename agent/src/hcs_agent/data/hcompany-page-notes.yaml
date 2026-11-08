@@ -143,3 +143,23 @@
   why: >-
     Markdown instructions loaded into the agent's context when the skill runs: steps, rules, output format.
     Keep it short and concrete.
+
+# API keys page and the Create an API key dialog (labels read live 2026-11-08).
+- url: /settings/api-keys
+  at: ["Create an API key"]
+  text: "API keys let your code use H"
+  why: >-
+    The SDK and the holo CLI send a key with every request, as a bearer token. The list only shows a short prefix
+    of each key: the full value is shown once, when it is created.
+- url: /settings/api-keys
+  at: ["Copy Header", "Authorization: Bearer"]
+  text: "How a key is used"
+  why: >-
+    Every request carries the header "Authorization: Bearer" followed by your key, sent to the Base URL of your
+    region. A 401 means the header is missing; a 403 means the key was refused or has expired.
+- has: ["Create", "Expiry"]
+  at: ["Expiry"]
+  text: "Pick how long the key lives"
+  why: >-
+    A key that expires limits the damage if it leaks. Store the value in a password manager or a .env file
+    that is never committed, and never paste it in a chat.

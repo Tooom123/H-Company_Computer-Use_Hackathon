@@ -306,6 +306,11 @@ _STEP_HELP = re.compile(
     r"je fais quoi|on fait quoi|et (là|la|maintenant)|aide|je comprends pas|je suis bloqu|répète|repete)\b", re.I)
 
 
+# An explicit request that the agent act (not "show me how"): only then a spoken request overrides the Magnet.
+_DO_IT = re.compile(r"\b(do it|for me|on my behalf|you do it|do this|fais[- ]le|fais[- ]moi|à ma place|a ma place|"
+                    r"vas[- ]y|occupe[- ]t'en|tu le fais|crée[- ]moi|cree[- ]moi|create (it|one) for me)\b", re.I)
+
+
 def _reading_time(*texts: str) -> float:
     """Seconds to say these texts aloud (about 14 characters per second), at least 4 s."""
     return max(4.0, sum(len(t or "") for t in texts) / 14.0 + 1.0)
@@ -421,10 +426,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_approve: bool = False,
              scope_note: str | None = None, stop_after: float | None = None, auto_next: bool = False,
-             overlay: bool = True, ov=None) -> int:
+             overlay: bool = True, ov=None, autonomy: int | None = None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
     # The Magnet is the authority: 0 = show only, 1 = guide + takeover when stuck, 2 = the agent does it.
-    request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else _MAGNET["level"]
+    # `autonomy` = an explicit spoken "do it for me" for this one request; observe-only still wins.
+    request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else \
+        (autonomy if autonomy is not None else _MAGNET["level"])
     request.mode = Mode.act if request.autonomy >= 2 else Mode.guide
     journal = RunJournal(runs_dir, request, _print_event, simulated=backend.simulated)
     it = Intervention(request, backend, ProcedureRegistry(), journal, runs_dir)
@@ -540,6 +547,28 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
         print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
+_PLAN_QUESTION = re.compile(r"\b(plan|plans|limit|limits|parallel|concurren\w*|at (the same )?once|simultan\w*|"
+                            r"en même temps|parall[eè]le|credits?|crédits?|price|pricing|cost|prix|tarif\w*|upgrade|"
+                            r"how many (agents|sessions))\b", re.I)
+
+
+def _plan_widget():
+    """(control to point at, current plan name) from the H platform sidebar: "Upgrade" and e.g. "Free plan"."""
+    try:
+        from . import a11y
+
+        info = a11y.page()
+    except Exception:  # noqa: BLE001
+        return None
+    if info is None or "hcompany.ai" not in (info.url or ""):
+        return None
+    els = info.elements
+    current = next((e.name.strip() for e in els if e.role == "AXStaticText" and re.fullmatch(r"\w+ plan", e.name.strip(), re.I)), None)
+    target = next((e for e in els if e.role in ("AXButton", "AXLink") and e.name.strip().lower() == "upgrade"), None) \
+        or next((e for e in els if current and e.name.strip() == current), None)
+    return (target, current) if target is not None else None
+
+
 def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
     """Information question: answer from the documentation map (hub pages), aloud and on screen, with the source.
     False when the documentation does not contain it (the caller then looks for it in the software)."""
@@ -563,13 +592,25 @@ def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
         return False
     answer, source = res["answer"].strip(), (res.get("source") or excerpts[0][0]).strip()
     print(f"  [docs] {answer}  (source: {source})")
-    _say(answer)
+    plan = _plan_widget() if _PLAN_QUESTION.search(question + " " + answer) else None
+    if plan is not None:
+        # A limit / plan / price question: also show where the person's own plan is, and how to change it.
+        target, current = plan
+        follow = (f"You are on the {current}. " if current else "") + "Upgrade, here, shows the other plans and their limits."
+        print(f"  [docs] plan shown: {current or 'unknown plan'} -> {target.name}")
+        _say(answer, follow)
+    else:
+        _say(answer)
     if ov is None:
         return True
     from .overlay import Scene
 
     ov.badge(None)
-    ov.show_scene(Scene(text=_short(answer, 110), why=f"Source: {source}"[:120]))
+    if plan is not None:
+        ov.show_scene(Scene(text=_short(answer, 110), why=follow[:140], target=plan[0].center, target_box=plan[0].box))
+        seconds = max(seconds, 14.0)
+    else:
+        ov.show_scene(Scene(text=_short(answer, 110), why=f"Source: {source}"[:120]))
     t0 = time.time()
     try:
         ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
@@ -918,10 +959,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
             last_request = request
             if not coaching:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
+            do_it = (not coaching and request.procedure_id and request.mode is Mode.act and _DO_IT.search(text))
+            if do_it:
+                print("  [voice] explicit \"do it for me\": the agent acts for this request (autonomy 2)")
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                                overlay=not args.no_overlay, ov=ov)
+                                overlay=not args.no_overlay, ov=ov, autonomy=2 if do_it else None)
             except Exception:  # noqa: BLE001 - never die silently between two requests
                 import traceback
 

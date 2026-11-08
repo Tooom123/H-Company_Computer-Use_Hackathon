@@ -462,3 +462,19 @@ def test_match_keeps_the_field_content_for_the_tracker():
     field = a11y.Candidate("AXTextField", "Name *", (454, 528, 604, 20), value="demo-web-reader", required=True)
     best = a11y.match("Name *", [a11y.Candidate("AXStaticText", "Name", (445, 495, 40, 17)), field])[0]
     assert best.name == "Name *" and best.value == "demo-web-reader" and best.required
+
+
+@pytest.mark.parametrize("text,do_it", [("Create an API key for me and show me", True),
+                                        ("Fais-le à ma place : crée une clé API", True),
+                                        ("Show me how to create an API key", False),
+                                        ("Word. upload them with this session.", False)])
+def test_only_an_explicit_do_it_lets_a_spoken_request_act(text, do_it):
+    """A mis-transcribed sentence routed as 'act' must never move the mouse; an explicit 'do it for me' may."""
+    assert bool(cli._DO_IT.search(text)) is do_it
+
+
+@pytest.mark.parametrize("q,plan", [("How many agents can I run in parallel?", True),
+                                    ("Combien de sessions je peux lancer en même temps ?", True),
+                                    ("How much does a session cost?", True), ("What is a skill?", False)])
+def test_limit_and_price_questions_point_at_the_plan(q, plan):
+    assert bool(cli._PLAN_QUESTION.search(q)) is plan
