@@ -129,3 +129,15 @@ def test_intent_tolerates_null_fields_from_the_model():
     i = Intent.model_validate({"procedure_id": None, "mode": None, "parameters": {"opportunity": None},
                                "role": None, "goal": None, "missing": None, "question": "Which task?"})
     assert i.goal == "" and i.parameters == {} and i.missing == [] and i.mode == "act" and i.question == "Which task?"
+
+
+def test_action_questions_are_tasks_not_doc_answers():
+    from hcs_agent.voice import _is_information_question, _names_an_action
+
+    # "how do I create / configure / share" -> something to show on screen
+    for t in ["Comment créer un skill sur H ?", "Comment je configure un webhook ?", "Montre-moi comment partager ma session"]:
+        assert _names_an_action(t) and not _is_information_question(t)
+    # pure facts -> answered from the documentation, even when a verb appears in the sentence
+    for t in ["Combien de sessions je peux lancer en même temps ?", "C'est quoi un skill ?",
+              "Est-ce que le plan gratuit inclut les webhooks ?", "What is a skill?", "How many agents can I create?"]:
+        assert _is_information_question(t)
