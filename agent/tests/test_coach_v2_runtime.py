@@ -322,3 +322,37 @@ def test_actual_user_event_reaches_next_model_history(rt):
     assert sent_history[0]['observation']['target'] == 'Sessions'
     assert sent_history[0]['observation']['event'] == 'user_input'
     assert sent_history[0]['observation']['verified'] is False
+
+
+def test_rejected_model_reply_never_blames_screen_visibility():
+    error = CoachProtocolError('Holo returned an invalid coaching step.')
+    message = runtime.failure_message(error, 'model')
+    assert 'could read the page' in message
+    assert 'Keep H' not in message and 'visible' not in message
+
+
+def test_provider_outage_never_blames_screen_visibility():
+    error = CoachProtocolError('Holo returned HTTP 503.', kind='provider')
+    message = runtime.failure_message(error, 'model')
+    assert "couldn't reach Holo" in message
+    assert 'page' not in message
+
+
+def test_unexpected_exception_details_are_not_spoken():
+    message = runtime.failure_message(RuntimeError('private HTTP response body'), 'model')
+    assert 'private' not in message and 'HTTP' not in message
+
+
+def test_model_failure_records_model_stage_and_safe_reason(rt, monkeypatch):
+    monkeypatch.setattr(runtime, 'observe', lambda: observation())
+    client = Mock(last_raw={'speech': 'Hello.'}, last_usage={})
+    client.decide.side_effect = CoachProtocolError('invalid coaching step', reason='invalid_fields')
+    monkeypatch.setattr(runtime, 'CoachClient', lambda _: client)
+    rt.decide_worker(rt.current, 1, [])
+    event = rt.events.get_nowait()
+    assert event[0] == 'error' and 'could read the page' in event[2]
+    import json
+    events = [json.loads(line) for line in (rt.current.runs_dir / 'events.jsonl').read_text().splitlines()]
+    error = next(item['payload'] for item in events if item['type'] == 'model_error')
+    assert error['stage'] == 'model'
+    assert error['reason'] == 'invalid_fields'

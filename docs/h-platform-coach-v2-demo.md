@@ -128,7 +128,7 @@ La référence embarquée couvre les concepts et parcours ci-dessus avec leurs s
 - Position intermédiaire : reste Show me dans cette V2. Pas de prise de contrôle implicite.
 - Do it, I watch : une action de navigation, puis une nouvelle observation. Changer le mode arrête la demande actuelle; reformulez ensuite.
 - Toute nouvelle dictée interrompt la tâche et la voix. Les résultats tardifs d'une ancienne demande sont écartés.
-- Chaque intervention parlée/écrite est limitée à 32 mots, 220 caractères et deux phrases. Pas de tableau, code ou rapport final récité.
+- Chaque intervention parlée/écrite est limitée à 32 mots et 220 caractères. Le prompt préfère une ou deux phrases; une troisième phrase courte n’est pas rejetée uniquement à cause de sa ponctuation. Pas de tableau, code ou rapport final récité.
 - Les traces V2 et les labels saisis dans « Mon retour » restent dans le dossier privé V2. Ils ne sont pas encore publiés dans la tour de contrôle. Aucun succès humain ni consentement d'entraînement n'est déduit d'une réponse du modèle.
 
 Validation initiale : 91 tests Python et 23 tests desktop réussis. Sept questions sur observations synthétiques envoyées réellement à Holo4 ont respecté le protocole; latence API 6,0–10,7 s avec trois appels concurrents. Ce n'est pas un benchmark vocal de bout en bout. La suite de la session interrompue répond sans répéter son clic.

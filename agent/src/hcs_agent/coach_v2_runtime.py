@@ -81,6 +81,27 @@ def inside(point, box) -> bool:
     return bx <= x <= bx + width and by <= y <= by + height
 
 
+def failure_message(exc: Exception, stage: str) -> str:
+    """Explain the actual failure stage; a rejected reply is not a screen failure."""
+    if isinstance(exc, CoachProtocolError):
+        kind = getattr(exc, "kind", "response")
+        if kind == "provider":
+            return "I couldn't reach Holo just now. Please try again in a moment."
+        if kind == "configuration":
+            return "My connection isn't configured correctly. Please check H Companion's setup."
+        if kind == "policy":
+            if getattr(exc, "reason", None) == "guide_open_docs":
+                return 'Switch to "Do it, I watch" if you want me to open the documentation for you.'
+            return "I can explain this area, but I can't perform that action in this version."
+        if kind == "observation" and stage == "model":
+            return "I couldn't prepare the page information correctly. Please try again."
+        if stage == "model":
+            return "I could read the page, but couldn't use the reply I received. Please try your question again."
+        if stage in {"observation", "refresh"}:
+            return "Bring H Platform or its documentation to the front, then ask me again."
+    return "I ran into a problem while preparing your guidance. Please try again."
+
+
 def foreground_url() -> str:
     """Fast identity check immediately before any desktop effect, no content walk."""
     from . import a11y
@@ -304,11 +325,13 @@ class Runtime:
     def decide_worker(self, run, generation, history):
         client = None
         started = time.monotonic()
+        stage = "observation"
         try:
             observed = observe()
             if generation != self.generation:
                 return
             run.record("observation", observed.data)
+            stage = "model"
             client = CoachClient(self.api_key)
             decision = client.decide(run.request.goal, observed.data, run.request.mode, history)
             run.record("model", {"decision": decision.model_dump(), "raw": client.last_raw,
@@ -316,6 +339,7 @@ class Runtime:
                                  "superseded": generation != self.generation})
             if generation != self.generation:
                 return
+            stage = "refresh"
             fresh = observe()
             if fresh.data["url"] != observed.data["url"]:
                 self.events.put(("changed", generation))
@@ -328,14 +352,16 @@ class Runtime:
                     return
             self.events.put(("decision", generation, decision, fresh, target))
         except Exception as exc:
-            if client:
+            diagnostic = {"type": type(exc).__name__, "stage": stage,
+                          "category": getattr(exc, "kind", "internal"),
+                          "reason": getattr(exc, "reason", None),
+                          "validation_errors": getattr(exc, "validation_errors", None)}
+            if client and stage == "model":
                 run.record("model_error", {"type": type(exc).__name__, "raw": client.last_raw,
-                                           "usage": client.last_usage})
-            # Exception text can contain HTTP request data; do not echo/log it wholesale.
-            message = str(exc) if isinstance(exc, CoachProtocolError) and str(exc).startswith("Bring H") else (
-                "I couldn't read this page clearly. Keep H Platform visible and try that question again.")
-            run.record("error", {"type": type(exc).__name__})
-            self.events.put(("error", generation, message))
+                                           "usage": client.last_usage, **diagnostic})
+            # Preserve safe diagnostics, never echo HTTP bodies or arbitrary exception text.
+            run.record("error", diagnostic)
+            self.events.put(("error", generation, failure_message(exc, stage)))
         finally:
             if client:
                 client.close()

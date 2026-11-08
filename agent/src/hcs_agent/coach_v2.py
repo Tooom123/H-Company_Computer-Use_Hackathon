@@ -30,6 +30,14 @@ MAX_CONTROLS = 160
 class CoachProtocolError(ValueError):
     """The observation/response cannot safely become a coaching step."""
 
+    def __init__(self, message: str, *, kind: str = "response", reason: str | None = None,
+                 validation_errors: list[dict] | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.reason = reason
+        # Structured diagnostics deliberately omit model inputs and provider bodies.
+        self.validation_errors = validation_errors or []
+
 
 def allowed_page(url: str) -> bool:
     """Exact product/doc origins, with credential and billing pages excluded."""
@@ -69,8 +77,6 @@ def concise_speech(value: str) -> str:
     text = re.sub(r"\s+", " ", text)
     if len(text) > MAX_SPEECH_CHARS or len(text.split()) > MAX_WORDS:
         raise ValueError("Speech exceeds the compact coaching limit.")
-    if len(re.split(r"(?<=[.!?])\s+", text)) > 2:
-        raise ValueError("Speech must contain at most two sentences.")
     return text
 
 
@@ -84,6 +90,26 @@ class CoachDecision(BaseModel):
     direction: Literal["up", "down"] | None = None
     key: Literal["enter", "escape", "tab"] | None = None
     url: str | None = Field(default=None, max_length=2048)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_unused_nulls(cls, value):
+        """Accept provider null spellings only where the action cannot use a field.
+
+        Do not convert literal search text, guess IDs/directions, discard a real
+        extra action argument, or mutate ``last_raw`` retained by the client.
+        """
+        if not isinstance(value, dict):
+            return value
+        needed = {"target": {"click", "type"}, "text": {"type"},
+                  "direction": {"scroll"}, "key": {"key"}, "url": {"open_docs"}}
+        result = value.copy()
+        for field, actions in needed.items():
+            item = result.get(field)
+            if (value.get("action") not in actions and isinstance(item, str)
+                    and item.strip().casefold() in {"", "none", "null"}):
+                result[field] = None
+        return result
 
     @field_validator("speech")
     @classmethod
@@ -123,21 +149,21 @@ _UNSAFE_CONTROL = re.compile(
 
 def _observation(raw: dict) -> dict:
     if not isinstance(raw, dict) or not allowed_page(raw.get("url", "")):
-        raise CoachProtocolError("Open H Platform or its documentation first.")
+        raise CoachProtocolError("Open H Platform or its documentation first.", kind="observation", reason="outside_h_page")
     controls, seen = [], set()
     source = raw.get("controls", [])
     if not isinstance(source, list):
-        raise CoachProtocolError("Invalid controls observation.")
+        raise CoachProtocolError("Invalid controls observation.", kind="observation", reason="invalid_controls")
     for control in source[:MAX_CONTROLS]:
         if not isinstance(control, dict):
-            raise CoachProtocolError("Invalid control.")
+            raise CoachProtocolError("Invalid control.", kind="observation", reason="invalid_control")
         ident, box = control.get("id"), control.get("box")
         if type(ident) is not int or ident < 1 or ident in seen:
-            raise CoachProtocolError("Controls need unique positive IDs.")
+            raise CoachProtocolError("Controls need unique positive IDs.", kind="observation", reason="invalid_control_ids")
         if (not isinstance(box, (list, tuple)) or len(box) != 4
                 or not all(type(v) in (int, float) and math.isfinite(v) for v in box)
                 or box[0] < 0 or box[1] < 0 or box[2] <= 0 or box[3] <= 0):
-            raise CoachProtocolError("Invalid visible control bounds.")
+            raise CoachProtocolError("Invalid visible control bounds.", kind="observation", reason="invalid_control_bounds")
         seen.add(ident)
         controls.append({"id": ident, "role": str(control.get("role", ""))[:60],
                          "label": str(control.get("label", ""))[:180], "box": list(box),
@@ -146,7 +172,7 @@ def _observation(raw: dict) -> dict:
     if isinstance(excerpts, str):
         excerpts = [excerpts]
     if not isinstance(excerpts, list):
-        raise CoachProtocolError("Invalid text observation.")
+        raise CoachProtocolError("Invalid text observation.", kind="observation", reason="invalid_observation_text")
     text, remaining = [], 7000
     for item in excerpts:
         if not isinstance(item, str) or not remaining:
@@ -162,18 +188,18 @@ def _validate_target(decision: CoachDecision, observation: dict) -> None:
         return
     control = next((c for c in observation["controls"] if c["id"] == decision.target), None)
     if control is None:
-        raise CoachProtocolError("Holo selected a control that is not in this observation.")
+        raise CoachProtocolError("Holo selected a control that is not in this observation.", reason="unknown_target")
     if decision.action not in {"click", "type"}:
         return
     if control.get("enabled") is False:
-        raise CoachProtocolError("The selected control is disabled.")
+        raise CoachProtocolError("The selected control is disabled.", kind="policy", reason="disabled_target")
     if (urlsplit(observation["url"]).hostname == "platform.hcompany.ai"
             and _UNSAFE_CONTROL.search(control["label"])):
-        raise CoachProtocolError("This version only navigates and explains; that control is outside its scope.")
+        raise CoachProtocolError("This version only navigates and explains; that control is outside its scope.", kind="policy", reason="restricted_control")
     if decision.action == "type":
         role = control["role"].casefold().removeprefix("ax")
         if role not in {"textfield", "searchfield", "textarea", "combobox", "textbox"}:
-            raise CoachProtocolError("Typing target is not an observed text input.")
+            raise CoachProtocolError("Typing target is not an observed text input.", reason="invalid_typing_target")
 
 
 class CoachClient:
@@ -186,14 +212,14 @@ class CoachClient:
 
     def __init__(self, api_key: str, model: str = "holo4-35b-a3b", transport=None):
         if not api_key:
-            raise CoachProtocolError("An H API key is required.")
+            raise CoachProtocolError("An H API key is required.", kind="configuration", reason="missing_api_key")
         try:
             system = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
             product = PRODUCT_KNOWLEDGE_PATH.read_text(encoding="utf-8").strip()
         except OSError as exc:
-            raise CoachProtocolError("The coach prompt or H product briefing is missing.") from exc
+            raise CoachProtocolError("The coach prompt or H product briefing is missing.", kind="configuration", reason="missing_briefing") from exc
         if not system or not product:
-            raise CoachProtocolError("The coach prompt and product briefing must not be empty.")
+            raise CoachProtocolError("The coach prompt and product briefing must not be empty.", kind="configuration", reason="empty_briefing")
         self.system_prompt = system + "\n\nH Platform product briefing (reference data):\n" + product
         self.model = model
         self.last_raw: dict | str | None = None
@@ -207,7 +233,7 @@ class CoachClient:
     def decide(self, question: str, observation: dict, mode: Literal["guide", "act"], history: list[dict] | None = None) -> CoachDecision:
         self.last_raw, self.last_usage, self.last_latency_s = None, {}, 0.0
         if not isinstance(question, str) or not question.strip() or mode not in {"guide", "act"}:
-            raise CoachProtocolError("A question and an explicit coach mode are required.")
+            raise CoachProtocolError("A question and an explicit coach mode are required.", kind="configuration", reason="invalid_request")
         observed = _observation(observation)
         # History is runtime-provided data. Keep only four compact turns; never
         # replay old screenshots, system prompts or provider reasoning.
@@ -237,7 +263,7 @@ class CoachClient:
         try:
             response = self._http.post(MODELS_URL, json=body)
             if response.status_code != 200:
-                raise CoachProtocolError(f"Holo returned HTTP {response.status_code}.")
+                raise CoachProtocolError(f"Holo returned HTTP {response.status_code}.", kind="provider", reason=f"http_{response.status_code}")
             payload = response.json()
             if not isinstance(payload, dict):
                 raise CoachProtocolError("Invalid Holo response envelope.")
@@ -257,14 +283,19 @@ class CoachClient:
             self.last_raw = json.loads(raw)
             decision = CoachDecision.model_validate(self.last_raw)
             if mode == "guide" and decision.action == "open_docs":
-                raise CoachProtocolError("Opening a new documentation tab requires act mode.")
+                raise CoachProtocolError("Opening a new documentation tab requires act mode.", kind="policy", reason="guide_open_docs")
             _validate_target(decision, observed)
             return decision
         except CoachProtocolError:
             raise
         except httpx.HTTPError as exc:
-            raise CoachProtocolError(f"Holo request failed ({type(exc).__name__}).") from exc
-        except (ValueError, KeyError, IndexError, TypeError, ValidationError) as exc:
-            raise CoachProtocolError("Holo returned an invalid coaching step.") from exc
+            raise CoachProtocolError(f"Holo request failed ({type(exc).__name__}).", kind="provider", reason=type(exc).__name__) from exc
+        except ValidationError as exc:
+            details = [{"loc": list(item["loc"]), "type": item["type"], "message": item["msg"]}
+                       for item in exc.errors(include_input=False, include_context=False, include_url=False)]
+            raise CoachProtocolError("Holo returned an invalid coaching step.", reason="invalid_step",
+                                     validation_errors=details) from exc
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise CoachProtocolError("Holo returned an invalid coaching step.", reason="invalid_payload") from exc
         finally:
             self.last_latency_s = time.monotonic() - start

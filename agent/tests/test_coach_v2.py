@@ -166,7 +166,7 @@ def test_typing_requires_a_text_input_and_single_line_literal(observation, clien
 @pytest.mark.parametrize("speech", [
     "Result: Done", "**Summary:** Here is what happened.", "# Sessions\nAn overview.",
     "| Name | Status |", "```python\nprint('done')\n```", '{"result": "done"}',
-    "word " * 33, "A" * 221, "First. Second. Third.", "1. Sessions\n2. Agents",
+    "word " * 33, "A" * 221, "1. Sessions\n2. Agents",
 ])
 def test_report_code_or_novel_cannot_reach_voice_or_executor(speech, observation, client_factory):
     client, _ = client_factory(step(speech=speech, action="click", target=1))
@@ -178,6 +178,68 @@ def test_done_can_end_silently_without_a_recap():
     assert CoachDecision(**step(action="done", target=None, speech="")).speech == ""
     with pytest.raises(ValidationError):
         CoachDecision(**step(speech=""))
+
+
+def test_short_three_sentence_welcome_is_not_a_novel(observation, client_factory):
+    raw = step(speech="Welcome to H Platform! This page shows your agent sessions, each run of an agent. You can explore Agents, Skills, and Sessions here.")
+    client, _ = client_factory(raw)
+    answer = client.decide("Give me a tour of this page", observation, "guide")
+    assert answer.speech == raw["speech"]
+    assert len(answer.speech.split()) <= 32 and len(answer.speech) <= 220
+
+
+@pytest.mark.parametrize("sentinel", ["", "None", "null", " NONE "])
+@pytest.mark.parametrize("field", ["target", "text", "direction", "key", "url"])
+def test_unused_null_spellings_do_not_discard_a_useful_explanation(field, sentinel, observation, client_factory):
+    raw = step(**{field: sentinel})
+    before = copy.deepcopy(raw)
+    client, _ = client_factory(raw)
+    answer = client.decide("What are these for?", observation, "guide")
+    assert getattr(answer, field) is None
+    assert answer.speech == raw["speech"]
+    assert client.last_raw == before  # Keep the provider payload exactly as received for diagnosis.
+    assert raw == before
+
+
+@pytest.mark.parametrize("literal", ["None", "null", " NONE "])
+def test_typing_a_literal_null_word_remains_literal(literal, observation, client_factory):
+    client, _ = client_factory(step(action="type", target=4, text=literal))
+    assert client.decide("Find this exact text", observation, "act").text == literal
+
+
+@pytest.mark.parametrize("changes", [
+    {"action": "click", "target": "None"},
+    {"action": "type", "target": 4, "text": ""},
+    {"action": "scroll", "target": None, "direction": "None"},
+    {"action": "key", "target": None, "key": ""},
+    {"action": "open_docs", "target": None, "url": "null"},
+    {"action": "explain", "text": "delete all"},
+    {"action": "explain", "url": "https://hub.hcompany.ai/agents-api/overview"},
+])
+def test_null_normalization_never_repairs_missing_required_or_real_extra_arguments(changes):
+    with pytest.raises(ValidationError):
+        CoachDecision(**step(**changes))
+
+
+def test_protocol_diagnostics_distinguish_reading_provider_and_output(observation, client_factory):
+    client, _ = client_factory(step(text="unexpected-private-text"))
+    with pytest.raises(CoachProtocolError) as captured:
+        client.decide("Explain Skills", observation, "guide")
+    error = captured.value
+    assert error.kind == "response" and error.reason == "invalid_step"
+    assert error.validation_errors
+    assert "unexpected-private-text" not in json.dumps(error.validation_errors)
+
+    client, _ = client_factory(status=429)
+    with pytest.raises(CoachProtocolError) as captured:
+        client.decide("Explain Skills", observation, "guide")
+    assert captured.value.kind == "provider" and captured.value.reason == "http_429"
+
+    client, requests = client_factory()
+    with pytest.raises(CoachProtocolError) as captured:
+        client.decide("Explain Skills", {**observation, "url": "https://example.org"}, "guide")
+    assert captured.value.kind == "observation"
+    assert not requests
 
 
 @pytest.mark.parametrize("changes", [

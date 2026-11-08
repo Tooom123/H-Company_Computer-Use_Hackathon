@@ -1454,3 +1454,11 @@ prove improved recognition; a live voice retry is still needed.
 - Real provider probes: seven synthetic page/question cases, including the six proposed demos and an ASR-corrupted welcome request, all returned valid short decisions. API latency 6.0–10.7 s at concurrency 3. No real account contents, desktop effects or microphone in those probes. Private raw evidence retained outside Git.
 - Additional probes: interrupted answer panel follow-up avoids repeated clicking. Guide-mode doc opening without a visible link still rejects malformed output; documented limitation. Sessions follow-up can propose opening a listed run beyond the original stop-at-list criterion.
 - Startup: old idle runtime stopped without deleting its traces; dedicated V2 runtime and Electron profile launched on local port 8792. Real voice/guide/action rehearsal remains human validation, not yet marked successful.
+
+## 2026-11-08 — Repair false screen-read errors in real V2 trials
+
+- Four human trials produced three failures and one interruption. All five recorded observations read H Platform correctly; a guided click and the Sessions → Skills navigation were recorded.
+- Four short replies were rejected by our parser: two solely for containing three sentences, one for unused `text: ""`, one for unused `text: "None"`. All target IDs were present. The generic screen-read error was incorrect.
+- Repair: canonicalize empty/null spellings only for unused optional fields, keep actual typing values and action validation, retain the 32-word/220-character bounds but remove punctuation-count rejection. Distinguish observation, provider, model reply and refresh failures in diagnostics and public messages.
+- No prompt-routing expansion, model change or larger narration limit. Original traces and human labels are untouched. Regression tests include literal typing of “None”, forbidden extra action arguments and safe diagnostic JSON.
+- Validation: 126 targeted Python tests passed. All four actual rejected replies were replayed offline through CoachClient using MockTransport and their original associated observations: 4/4 accepted with valid targets and original raw replies preserved. No new model calls, desktop effects or human labels in this replay; microphone/overlay rehearsal still pending.
