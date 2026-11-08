@@ -31,7 +31,9 @@
 // honeycomb follows the gaze over every app. The gaze itself comes from the background tracker (gaze_tracker.py);
 // this page only draws. Fed and driven by the desktop app (gaze-window.mjs).
 import { GazeHeatmap } from "./gaze-heatmap.js";
-import { CALIBRATION, CLICKS_PER_TARGET, VALIDATION, toPixels } from "./gaze-calibration.js";
+import { CALIBRATION, VALIDATION, toPixels } from "./gaze-calibration.js";
+// Each click now records the last 0.5 s of frames (instant), so 3 clicks per dot give enough samples.
+const CLICKS_PER_TARGET = 3;
 
 const api = window.hcsOverlay;
 const $ = (id) => document.getElementById(id);
@@ -57,9 +59,11 @@ async function calibrate() {
       dot.style.transform = `scale(${1 - k * 0.12})`;
       $("banner").textContent = `Look at the red dot and click it ${CLICKS_PER_TARGET - k}× · point ${i + 1} of ${targets.length}`;
       await new Promise((r) => (dot.onclick = r));
+      dot.style.transform = `scale(${1 - (k + 1) * 0.12})`; // react at once; the tracker answers right after
       const res = await api.calibPoint(t.x, t.y);
       if (res && res.ok) k += 1;
       else {
+        dot.style.transform = `scale(${1 - k * 0.12})`;
         $("banner").textContent = (res && res.error) || "Face not found: face the camera and click again";
         dot.classList.remove("miss");
         void dot.offsetWidth;

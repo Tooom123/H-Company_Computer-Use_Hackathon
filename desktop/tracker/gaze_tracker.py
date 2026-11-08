@@ -101,6 +101,7 @@ class Tracker:
         self.message = ""
         self.lock = threading.Lock()
         self.last_feat: tuple[float, np.ndarray] | None = None
+        self.recent: deque = deque(maxlen=90)  # (monotonic time, features) of the last ~3 s, for instant calibration
         self.frames = deque(maxlen=60)  # frame times (fps)
         self.calib_x: list[np.ndarray] = []
         self.calib_y: list[tuple[float, float]] = []
@@ -152,6 +153,7 @@ class Tracker:
             f = features(res.face_landmarks[0], mat)
             with self.lock:
                 self.last_feat = (now, f)
+                self.recent.append((now, f))
                 if self.model is not None and self.state == "tracking":
                     x, y = self.model.predict(f)[0]
                     self.preds.append((x, y))
@@ -175,9 +177,15 @@ class Tracker:
         return out
 
     def calib_point(self, x: float, y: float) -> dict:
+        """The user clicks the dot they are already looking at: use the features of the last 0.5 s before the click
+        (instant), and only wait a little if the face was not seen in that window."""
         self.state = "calibrating"
-        feats = self._collect(0.5, 8)
-        if len(feats) < 5:
+        now = time.monotonic()
+        with self.lock:
+            feats = [f for t, f in self.recent if now - t <= 0.5]
+        if len(feats) < 3:
+            feats += self._collect(0.4, 3)
+        if len(feats) < 3:
             return {"ok": False, "error": "no face: look at the dot, face the camera"}
         for f in feats:
             self.calib_x.append(f)
