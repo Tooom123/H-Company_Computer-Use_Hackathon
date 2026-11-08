@@ -423,6 +423,12 @@ class Intervention:
                     pre_loc = n
                     misses = 0
                     continue
+                if misses == 0 and not self._stop.is_set():
+                    time.sleep(1.0)  # the page may still be finishing what the user did: look once more
+                    if self._screen_shows(step.done_when, tries=1, software=bound.request.software) == "yes":
+                        done_steps.append(step.instruction)
+                        i += 1
+                        continue
                 misses += 1
                 if misses >= 2 or nxt is None:
                     # Do not nag: after two unconvinced checks (or on the last step) move on; the final

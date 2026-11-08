@@ -843,9 +843,12 @@ class _InputWatcher:
             elif getattr(payload, "char", None) or payload in (self._kb.Key.space, self._kb.Key.backspace):
                 self.typed += 1
 
-    def arm(self) -> None:
+    read_time_s: float = 12.0
+
+    def arm(self, text: str = "") -> None:
         self.armed_at = time.time()
         self.typed = 0
+        self.read_time_s = min(20.0, max(10.0, 5.0 + 0.09 * len(text)))  # ~ reading speed, 10-20 s
 
     def acted(self, kind: str, settle_s: float = 0.5) -> bool:
         now = time.time()
@@ -854,8 +857,9 @@ class _InputWatcher:
         if kind == "key":  # Escape (or a click outside, which also closes menus)
             return (self.last_key > self.armed_at or self.last_click > self.armed_at + 0.3) and \
                 now - max(self.last_key, self.last_click) >= settle_s
-        if kind == "info":  # read it; any click or Enter moves on, or 9 s pass
-            return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or now - self.armed_at > 9
+        if kind == "info":  # read it; any click or Enter moves on, or enough reading time passes
+            return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or \
+                now - self.armed_at > self.read_time_s
         if kind == "type":
             if self.last_submit > self.armed_at and now - self.last_submit >= settle_s:
                 return True
@@ -881,12 +885,16 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     if ov is not None and ov.hold_reveal is None:  # `run`: the overlay (and its voice) start here
         _voice_for(ov)
         _prefetch_voice(it.request)
-    shown_step = 0
+    shown_step: tuple | None = None
     prompted = False
     watcher = _ScreenWatcher()
     inputs = _InputWatcher()
     tracker = _TargetTracker()
-    shown: dict = {"scene": None, "box": None, "hidden": False}  # what is on screen for the current step
+    shown: dict = {"scene": None, "box": None, "hidden": False, "text": None}  # what is on screen for this step
+    off_target: dict = {"count": 0}
+    # The pixel-diff watcher is a fallback for when clicks cannot be observed (Input Monitoring denied):
+    # with real input events available, hover effects and animations must never count as "you acted".
+    pixel_fallback = getattr(inputs, "_hub", None) is None
 
     def advance(done: bool = True, note: str | None = None) -> None:
         _hush()  # the user did the step: the sentence about it is over
@@ -958,17 +966,22 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             narrate()
         if it.state is State.awaiting_user and it.guidance:
             g = it.guidance[-1]
-            if g.index != shown_step:
-                shown_step = g.index
+            key = (g.index, g.shown_at.isoformat() if g.shown_at else None)
+            if key != shown_step:
+                same_step = shown_step and shown_step[0] == g.index and shown["text"] == g.instruction
+                shown_step = key
                 prompted = False
                 watcher.arm()
-                inputs.arm()
+                inputs.arm(f"{g.instruction} {g.why if g.kind in ('info', 'wait') else ''}")
+                off_target["count"] = 0
                 if ov:
                     from .overlay import Mark, Scene
 
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
-                    _say(g.instruction, _short(why, 90))
+                    if not same_step:
+                        _say(g.instruction, _short(why, 90))  # a step shown again is drawn again, not repeated aloud
+                    shown["text"] = g.instruction
                     scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
                         doodle="question" if "can't see" in g.instruction else None,
@@ -990,21 +1003,27 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                       end="", flush=True)
                 prompted = True
             g = it.guidance[-1]
-            if g.kind != "wait" and (inputs.acted(g.kind) or (g.kind == "click" and watcher.changed_and_settled())):
+            acted = inputs.acted(g.kind, settle_s=0.7)
+            if g.kind != "wait" and (acted or (pixel_fallback and g.kind == "click" and watcher.changed_and_settled())):
                 box = shown["box"] if shown.get("box") else g.box
-                if g.kind == "click" and g.box_exact and box and inputs.last_click_xy and inputs.acted("click") \
-                        and not _inside(inputs.last_click_xy, box, margin=24):
-                    # Clicked somewhere else: say so and keep the same step, no screen check needed.
-                    print("\n  click outside the target; showing it again", flush=True)
+                target_gone = tracker.step == g.index and tracker.description and tracker.box is None
+                if g.kind == "click" and g.box_exact and box and inputs.last_click_xy and acted \
+                        and not target_gone and not _inside(inputs.last_click_xy, box, margin=36):
+                    # Clicked somewhere else while the control is still there: a quiet visual hint first,
+                    # a spoken one only if it happens again; never a screen check for an obvious miss.
+                    off_target["count"] += 1
+                    print("\n  click outside the target; keeping the step", flush=True)
                     inputs.arm()
                     watcher.arm()
-                    _say("Not that one — here.")
+                    if off_target["count"] >= 2:
+                        _say("Not that one — here.")
                     if ov and shown["scene"] is not None:
                         from dataclasses import replace
 
-                        ov.show_scene(replace(shown["scene"], why="Not that one — here"), animate=True)
+                        ov.show_scene(replace(shown["scene"], why="Here" if off_target["count"] < 2 else "Not that one — here"),
+                                      animate=True)
                     return
-                print(f"\n  {'input' if inputs.acted(g.kind) else 'screen'} detected, next…", flush=True)
+                print(f"\n  {'input' if acted else 'screen'} detected, next…", flush=True)
                 advance()
                 return
             try:
