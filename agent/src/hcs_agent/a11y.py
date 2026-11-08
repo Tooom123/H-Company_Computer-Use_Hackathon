@@ -336,8 +336,9 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
         n = el.name.lower()
         score = 0.0
         why = ""
-        if n in desc_l and len(n) >= 2:
-            pos = desc_l.find(n)
+        m_label = re.search(r"(?<![a-z0-9])" + re.escape(n) + r"(?![a-z0-9])", desc_l) if len(n) >= 2 else None
+        if m_label:  # the label appears as whole words ("Agent" does not count for "Agents entry")
+            pos = m_label.start()
             score = 10 + min(len(n), 24)  # the element's own label is written in the description
             why = f"label '{el.name}' in description"
             if pos >= ctx_start:
@@ -350,7 +351,9 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
                 why += " + role word"
         elif any(q and (q in n or n in q) and min(len(q), len(n)) >= 3 for q in quoted):
             q = next(q for q in quoted if q and (q in n or n in q))
-            score = 8 + min(len(q), len(n))
+            # A partial match ("Agent" vs "Agents", "Log" vs "Log note") is a hint, never a confident hit on its own.
+            score = 8 + min(len(q), len(n)) if q == n else 6 + min(len(q), len(n)) - 2 * abs(len(q) - len(n))
+            score = min(score, 9.5) if q != n else score
             why = f"label '{el.name}' ~ '{q}'"
         else:
             e_tokens = set(_tokens(el.name))
