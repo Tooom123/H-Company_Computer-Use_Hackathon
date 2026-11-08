@@ -1081,3 +1081,32 @@ Offline validation: 154 targeted tests passed, including layout jitter, returnin
 to an earlier menu state, genuine next-page navigation, continued typing, and
 rejecting verification on a different product. A new live voice/click trial is
 still required; the original incorrect trial must not be counted as a success.
+
+
+## Odoo search-target tracking — 2026-11-08, 07:48 Europe/Paris
+
+Trial `sess_941d33ee2f5c` correctly transcribed “Help me find Maison Aube.” and
+selected the Rechercher… field in the open CRM pipeline. A second voice input
+interrupted that trial; `sess_729e820585a6` recorded the incomplete “me find” and
+also selected search. The human reported the badge “Target changed. Confirm in
+H Companion or stop”, which was not understandable. No completed search or task
+success was verified. The second waiting trial was stopped through the local
+control API to load a fix; both private archives remain intact, without invented
+human success/usefulness labels.
+
+Code diagnosis: the tracker received the chosen exact rectangle, but subsequent
+name-only lookup discarded the target whenever another control shared its label.
+Odoo exposes both a search button and an input named Rechercher…. A separate gate
+allowed a fresh-observation retry only in native Devin, not automatic Odoo.
+
+Fix: disambiguate matching controls with the original rectangle and retain the
+observed role. Do not jump to a different same-named control; ambiguous or large
+movements still invalidate the target. Automatic guide mode can request one new
+plan after a fresh foreground read, even when the old target has disappeared.
+This is explicitly **not** confirmation that the user acted. Product scope is
+checked again by the runner. The fallback badge now states what to do without an
+ambiguous request to confirm completion.
+
+Validation: 178 targeted tests passed, then an added tracker-loop regression
+passed with all 73 input/tracker tests. Tests use fake controls, not the user's
+Mac. A live user retry of this version remains pending.

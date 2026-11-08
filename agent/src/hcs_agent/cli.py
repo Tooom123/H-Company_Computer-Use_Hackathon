@@ -1019,6 +1019,8 @@ class _TargetTracker:
         # (step, read-start monotonic time, foreground PID, box); never a reused prior read.
         self.measurement = None
         self._expected_app = None
+        self._anchor_box = None
+        self._target_role = None
         self._generation = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -1027,6 +1029,7 @@ class _TargetTracker:
         self._generation += 1
         self.measurement = None
         self._expected_app = expected_app
+        self._anchor_box, self._target_role = box, None
         self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
         if self._thread is None and description and sys.platform == "darwin":
             self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
@@ -1061,9 +1064,37 @@ class _TargetTracker:
                 continue
             if info is None or len(info.elements) <= 1:
                 continue  # no page to compare with: keep what we have
-            self.box = best.box if (best and not ties and info.is_front) else None
+            tracked = self._choose_candidate(best, ties) if info.is_front else None
+            self.box = tracked.box if tracked else None
+            if tracked:
+                self._anchor_box, self._target_role = tracked.box, tracked.role
             self.measured_at = time.time()
             self.measurement = (step, started_at, expected_app, self.box)
+
+    def _choose_candidate(self, best, ties):
+        """Keep the originally grounded control, not just its possibly duplicated label.
+
+        Odoo exposes a search button and a search field with the same name. The
+        original exact box disambiguates the first read; the role stays pinned.
+        Ambiguous movement still hides the marker and requests a fresh plan.
+        """
+        candidates = [e for e in [best, *ties] if e is not None
+                      and (self._target_role is None or e.role == self._target_role)]
+        exact = [e for e in candidates if e.name.casefold().strip() == (self.description or '').casefold().strip()]
+        candidates = exact or candidates  # scripted steps can use a descriptive `where`, not a raw label
+        if not candidates:
+            return None
+        if self._anchor_box is None:
+            return None
+        x, y, w, h = self._anchor_box
+        matches = []
+        for e in candidates:
+            ex, ey, ew, eh = e.box
+            intersection = max(0, min(x+w, ex+ew)-max(x, ex)) * max(0, min(y+h, ey+eh)-max(y, ey))
+            union = w*h + ew*eh - intersection
+            if union > 0 and intersection / union >= 0.6:
+                matches.append(e)
+        return matches[0] if len(matches) == 1 else None
 
     def stop(self) -> None:
         self._stop.set()
@@ -1212,7 +1243,7 @@ class _InputWatcher:
     def expected_app(self):
         return self._expected_app
 
-    def reobservation_ready(self, measurement, step: int) -> bool:
+    def reobservation_ready(self, measurement, step: int, *, allow_missing_target: bool = False) -> bool:
         """A fresh AX read may request a new plan, never restore or confirm the old target."""
         if self.invalidated_at is None or self._expected_app is None or measurement is None:
             return False
@@ -1220,7 +1251,8 @@ class _InputWatcher:
         return (measured_step == step and started_at > self.invalidated_at
                 and 0 <= self._clock() - started_at <= 1.5
                 and app == self._expected_app and self._focus_probe() == self._expected_app
-                and self._finite(box, 4) and box[2] > 0 and box[3] > 0)
+                and ((allow_missing_target and box is None)
+                     or (self._finite(box, 4) and box[2] > 0 and box[3] > 0)))
 
     def update_target_box(self, box) -> None:
         """Follow an AX box without resurrecting a target invalidated by scroll/navigation."""
@@ -1281,12 +1313,14 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     prompted = False
     guidance_scene_shown = False
     reobservations = 0
-    # Only the observation-only native pilot has an explicit no-action replan contract in the runner.
+    # Automatic product routing uses the same no-action replan contract. The runner
+    # checks the foreground product again; this is never a confirmation of a click.
     request = getattr(it, "request", None)
-    reobserve_allowed = (getattr(request, "software", None) == "cognition"
+    automatic = bool(getattr(request, "parameters", {}).get("automatic_context"))
+    reobserve_allowed = (getattr(request, "mode", None) is Mode.guide
                          and getattr(request, "autonomy", None) == 0
-                         and getattr(request, "mode", None) is Mode.guide
-                         and os.environ.get("HCS_AX_NATIVE_BUNDLE_ID") == "com.exafunction.windsurf")
+                         and (automatic or (getattr(request, "software", None) == "cognition"
+                              and os.environ.get("HCS_AX_NATIVE_BUNDLE_ID") == "com.exafunction.windsurf")))
     inputs = _InputWatcher()
 
     def advance(done: bool = True, note: str = "") -> bool:
@@ -1303,7 +1337,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         if _VOICE.get("state") in ("recording", "transcribing"):
             return  # the voice badge is already shown; do not overwrite it mid-sentence
         if it.state is State.awaiting_user:
-            ov.badge("Target changed. Confirm in H Companion or stop." if inputs.invalidated_at is not None else None)
+            message = None
+            if inputs.invalidated_at is not None:
+                message = ("Keep the app in front. Updating the guidance…" if reobserve_allowed and reobservations < 1
+                           else "The target is no longer visible. Stop task, then ask again.")
+            ov.badge(message)
         elif time.time() - _LAST_LOOKUP_AT < 4:
             ov.badge("Searching the web…", pulsing=True)
         elif it.state is State.running:
@@ -1407,7 +1445,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
                 return
-            if reobserve_allowed and reobservations < 1 and inputs.reobservation_ready(tracker.measurement, g.index):
+            if reobserve_allowed and reobservations < 1 and inputs.reobservation_ready(
+                    tracker.measurement, g.index, allow_missing_target=automatic):
                 if advance(done=False, note=_REOBSERVE_GUIDANCE_NOTE + " No user action was confirmed."):
                     reobservations += 1
                     print("\n  target invalidated; fresh AX observation requests one new plan, not a completed action",
