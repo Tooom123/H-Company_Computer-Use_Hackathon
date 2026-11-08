@@ -188,7 +188,9 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
             except TypeError:
                 pass
         name = _text(title) or _text(desc) or _text(placeholder)
-        if not name and role in ("AXStaticText", "AXHeading", "AXTextField", "AXTextArea", "AXLink", "AXButton"):
+        # Page text (static text, headings, link/button captions) may name an element; what the user typed
+        # into a field never does: field values are not read (they can hold personal data or secrets).
+        if not name and role in ("AXStaticText", "AXHeading", "AXLink", "AXButton"):
             name = _text(value) if isinstance(value, str) else ""
         if not name or len(name) > 120:
             continue
