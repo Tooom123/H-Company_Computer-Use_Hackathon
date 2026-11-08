@@ -309,6 +309,10 @@ def _ensure_magnet(ov=None):
         return _MAGNET["widget"]
     if sys.platform != "darwin":
         return None
+    if os.environ.get("HCS_MAGNET_WIDGET", "0").lower() not in {"1", "true", "yes"}:
+        # The autonomy level lives in the desktop app's settings (and HCS_AUTONOMY); the on-screen paper
+        # slider is opt-in so the screen only shows what matters: the sketch and the badge.
+        return None
     try:
         from .overlay import AUTONOMY_LABELS, MagnetWidget
 
