@@ -86,6 +86,7 @@ test("main process hides confirmation before next and restores it on backend rej
   const win = { hide: () => order.push("hide"), show: () => order.push("show"), isDestroyed: () => false, isVisible: () => true, isMinimized: () => false, getBounds: () => ({ x: 2, y: 3, width: 400, height: 300 }) };
   const context = vm.createContext({
     process: { env: {}, argv: [], platform: "darwin" },
+    createGazeCalibrator: () => ({ status: () => ({ available: false, running: false }), start: async () => ({}), stop: () => ({}), dispose() {} }),
     app: { requestSingleInstanceLock: () => true, whenReady: () => ({ then() {} }), on() {} }, BrowserWindow: { fromWebContents: () => win }, ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} },
     path: { resolve: (...parts) => parts.join("/"), join: (...parts) => parts.join("/") }, fs: {}, os: {}, AbortSignal,
     setTimeout: (fn, delay) => { order.push(`wait:${delay}`); fn(); },

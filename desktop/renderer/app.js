@@ -504,7 +504,7 @@ function renderVisionToggle() {
   $("visionHint").textContent = !status
     ? "Start the assistant to turn it on."
     : on && !v.live
-      ? "The gaze comes from the Vision Lab: open it with Recalibrate below and follow the calibration."
+      ? "Start the gaze tracking with Recalibrate below and follow the calibration."
       : on
         ? "Your face never leaves this Mac: only the screen region goes to Holo."
         : "";
@@ -521,12 +521,20 @@ $("visionSwitch").addEventListener("click", async () => {
 async function loadVision(s) {
   renderVisionToggle();
   const v = s || (await api.vision.status());
-  $("visionState").textContent = v.running ? "Calibrating" : v.available ? "Ready" : "Not installed";
+  const state = !v.available ? "Not installed" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
+  $("visionState").textContent = state;
   $("visionState").className = `badge${v.running ? " on" : ""}`;
-  $("visionBtn").textContent = v.running ? "Close" : "Recalibrate";
+  $("visionBtn").textContent = v.running ? (v.builtin ? "Stop tracking" : "Close the lab") : "Recalibrate";
   $("visionBtn").disabled = !v.available;
-  $("visionNote").textContent =
-    v.reason || (v.running ? "Follow the targets on screen; it closes with this app." : "Opens the calibration screen.");
+  $("visionNote").textContent = v.reason || (v.running
+    ? v.builtin
+      ? v.tracking
+        ? `The camera follows your gaze in the background (accuracy ~${v.errorPx ?? "?"} px). Stop it here.`
+        : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
+      : "Follow the targets on screen; it closes with this app."
+    : v.builtin
+      ? "Opens a full-screen calibration (9 dots + an accuracy check); then tracking keeps running, invisible."
+      : "Opens Édouard's Vision Lab on the calibration screen.");
   $("visionBtn").onclick = async () => loadVision(v.running ? await api.vision.stop() : await api.vision.start());
 }
 
@@ -538,7 +546,7 @@ async function poll() {
   if (status && !was) await syncPrefs();
   renderHome();
   if (view === "voice") renderVoice();
-  if (view === "vision") renderVisionToggle();
+  if (view === "vision") loadVision();
   // A task just ended (or the assistant came up): refresh the numbers and the list.
   const key = status && status.current ? `${status.current.session_id}:${status.current.terminal}` : String(Boolean(status));
   if (key !== lastSessionKey || Boolean(was) !== Boolean(status)) {

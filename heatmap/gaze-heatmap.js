@@ -121,15 +121,20 @@ export function computeHeatmap(center, sigma, targets, opts = DEFAULTS) {
   const Z = circles.reduce((s, c) => s + c.p, 0) || 1;
   circles.forEach((c) => (c.p /= Z));
 
-  // probability per target = mass of the circles that point at it
-  const scored = targets.map((t) => {
-    let p = 0;
-    for (const c of circles) {
+  // probability per target = mass of the circles that point at it. Each circle hands out at most its own
+  // mass: shared between the targets it touches (by affinity) when several do, the rest goes to "nothing".
+  // So the targets' probabilities never sum above 1, even with dwell weights > 1 or overlapping targets.
+  const p = targets.map(() => 0);
+  for (const c of circles) {
+    const aff = targets.map((t) => {
       const d = distToRect(c.x, c.y, t.rect);
-      p += c.p * (t.weight ?? 1) * Math.exp(-(d * d) / (2 * c.r * c.r));
-    }
-    return { id: t.id, label: t.label, rect: t.rect, p };
-  });
+      return (t.weight ?? 1) * Math.exp(-(d * d) / (2 * c.r * c.r));
+    });
+    const total = aff.reduce((sum, a) => sum + a, 0);
+    const scale = c.p / Math.max(1, total);
+    aff.forEach((a, i) => (p[i] += a * scale));
+  }
+  const scored = targets.map((t, i) => ({ id: t.id, label: t.label, rect: t.rect, p: p[i] }));
   const pTargets = scored.reduce((s, t) => s + t.p, 0);
   // share of the mass that falls on no target at all (reading, looking around)
   const pNone = clamp(1 - pTargets, 0, 1);

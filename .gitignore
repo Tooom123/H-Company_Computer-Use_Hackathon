@@ -26,3 +26,6 @@ runs/
 
 # desktop app smoke captures
 desktop/smoke-*.png
+
+# vision page: local WebGazer assets (npm run assets in heatmap/)
+heatmap/vendor/
