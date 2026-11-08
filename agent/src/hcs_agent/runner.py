@@ -407,7 +407,10 @@ class Intervention:
         last_attempt: AttemptResult | None = None
         verify: VerifyResult | None = None
         guide = bound.guide
-        max_attempts = 1 if guide else proc.max_attempts
+        plan_first_guide = guide and bool(bound.guide_script()) and _plan_first(bound.request.software)
+        # Guided from the page: when the screen check says the goal is not reached yet, keep guiding (up to twice)
+        # instead of escalating: the person may have wandered off, or the planner said done too early.
+        max_attempts = 3 if plan_first_guide else 1 if guide else proc.max_attempts
         self._set_state(State.running, "Guiding you step by step." if guide
                         else "Intervention approved. Working in the software now.")
         self._snapshot("before", "Screen before the intervention")
@@ -426,10 +429,15 @@ class Intervention:
                 hints = [(f"{st.instruction} (control: {st.element})" if st.element else st.instruction)
                          + (f" [done when: {st.done_when}]" if st.done_when else "")
                          for st in bound.guide_script()]
-                if not self._ensure_screen(bound):
+                resume = ([f"The guidance was ended too early: the screen check says the goal is not reached yet "
+                           f"({previous_failure[:300]}). Continue from the current page, keep what is done."]
+                          if attempt > 1 and previous_failure else None)
+                if attempt == 1 and not self._ensure_screen(bound):
                     last_attempt = AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
                 else:
-                    last_attempt = self._dynamic_guide(bound, hints=hints)
+                    if resume:
+                        self._trace("goal not visible yet: guiding on")
+                    last_attempt = self._dynamic_guide(bound, hints=hints, history=resume)
                 if last_attempt is None and self.autonomy == 0:
                     last_attempt = AttemptResult(None, "completed", DeclaredResult(
                         outcome="unclear", summary="Guided from the page without takeover; outcome to verify."))
@@ -513,6 +521,8 @@ class Intervention:
             failed = [k for k, v in verify.checks.items() if not v] or ["verification unavailable"]
             previous_failure = f"checks not satisfied: {', '.join(failed)}. Observed: {verify.observed}"
             self._set_state(State.running, f"Not verified after attempt {attempt}.")
+            if plan_first_guide and not any(v is False for v in verify.checks.values()):
+                break  # nothing observed as missing (check unavailable): guiding on would be blind
 
         self._snapshot("after", "Screen at escalation")
         if self.declared.blocker:
@@ -725,7 +735,7 @@ class Intervention:
             context += "\n\n" + _platform_knowledge("hcompany")
             notes = _page_notes("hcompany")
             max_steps += len(notes)
-        notes_shown: set[int] = set()
+        notes_shown: set[int] = self.__dict__.setdefault("_notes_shown", set())  # across resumed attempts
         public_queries = {
             "h-company": ("H Company official documentation sessions review profiles skills usage", {"hub.hcompany.ai"}),
             "cognition": ("Devin official documentation session review playbooks knowledge", {

@@ -44,3 +44,17 @@ Other sections
   never read it aloud or leave it on screen.
 - Billing / usage: credits, plan and usage; the plan sets the concurrent-session limit (Free: 3).
 - Schedules run a session request on a cron; vaults hold credentials (and 2FA) an agent may fill into login forms.
+
+Site map and how to get back (left sidebar and top bar read on the live platform, 2026-11-08)
+- Sidebar, top to bottom: Home; Projects; under "Build": Agents (with a "+" New agent, shortcut ⌘B), Sessions (with
+  a "+" New session, shortcut ⌘I), Skills, Environments, Browser Profiles, Vaults, Schedules; under "Configure":
+  Organisation, API keys, Webhooks. At the bottom: the plan (e.g. "Free plan", % of credits used, days left,
+  Upgrade) and the account menu. Collapse sidebar hides it (expand it again to see these entries).
+- Top bar: breadcrumb (Organisation, Project, then Agents / Sessions), Notifications on the right. Help and
+  feedback (bottom right): documentation, Discord, contact support, send feedback.
+- Build an agent wizard: opened by Build (⌘B) on the Agents page or by New agent (⌘B) in the sidebar; Close or
+  Escape leaves it, then reopen it the same way (what was typed may have to be entered again). Back / Next move
+  between its six steps; the stepper at the top shows where you are.
+- A session's page (Agent View): Sessions in the sidebar lists every session; click one to open it.
+- To come back to the task from anywhere: use the sidebar entry of the section the task lives in (Agents for
+  building an agent, Sessions for a session), then the button that reopens the task (Build ⌘B, a session row).

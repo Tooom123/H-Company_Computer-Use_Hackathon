@@ -274,3 +274,23 @@ def test_no_page_tour_before_the_guidance_reached_the_page(guide):
     guide.backend.page_catalogue = lambda _: (info, list(guide.page.items))
     guide.it._dynamic_guide(guide.bound)
     assert all(s.kind != "info" or s.last for s in guide.shown)
+
+
+def test_guidance_resumes_when_the_screen_says_the_goal_is_not_reached(tmp_path, monkeypatch):
+    """User feedback 2026-11-08: "it stops too early, even if I change page it should notice and bring me back"."""
+    from hcs_agent.backend import AttemptResult, VerifyResult
+    from hcs_agent.contract import ApproveCommand, CaseStatus, DeclaredResult, InterventionRequest, Mode
+
+    req = InterventionRequest(software="hcompany", goal="Build an agent and run it", mode=Mode.guide,
+                              procedure_id="hcompany_platform_run_cloud_session")
+    it = Intervention(req, MockBackend(), ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    runs, checks = [], iter([{"session_open": False, "cloud_environment": True},
+                             {"session_open": True, "cloud_environment": True}])
+    monkeypatch.setattr(it, "_ensure_screen", lambda b: True)
+    monkeypatch.setattr(it, "_dynamic_guide", lambda b, hints=None, history=None, **k: runs.append(history) or
+                        AttemptResult(None, "completed", DeclaredResult(outcome="done")))
+    monkeypatch.setattr(it, "_fast_verify", lambda b: VerifyResult(None, "completed", checks=next(checks),
+                                                                   observed="Agents page"))
+    it.start(); it.approve(ApproveCommand()); it.wait(5)
+    assert len(runs) == 2 and runs[0] is None and "not reached yet" in runs[1][0]
+    assert it.report.status is CaseStatus.resolved
