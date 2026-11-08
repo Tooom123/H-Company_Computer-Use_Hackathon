@@ -237,3 +237,40 @@ def test_step_limit_follows_the_procedure(guide):
     guide.it._wait_page_change = lambda *a: None
     guide.it._dynamic_guide(guide.bound)
     assert len(seen) > 14  # the wizard + result page tour no longer cut at 14 steps
+
+
+@pytest.mark.parametrize("names,step", [
+    (["1 Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"], "Details"),
+    (["Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"], "Config"),
+    (["Details", "Config", "Instructions", "Skills", "Subagents", "6 Session"], "Session"),
+    (["Agents", "Sessions"], None)])
+def test_wizard_step_from_the_stepper(names, step):
+    """Labels read on the live Build an agent wizard, 2026-11-08: done steps lose their number."""
+    from hcs_agent.runner import _wizard_step
+    assert _wizard_step([ctl("AXRadioButton", n) for n in names]) == step
+
+
+def test_planned_page_notes_explain_each_wizard_page_then_the_planner_acts(guide):
+    stepper = [ctl("AXRadioButton", n) for n in ["Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"]]
+    guide.page.items = stepper + [ctl("AXPopUpButton", "Web environment (default)", 600),
+                                  ctl("AXPopUpButton", "Platform default (holo4-27b)", 700),
+                                  ctl("AXPopUpButton", "Free-form text", 800), ctl("AXButton", "Next", 1040)]
+    plans = iter([{"done": False, "instruction": "Click 'Next'.", "kind": "click", "target": len(guide.page.items) - 1},
+                  {"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: guide.calls.append(a) or next(plans)
+    guide.it._dynamic_guide(guide.bound, history=["Instruction shown: Click 'Next'. ..."])
+    kinds = [(s.kind, s.where) for s in guide.shown]
+    assert kinds[:3] == [("info", "Web environment (default)"), ("info", "Platform default (holo4-27b)"),
+                         ("info", "Free-form text")]
+    assert kinds[3] == ("click", "Next")
+    assert any("planned page note" in h for h in guide.calls[0][4])
+
+
+def test_no_page_tour_before_the_guidance_reached_the_page(guide):
+    """A question asked while a session page is open must not start the Agent View tour."""
+    guide.page.items = [ctl("AXButton", "Agent action · Step 1 of 1", 700), ctl("AXButton", "Billing", 100)]
+    guide.backend.plan_step = lambda *a: {"done": True, "summary": "ok"}
+    info = SimpleNamespace(is_front=True, title="H", url="https://platform.hcompany.ai/agents/sessions/x", elements=None)
+    guide.backend.page_catalogue = lambda _: (info, list(guide.page.items))
+    guide.it._dynamic_guide(guide.bound)
+    assert all(s.kind != "info" or s.last for s in guide.shown)

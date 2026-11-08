@@ -1,0 +1,92 @@
+# Planned explanations for pages of platform.hcompany.ai, shown by the guide for ANY task on the site, once each,
+# as soon as their page is on screen and before the next action. Each note points at a real control (labels read
+# from the live platform on 2026-11-08) and moves on by itself once said.
+#   step: current step of the Build an agent wizard (the first stepper item still numbered, e.g. "2 Config")
+#   url: substring of the page URL
+#   at: labels to point at, first one found wins (exact, then prefix, then contained; controls before text)
+# Facts come from the official docs (data/hcompany-platform-knowledge.md).
+
+- step: Details
+  at: ["Build an agent"]
+  text: "Six steps build your agent"
+  why: >-
+    An agent is a saved configuration: Details names it, Config picks where it acts and which model drives it,
+    Instructions, Skills and Subagents shape how it works, and Session gives it its first task.
+- step: Details
+  at: ["Description *", "Description"]
+  text: "The description says what the agent can do"
+  why: >-
+    Write it as a capability, for example "Reads a web page and reports its main heading": a manager agent reads
+    this line to decide whether to hand a task to this one.
+
+- step: Config
+  at: ["Web environment", "Environment"]
+  text: "The environment is where the agent acts"
+  why: >-
+    The web environment is a cloud browser H starts for each session, nothing runs on your machine. The other
+    choices drive your own Chrome with your logins, or your desktop. Keep the web one for a cloud session.
+- step: Config
+  at: ["Platform default", "holo4", "Model"]
+  text: "The model is the brain of the agent"
+  why: >-
+    Holo models see the screen and decide each action. The platform default is holo4-27b; holo4-35b-a3b answers
+    faster. Open the list to compare them, or follow the link to learn about each model.
+- step: Config
+  at: ["Free-form text", "Answer format"]
+  text: "The answer format shapes the final answer"
+  why: >-
+    Free-form text returns a sentence or a paragraph. A JSON schema makes the agent return structured data your
+    code can read directly.
+
+- step: Instructions
+  at: ["Instructions"]
+  text: "Instructions steer the agent"
+  why: >-
+    This text is added to the agent's system prompt: rules and output format, for example "Return one line: the
+    heading and the URL". Optional: leave it empty for a first try.
+
+- step: Skills
+  at: ["4 Skills", "Skills"]
+  text: "Skills are know-how loaded on demand"
+  why: >-
+    A skill is a short Markdown guide the agent reads only when a task matches it. H ships ready-made computer-use
+    skills; a simple reading task needs none.
+
+- step: Subagents
+  at: ["5 Subagents", "Subagents"]
+  text: "Subagents let this agent delegate"
+  why: >-
+    With subagents, this agent becomes a manager: it splits a task into parallel child sessions, one per site or
+    source, then merges their results. Leave it empty for a simple agent.
+
+- step: Session
+  at: ["Prompt *", "Prompt"]
+  text: "The prompt is the agent's task"
+  why: >-
+    Write it as an instruction, for example "Open example.com and read its main heading". Start session creates
+    the agent and launches it in a cloud browser right away.
+
+- url: /sessions/
+  at: ["Agent action", "Idle", "Answer"]
+  text: "Every step the agent took is listed here"
+  why: >-
+    This is Agent View: each entry is one step, what the agent saw and what it did. Click one to see the screen
+    at that moment.
+- url: /sessions/
+  at: ["AGENT ANSWER", "Copy answer"]
+  text: "Here is the agent's final answer"
+  why: >-
+    When the agent finishes, its answer appears here; Copy answer puts it in your clipboard. The session's status
+    tells whether it is still running, waiting for input, or done.
+- url: /sessions/
+  at: ["Message agent", "Send message"]
+  text: "Talk to the agent while it works"
+  why: >-
+    A message adds context or redirects the agent; it reads it at its next step. It also wakes a session waiting
+    for input. A message to a finished session restarts it and is billed again.
+- url: /sessions/
+  at: ["Resume trajectory", "Previous step", "Next step"]
+  text: "Replay what the agent did"
+  why: >-
+    These controls step through the recorded trajectory, one action at a time, so you can review the session
+    after the fact.

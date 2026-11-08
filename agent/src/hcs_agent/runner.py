@@ -87,6 +87,61 @@ def _label_matches(label: str, name: str) -> bool:
 _TEXT_ROLES = ("AXHeading", "AXStaticText")
 
 
+def _page_notes(software: str) -> list[dict]:
+    """Planned explanations per page of the site (data/<software>-page-notes.yaml)."""
+    try:
+        import yaml
+
+        data = yaml.safe_load((Path(__file__).parent / "data" / f"{software}-page-notes.yaml").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - notes are optional
+        return []
+    return [n for n in data or [] if isinstance(n, dict) and n.get("text") and n.get("at")]
+
+
+def _wizard_step(elements) -> str | None:
+    """Current step of a numbered stepper: done steps lose their number ("Details"), the current and the next
+    ones keep it ("2 Config", "3 Instructions"...): the current one is the lowest numbered."""
+    numbered = []
+    for e in elements or []:
+        if e.role == "AXRadioButton":
+            m = re.match(r"^\s*(\d+)\s+(\S.*)$", e.name)
+            if m:
+                numbered.append((int(m.group(1)), m.group(2).strip()))
+    return min(numbered)[1] if numbered else None
+
+
+def _next_page_note(notes, shown, info, items):
+    """(index, control) of the first note not yet shown whose page is on screen and whose control is visible."""
+    if not notes:
+        return None
+    step = _wizard_step(getattr(info, "elements", None) or items)
+    url = getattr(info, "url", "") or ""
+    for i, n in enumerate(notes):
+        if i in shown:
+            continue
+        if n.get("step") and (step or "").lower() != str(n["step"]).lower():
+            continue
+        if n.get("url") and str(n["url"]) not in url:
+            continue
+        if not n.get("step") and not n.get("url"):
+            continue
+        at = _find_label(n["at"], items)
+        if at is not None:
+            return i, at
+    return None
+
+
+def _find_label(labels, items):
+    """First label found among the listed elements: exact, then prefix, then contained; controls before text."""
+    for label in labels if isinstance(labels, list) else [labels]:
+        low = str(label).lower()
+        for test in (lambda n: n == low, lambda n: n.startswith(low), lambda n: low in n):
+            hits = [e for e in items if test(e.name.lower().strip())]
+            if hits:
+                return min(hits, key=lambda e: e.role in _TEXT_ROLES)
+    return None
+
+
 def _platform_knowledge(software: str) -> str:
     """Reference knowledge about the whole site, for every task on it (not only the scripted ones)."""
     try:
@@ -665,8 +720,12 @@ class Intervention:
         if max_steps is None:  # a wizard + its result page needs more than 14 steps (procedure says up to 40)
             max_steps = max(14, min(40, int(getattr(bound.procedure, "max_steps_per_attempt", 14) or 14)))
         context = bound.guide_instructions
+        notes: list[dict] = []
         if (bound.request.software or "").lower() in ("hcompany", "h-company"):
             context += "\n\n" + _platform_knowledge("hcompany")
+            notes = _page_notes("hcompany")
+            max_steps += len(notes)
+        notes_shown: set[int] = set()
         public_queries = {
             "h-company": ("H Company official documentation sessions review profiles skills usage", {"hub.hcompany.ai"}),
             "cognition": ("Devin official documentation session review playbooks knowledge", {
@@ -751,6 +810,22 @@ class Intervention:
                                                       kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                                                         blocker=message))
+            # Planned explanations of this page (wizard step, Agent View...), once each, before the next action.
+            # Only on pages reached during the guidance, so a question asked elsewhere does not start a tour.
+            note = _next_page_note(notes, notes_shown, info, items) if history else None
+            if note is not None:
+                idx, at = note
+                notes_shown.add(idx)
+                n_ = notes[idx]
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=n_["text"][:140], why=n_["why"][:320],
+                                  where=at.name, pointer=at.center, box=at.box, box_exact=True, kind="info",
+                                  keep_clear=_container_of(at, getattr(info, "elements", None), sw, sh))
+                self._trace(f"page note: {n_['text'][:60]}")
+                reply = self._on_guidance(gs)
+                if reply is None:
+                    return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                history.append(f"Explained to the person (planned page note, do not repeat it): {n_['text']}. {n_['why']}")
+                continue
             cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" + _field_state(e)
                      for e in items]
             parts = urlsplit(info.url)
