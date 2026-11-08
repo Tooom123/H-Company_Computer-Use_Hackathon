@@ -1246,3 +1246,36 @@ propagation. One additional regression passed for a remaining dynamic-guidance
 desktop keyboard control was observed delivering autonomy 1 to the running
 engine while idle; a complete live three-level round trip was not established.
 These checks are not human success/usefulness labels or a new task benchmark.
+
+### H documentation passage and conversational delivery — 2026-11-08
+
+Added a documentation reading policy: prefer visible section links, otherwise
+use bounded, observed scrolling in ACT and leave the relevant passage visible.
+A single small down/up preview is permitted only for general page overviews
+with a restorable starting position; this optional preview remains untested.
+GUIDE keeps human control and asks for explicit confirmation after manual
+scrolling. The H generic navigation scope now explicitly includes its official
+documentation rather than contradicting the separate-tab instruction.
+
+147 focused offline tests passed, followed by 51 routing/procedure checks after
+the scope adjustment. Closing notes now speak the actual guide answer first,
+with conversational verification wording. Inconclusive reports stay qualified;
+the fallback no longer claims a support handoff without evidence.
+
+One initial cloud probe was stopped after a local tracking-script error; it is
+not a result. Retest `876e2f44-8263-42e0-8663-1cbd23c10922` used one isolated H
+browser, public H docs only, no login and no local Mac control (12-step / 90 s
+limit). The exported trace shows three 600 px downward scrolls, cookie-banner
+dismissal and a final 400 px adjustment. The final screenshot visibly contains
+the Browser profiles heading and its complete relevant paragraph. Assistant
+review: passage positioning passed; answer was too verbose and copied the
+paragraph. H status is interrupted after its answer, not completed; the archive
+is complete, and no human success/usefulness label is inferred.
+
+The answer policy was tightened to two short sentences / 45 words without a
+full-paragraph quotation. A real Holo4 Models API call on a synthetic text
+fixture derived from that public section returned a direct 17-word answer in
+3.605 s, done=true, with no unnecessary click. This is planner-only evidence,
+not an end-to-end voice timing or a retest of ACT's final narration. Private
+artifacts: human-cognition/diagnostics/docs-scroll. A desktop voice trial and
+the optional down/up preview still need human observation.

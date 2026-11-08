@@ -575,7 +575,8 @@ class Intervention:
             self._trace(f"no progress after step {i + 1} (miss {misses}); showing it again")
             pre_loc = still
 
-        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="Done, checking the result",
+        from .presentation import CHECKING_RESULT
+        self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction=CHECKING_RESULT,
                                        why="", pointer=None, kind="info", last=True))
         if bound.procedure.dynamic_tail and not self._stop.is_set():
             # The script covered the known screens; the rest of the flow is planned from each page.

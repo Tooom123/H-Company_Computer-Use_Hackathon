@@ -106,9 +106,24 @@ def test_h_documentation_preserves_product_tab_for_actor_and_human(procedure_id,
         assert 'original product tab open and unchanged' in instructions
         assert 'In GUIDE, do not open a tab yourself' in instructions
         assert 'If already on H documentation' in instructions
+        assert 'leave the relevant heading and' in instructions
+        assert 'If the passage is\nalready visible, do not scroll it away' in instructions
+        assert 'Limit exploratory scrolling to three small moves' in instructions
+        assert 'human performs all navigation and scrolling' in instructions
+        assert 'Skip this preview if the\nstarting position cannot be reliably restored' in instructions
 
 
 def test_h_tab_policy_does_not_route_other_products_to_h_docs():
     req = InterventionRequest(software='odoo', goal='Read an order', procedure_id='generic')
     bound = ProcedureRegistry().for_request(req).bound(req)
     assert 'hub.hcompany.ai' not in bound.agent_instructions
+    assert 'general page overview' not in bound.agent_instructions
+
+
+def test_h_actor_scope_allows_official_docs_tab_without_allowing_other_products():
+    req = InterventionRequest(software='h-company', goal='Show the relevant docs paragraph',
+                              procedure_id='generic', mode=Mode.act)
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    assert 'Leaving H Platform and its official documentation (platform.hcompany.ai and hub.hcompany.ai).' in bound.plan().forbidden_actions
+    assert 'Leaving the selected software\'s visible browser tab.' not in bound.plan().forbidden_actions
+    assert 'Revealing secrets (API keys, tokens).' in bound.plan().forbidden_actions

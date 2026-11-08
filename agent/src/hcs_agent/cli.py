@@ -24,6 +24,7 @@ from .contract import AgentEvent, ApproveCommand, InterventionRequest, Mode, Nex
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 from .desktop_feedback import DesktopFeedback, RunJournal
+from .presentation import CHECKING_RESULT, VERIFIED_RESULT, UNVERIFIED_RESULT, STOPPED_RESULT
 
 
 _LAST_LOOKUP_AT = 0.0
@@ -32,9 +33,8 @@ _MAGNET = {"level": int(os.environ.get("HCS_AUTONOMY", "1")), "widget": None, "c
 _VOICE: dict = {"ptt": None, "state": None}  # push-to-talk handle and its last state, visible to the guide loop
 _SPEECH: dict = {"speaker": None, "ready": False}  # ElevenLabs voice reading the on-screen notes aloud
 # Notes shown in every session (closing notes, routing feedback): synthesised ahead so they play at once.
-_COMMON_LINES = ("Done, checking the result", "Done: result verified in the software",
-                 "Stopped. Nothing else will be changed.", "I could not verify the result",
-                 "Case handed over to support.", "I did not get that, please rephrase", "I cannot do that yet")
+_COMMON_LINES = (CHECKING_RESULT, VERIFIED_RESULT, STOPPED_RESULT, UNVERIFIED_RESULT,
+                 "This needs another look.", "I did not get that, please rephrase", "I cannot do that yet")
 
 
 def _speaker():
@@ -632,12 +632,12 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     r = it.report
     doodle = None
     if r.status.value == "resolved":
-        text, why, doodle = "Done: result verified in the software", "", "check"
+        text, why, doodle = VERIFIED_RESULT, "", "check"
     elif r.status.value == "abandoned":
-        text, why = "Stopped. Nothing else will be changed.", ""
+        text, why = STOPPED_RESULT, ""
     else:
-        text = "I could not verify the result"
-        why = (r.escalation.blocked_on if r.escalation else "") or "Case handed over to support."
+        text = UNVERIFIED_RESULT
+        why = (r.escalation.blocked_on if r.escalation else "") or "This needs another look."
         doodle = "question"
     final = (it.guidance[-1] if r.mode is Mode.guide and it.guidance and it.guidance[-1].last
              and r.status.value != "abandoned" else None)
@@ -645,7 +645,7 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     if final is not None:
         # The model's explanation is useful even when verification is inconclusive;
         # keep that distinction both visible and spoken. Never change the report.
-        _say(text, final.instruction)
+        _say(final.instruction, text)
         ov.show_scene(Scene(text=final.instruction, target=final.pointer, target_box=final.box,
                             why=text, step=final.index, doodle=doodle))
     else:

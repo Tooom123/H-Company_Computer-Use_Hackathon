@@ -2,6 +2,11 @@
 
 import re
 
+CHECKING_RESULT = "Let me check that for you."
+VERIFIED_RESULT = "I've checked this on screen."
+UNVERIFIED_RESULT = "I couldn't confirm the result yet."
+STOPPED_RESULT = "I've stopped the task."
+
 
 def action_narration(tools: list[str]) -> str:
     """Narrate action types without reading tool arguments, secrets or internal code."""

@@ -63,8 +63,8 @@ def test_final_only_answer_is_drawn_and_spoken_after_loop_exits_without_a_tick(r
     assert overlay.scene.target == it.guidance[-1].pointer
     assert overlay.scene.target_box == it.guidance[-1].box
     assert overlay.scene.text == it.guidance[-1].instruction
-    assert overlay.scene.why == "Done: result verified in the software"
-    assert spoken == [("Done: result verified in the software", it.guidance[-1].instruction)]
+    assert overlay.scene.why == "I've checked this on screen."
+    assert spoken == [(it.guidance[-1].instruction, "I've checked this on screen.")]
     assert it.report.verification.satisfied is True
     assert overlay.waits[-1]() is False  # final note is not immediately hidden
     clock[0] += 6
@@ -77,9 +77,9 @@ def test_unverified_final_guidance_is_visibly_and_audibly_qualified(rig):
     cli._show_outcome(overlay, it)
     assert overlay.scene.target == (1057, 523)
     assert overlay.scene.text == it.guidance[-1].instruction
-    assert overlay.scene.why == "I could not verify the result"
+    assert overlay.scene.why == "I couldn't confirm the result yet."
     assert overlay.scene.doodle == "question"
-    assert spoken[0] == ("I could not verify the result", it.guidance[-1].instruction)
+    assert spoken[0] == (it.guidance[-1].instruction, "I couldn't confirm the result yet.")
     assert it.report.status is CaseStatus.escalated and it.report.verification.satisfied is False
 
 
@@ -89,6 +89,14 @@ def test_stopped_or_act_case_does_not_reuse_a_stale_guide_target(rig, status, mo
     cli._show_outcome(overlay, intervention(status, mode=mode))
     assert getattr(overlay.scene, "target", None) is None
     assert "Read the Agent Answer panel." not in spoken[0]
+
+
+def test_missing_verification_does_not_claim_a_support_handoff_or_success(rig):
+    overlay, spoken, _ = rig
+    it = intervention(CaseStatus.escalated, mode=Mode.act)
+    cli._show_outcome(overlay, it)
+    assert spoken == [("I couldn't confirm the result yet.", "This needs another look.")]
+    assert it.report.verification.satisfied is False
 
 
 def test_answer_without_target_keeps_its_explanation_without_inventing_a_marker(rig):

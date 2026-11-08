@@ -26,6 +26,17 @@ RESPONSE_LANGUAGE_INSTRUCTIONS = (
     "Do not translate or rewrite the stored user question. This language rule does not authorize any action."
 )
 
+COACHING_STYLE_INSTRUCTIONS = (
+    "Speak like a helpful colleague sitting beside the user: warm, calm, direct and concise. "
+    "Use natural contractions and lead with the useful fact or next action, not a status label. "
+    "For example: 'Here's the section you need' followed by the observed heading and its relevance. "
+    "Keep the user-facing final answer to at most two short sentences and 45 words. "
+    "Paraphrase the useful point instead of quoting an entire documentation paragraph or repeating it as an explanation. "
+    "Avoid 'Done:', 'Task completed', generic 'I hope it helps', repeated congratulations and filler. "
+    "A friendly tone must not imply success or verification without evidence. Keep exact UI labels; "
+    "say what remains uncertain. Never add a follow-up question merely to prolong a completed task."
+)
+
 
 COACHING_ORIGINS = {
     "comfyui": {"cloud.comfy.org", "docs.comfy.org"},
@@ -216,9 +227,9 @@ class BoundProcedure(BaseModel):
 
     @property
     def agent_instructions(self) -> str:
-        instructions = self._r(self.procedure.agent_instructions)
+        instructions = self._r(self.procedure.agent_instructions) + "\n\n" + COACHING_STYLE_INSTRUCTIONS
         if self.request.software in {"h-company", "hcompany"}:
-            instructions += "\n\n" + H_DOCUMENTATION_TABS
+            instructions += "\n\n" + H_DOCUMENTATION_TABS + "\n\n" + H_DOCUMENTATION_READING
         return instructions
 
     @property
@@ -380,6 +391,24 @@ link and ask them to open it in a new tab, then select that tab. If its new-tab 
 is not explicit, explain Command-click on macOS. Do not suggest a normal click that
 replaces the working page. Preserve the user's current autonomy level and scope."""
 
+H_DOCUMENTATION_READING = """Present the useful passage, not just the documentation landing page.
+After opening H documentation, identify the heading or paragraph that answers the user's question
+from the current page. Prefer a visible table-of-contents or section link over blind scrolling.
+In ACT, if the passage is below the fold, scroll a small amount and inspect the updated screen
+before the next move. Limit exploratory scrolling to three small moves before using search or
+explaining that you have not located the passage. When found, leave the relevant heading and
+paragraph visible, then explain their relevance in one or two short sentences. If the passage is
+already visible, do not scroll it away. Do not treat opening a page as proof that it answers the goal.
+Only for a general page overview with no specific passage to show, you may make ONE small downward
+scroll and return to the original visible heading to orient the user. Skip this preview if the
+starting position cannot be reliably restored; do not repeat it or add artificial pauses.
+In GUIDE / Show me, the human performs all navigation and scrolling. Prefer guiding a click on a
+visible section link. If manual scrolling is needed, give a short info instruction naming the
+heading to look for, and ask the human to confirm the step in H Companion afterwards. Do not
+assume a scroll occurred or fabricate coordinates for an offscreen paragraph. Observe the new
+page before explaining the passage. Do not ask the human to perform decorative down/up scrolling.
+Stay within the selected product's official documentation and the current task scope."""
+
 SITE_HINTS = {
     "hcompany": "The software is the H Company website: platform.hcompany.ai (agents, sessions, Agent View, API keys, "
                 "billing, usage) and the documentation hub hub.hcompany.ai (search bar at the top). Never reveal or "
@@ -399,6 +428,8 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
     hint = SITE_HINTS.get(software.lower(), f"The software is {software} in a browser on macOS.")
     automatic = bool(request.parameters.get("automatic_context"))
     surface = "focused native application" if request.parameters.get("context_surface") == "native" else "visible browser tab"
+    navigation_scope = ("H Platform and its official documentation (platform.hcompany.ai and hub.hcompany.ai)"
+                        if software in {"h-company", "hcompany"} else f"the selected software's {surface}")
     if automatic:
         hint = (f"The selected product is {request.parameters.get('context_label', software)} in its {surface}. "
                 "Use its current visible accessibility controls, including open menus. The active product was "
@@ -422,7 +453,7 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
         allowed_actions=["Navigate inside the software; read any page; fill the fields and click the buttons the goal "
                          "requires."],
         forbidden_actions=["Entering credentials or payment details.", "Deleting anything.",
-                           "Revealing secrets (API keys, tokens).", f"Leaving the selected software's {surface}."] + (
+                           "Revealing secrets (API keys, tokens).", f"Leaving {navigation_scope}."] + (
             ["Changing business records, placing orders, posting payments, sending messages or starting jobs. "
              "This demo allows consultation and temporary navigation/filters only, at any autonomy level."] if automatic else []),
         agent_instructions=f"{hint}\nThere is no written procedure for this task: work it out from what you see, one "

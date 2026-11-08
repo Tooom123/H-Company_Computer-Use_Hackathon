@@ -9,6 +9,15 @@ open the documentation in a separate tab, then select it. In Show me, explain th
 new-tab action and let the human perform it. Once in the documentation, reuse that
 tab for its sections instead of opening duplicates.
 
+Show the relevant passage, not only the page title. Prefer a visible section or
+table-of-contents link. In autonomous mode, scroll in small steps and reobserve;
+leave the useful heading and paragraph visible while explaining them. Do not
+scroll away a passage already visible. For a general page overview only, one
+small downward preview and return is allowed if the original heading can be
+reliably restored. In Show me, let the human navigate; after manual scrolling,
+ask them to confirm the step in H Companion before reobserving. Never invent a
+target position for an offscreen passage.
+
 ## Cloud browser versus the user's computer
 
 Choose the environment according to where the work should run. A cloud browser
