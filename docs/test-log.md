@@ -941,3 +941,16 @@ valeurs ne sont pas lues, donc un catalogue inchangé ne prouve pas l'échec d'u
 saisie. Après invalidation de cible, une seule reprise de planification est
 autorisée sur observation AX fraîche, sans confirmer l'action précédente.
 Ces contrôles logiciels restent à confirmer par un nouvel essai humain.
+
+Intégration des commits Matteo `fc8955a` et `1e36ce0` : nouvelles règles de
+routage FR/EN, consultation des crédits distincte de leur activation, et
+correspondance AX par mots entiers. Le pilote Devin utilise son propre chemin
+de coaching ; ce routage ne suffit donc pas à expliquer/corriger l'essai raté.
+Les snapshots de l'outil d'évaluation restent ignorés par Git, avec permissions
+restreintes, URL nettoyée et nom de fichier indépendant de cette URL.
+
+Validation intégrée après correction de compatibilité de l'affichage final :
+**1 299 tests Python passent, 3 ignorés, 14 sous-tests passent** (agent, backend,
+pilot et scripts). Pas de nouvelle mesure de qualité du modèle ni de validation
+humaine déduite de ces tests hors ligne. Le benchmark de routage payant de Matteo
+n'a pas été réexécuté pendant cette correction.

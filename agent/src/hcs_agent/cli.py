@@ -1252,9 +1252,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     guidance_scene_shown = False
     reobservations = 0
     # Only the observation-only native pilot has an explicit no-action replan contract in the runner.
-    reobserve_allowed = (getattr(it.request, "software", None) == "cognition"
-                         and getattr(it.request, "autonomy", None) == 0
-                         and getattr(it.request, "mode", None) is Mode.guide
+    request = getattr(it, "request", None)
+    reobserve_allowed = (getattr(request, "software", None) == "cognition"
+                         and getattr(request, "autonomy", None) == 0
+                         and getattr(request, "mode", None) is Mode.guide
                          and os.environ.get("HCS_AX_NATIVE_BUNDLE_ID") == "com.exafunction.windsurf")
     inputs = _InputWatcher()
 

@@ -6,15 +6,19 @@
 Open the right page in Chrome (in front), run --snapshot, then run the check for each procedure whose steps live on
 that page: every `element` and annotation description is matched by `a11y.match`; a description that matches
 nothing, or matches a weak/ambiguous candidate, is reported so it can be rewritten before a demo.
-Snapshots contain labels, roles and rectangles only (no field values).
+Snapshots contain labels, roles, rectangles and page metadata (no field values). URLs omit credentials,
+queries and fragments; snapshots stay local under the ignored runs directory with private permissions.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "agent" / "src"))
@@ -23,17 +27,36 @@ from hcs_agent import a11y  # noqa: E402
 from hcs_agent.procedures import ProcedureRegistry  # noqa: E402
 
 
+def _snapshot_url(value: str) -> str:
+    """Keep web-page identity without URL credentials or query/fragment tokens."""
+    try:
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            return ""  # Do not persist native file paths or non-web URLs.
+        host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+        authority = f"{host}:{parts.port}" if parts.port is not None else host
+        return urlunsplit((parts.scheme, authority, parts.path, "", ""))
+    except (TypeError, ValueError):
+        return ""
+
+
 def snapshot() -> Path:
     info = a11y.page()
     if info is None or len(info.elements) <= 1:
         raise SystemExit("no browser page readable (is Chrome open with a page loaded?)")
     out = ROOT / "runs" / "snapshots"
-    out.mkdir(parents=True, exist_ok=True)
-    name = (info.url.split("//")[-1].split("?")[0].replace("/", "_").strip("_") or "page")[:60]
-    path = out / f"{int(time.time())}_{name}.json"
-    path.write_text(json.dumps({"url": info.url, "title": info.title,
-                                "elements": [{"role": e.role, "name": e.name, "frame": e.frame} for e in info.elements]},
-                               indent=0, ensure_ascii=False))
+    if out.is_symlink():
+        raise ValueError("snapshot directory must not be a symbolic link")
+    out.mkdir(mode=0o700, parents=True, exist_ok=True)
+    out.chmod(0o700)
+    # The filename never includes a host, user name, URL path, or token.
+    path = out / f"{int(time.time())}_{uuid4().hex}.json"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        json.dump({"url": _snapshot_url(info.url), "title": info.title,
+                   "elements": [{"role": e.role, "name": e.name, "frame": e.frame} for e in info.elements]},
+                  stream, indent=0, ensure_ascii=False)
     print(f"{len(info.elements)} elements -> {path}")
     return path
 
