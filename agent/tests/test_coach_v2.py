@@ -90,6 +90,41 @@ def test_one_bounded_call_uses_current_evidence_and_preserves_question(observati
     assert client.last_latency_s >= 0
 
 
+def test_semantic_ax_payload_preserves_every_target_without_sending_geometry(observation, client_factory):
+    observation["controls"][0]["enabled"] = True
+    observation["controls"][1]["enabled"] = False
+    before = copy.deepcopy(observation)
+    client, requests = client_factory()
+    client.decide("What answer is visible?", observation, "guide")
+    body = requests[0]
+    sent = json.loads(body["messages"][1]["content"])
+    controls = sent["current_observation"]["controls"]
+    assert [(c["id"], c["role"], c["label"]) for c in controls] == [
+        (c["id"], c["role"], c["label"]) for c in observation["controls"]]
+    assert controls[0]["enabled"] is True
+    assert controls[1]["enabled"] is False
+    assert "enabled" not in controls[2]
+    assert all("box" not in control for control in controls)
+    assert observation == before
+    # Compaction neither removes descriptions/constraints nor changes output validation.
+    schema = body["tools"][0]["function"]["parameters"]
+    assert schema["additionalProperties"] is False
+    assert "description" in schema["properties"]["text"]
+    assert "title" not in schema and "default" not in schema["properties"]["text"]
+    assert sent["current_observation"]["text"] == observation["text"]
+
+
+def test_mode_rule_reinforces_english_and_does_not_promise_guide_actions(observation, client_factory):
+    client, requests = client_factory()
+    client.decide("Crée une clé pour moi", observation, "guide")
+    system = requests[0]["messages"][0]["content"]
+    assert "All speech and tour-point speech must be English" in system
+    assert "never promise that you will click or type" in system
+    request = json.loads(requests[0]["messages"][1]["content"])
+    assert request["response_language"] == "English"
+    assert "You guide:" in request["response_instructions"]
+
+
 @pytest.mark.parametrize("url", [
     "http://platform.hcompany.ai/agents", "https://platform.hcompany.ai.evil.example/",
     "https://platform.hcompany.ai@evil.example/", "https://user@platform.hcompany.ai/",

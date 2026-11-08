@@ -129,6 +129,9 @@ def runtime_environment(python, private, port, key):
     env.update(PYTHONPATH=os.pathsep.join([str(ROOT / 'agent/src'), str(ROOT / 'backend/src'), str(ROOT)]),
                HCS_CONTROL_URL=f'http://127.0.0.1:{port}', HCS_CONTROL_PORT=str(port),
                HCS_RUNS_DIR=str(private / 'episodes'), HCS_PTT_KEY=key)
+    # The shared transcriber otherwise defaults to French only. Preserve English
+    # demo requests while still accepting French; narration stays English in the coach.
+    env.setdefault('HCS_VOICE_LANGUAGE', 'fr-en')
     env.setdefault('HCS_TTS_PROVIDER', 'macos')
     env.setdefault('HCS_TTS_MACOS_VOICE', 'Samantha')
     return env

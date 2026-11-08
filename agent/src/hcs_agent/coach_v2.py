@@ -272,6 +272,29 @@ def _validate_target(decision: CoachDecision, observation: dict) -> None:
             raise CoachProtocolError("Typing target is not an observed text input.", reason="invalid_typing_target")
 
 
+def _model_observation(observed: dict) -> dict:
+    """Send semantic AX evidence; retain geometry locally for validated execution.
+
+    Holo returns control IDs, never coordinates. All IDs, roles, labels, explicit
+    enabled states and page text are preserved; this does not select or rank
+    targets. The original observation still validates both input and output.
+    """
+    return {**observed, "controls": [
+        {key: value for key, value in control.items()
+         if key != "box" and not (key == "enabled" and value is None)}
+        for control in observed["controls"]]}
+
+
+def _compact_schema(value):
+    """Drop generated annotations, retaining all validation and field guidance."""
+    if isinstance(value, dict):
+        return {key: _compact_schema(item) for key, item in value.items()
+                if key not in {"title", "default"}}
+    if isinstance(value, list):
+        return [_compact_schema(item) for item in value]
+    return value
+
+
 class CoachClient:
     """One bounded, text-only Holo4 call per current AX observation.
 
@@ -311,7 +334,7 @@ class CoachClient:
         for item in (history or [])[-4:]:
             if isinstance(item, dict):
                 recent.append({k: str(item[k])[:600] for k in ("speech", "action", "observation", "question") if k in item})
-        schema = CoachDecision.model_json_schema()
+        schema = _compact_schema(CoachDecision.model_json_schema())
         schema["required"] = list(schema["properties"])
         requested_tour = tour_requested(question)
         if not requested_tour:
@@ -326,7 +349,9 @@ class CoachClient:
         mode_rule += (' For a form field, action="type" focuses the target and enters its text in ONE step. '
                       'Do not click a field as a separate preparation step while including text: '
                       'action="click" always requires text=null. '
-                      'Use action="tour" only when it is present in the allowed action enum.')
+                      'Use action="tour" only when it is present in the allowed action enum. '
+                      'All speech and tour-point speech must be English, even when the request, page or recent history is French. '
+                      'GUIDE narration tells the user what to do; never promise that you will click or type.')
         # A structured tour has three short speeches; a skill body is payload,
         # never narration. Give these requested forms room without lengthening voice.
         drafting_skill = bool(re.search(r"\b(?:skill|compétence)\b", question, re.I)
@@ -336,8 +361,14 @@ class CoachClient:
                 "chat_template_kwargs": {"enable_thinking": False},
                 "messages": [{"role": "system", "content": self.system_prompt + "\n\n" + mode_rule},
                              {"role": "user", "content": json.dumps({
-                                 "mode": mode, "question": question, "current_observation": observed,
-                                 "recent_history": recent}, ensure_ascii=False)}],
+                                 "mode": mode, "question": question, "current_observation": _model_observation(observed),
+                                 "recent_history": recent, "response_language": "English",
+                                 "response_instructions": (
+                                     "Write every speech field in English, including tour points. Do not imitate the language of the transcript or earlier replies. "
+                                     + ("You guide: for click/type actions, address the person in the imperative: 'Click …', 'Open …', 'Type …'. "
+                                        "Never describe these actions using 'I', 'I'll', 'I will', or 'Let me'."
+                                        if mode == "guide" else "You act: briefly explain your next requested action."))
+                             }, ensure_ascii=False, separators=(",", ":"))}],
                 "tools": [{"type": "function", "function": {"name": "coach_step", "strict": True,
                            "description": "One short user-facing explanation and at most one next step.", "parameters": schema}}],
                 "tool_choice": "required"}

@@ -84,7 +84,11 @@ Depuis la racine de ce worktree :
 python3 scripts/run-h-platform-coach-v2.py
 ```
 
-Maintenir **Option droite** pour dicter. Dans la barre de menus, **Start H Platform coach V2** relance le même moteur V2; **Stop task** interrompt seulement sa tâche. Pour démarrer uniquement le moteur :
+Maintenir **Option droite** pour dicter. Dans la barre de menus, **Start H Platform coach V2** relance le même moteur V2; **Stop task** interrompt seulement sa tâche.
+
+La dictée accepte français et anglais par défaut (`HCS_VOICE_LANGUAGE=fr-en`); les consignes demandent une narration anglaise. Le mode reste celui du slider : demander « create for me » en **Show me** ne déclenche pas d'exécution autonome. Passer à **Do it, I watch** avant les scènes de création, puis dicter la demande.
+
+Pour démarrer uniquement le moteur :
 
 ```bash
 python3 scripts/run-h-platform-coach-v2.py --backend-only
