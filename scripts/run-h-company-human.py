@@ -57,7 +57,7 @@ def main():
         raise SystemExit('A human coaching runtime already owns this directory.') from None
     sys.path[:0] = [str(ROOT), str(ROOT/'agent/src'), str(ROOT/'backend/src')]
     from dotenv import dotenv_values
-    for source in (ROOT/'app/.env', ROOT/'agent/.env'):
+    for source in (ROOT/'app/.env', ROOT/'agent/.env', ROOT/'.env'):  # root .env: where the README puts the keys
         for name, value in dotenv_values(source).items():
             if name in {'HAI_API_KEY', 'GLADIA_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVEN'} and value:
                 os.environ.setdefault(name, value)
