@@ -86,6 +86,71 @@ What the two runs support:
 6. Across models (exploration): holo4-27b is the fastest (0.8–1.1 s) and most repeatable (100 % same answer
    twice) but costs more per token; holo3-1-35b-a3b loses the most accuracy with tight crops.
 
+## Gaze × clickable controls × intent (`run_intent.py`, `data-intent/`)
+
+The agent does not only know where the user looks: it knows what they asked ("I want to revoke my API key") and
+which controls are on screen. This experiment chooses the crop from the screen's **clickable elements** (exact
+boxes recorded at capture) with
+
+```
+p(element) ∝ gaze(element) × intent(element)
+gaze(e)   = exp(−d² / 2σ²) + 0.02     d: gaze point → element box, σ: webcam error (≥ 96 px)
+intent(e) = word match between the request and the label (FR/EN action synonyms, prefix stemming) + 0.15
+crop      = box of the most probable elements holding 80 % of p, + 40 px, ≥ 768×480
+```
+
+and switches each signal on and off: **F** full screen · **G** gaze only (a box around the gaze point) ·
+**GC** gaze × controls · **I** intent × controls (no webcam) · **GCI** all three · **GCIa** GCI, with "not here"
+offered only when gaze and intent disagree (the control the request names best is not within 2σ of the gaze).
+
+Tasks are **user-style requests**, not control names: Holo (text) rewrote each task about the goal, 40 % in French,
+without quoting the label (45 of 112 still do, mostly proper names; reported apart). The request is what Holo
+receives in every strategy. Intent scoring is local and free (no extra model call).
+
+### Results (`results/intent-20261108-083710/`: 1,236 distinct images, holo4-35b-a3b, 112 tasks × 4 gaze conditions)
+
+Iterations: 30 tasks (fair webcam + elsewhere) → 112 tasks → + good and poor webcams.
+
+**With user-style requests the full screen gets 75 %** (vs 95 % when the task names the control): the request is
+vague and the full screen keeps every look-alike. Success, paired against F (exact McNemar):
+
+| strategy | good webcam ~60 px | fair ~120 px | poor ~200 px | looking elsewhere |
+| --- | --- | --- | --- | --- |
+| F · full screen (today) | 75 % | 75 % | 75 % | 75 % |
+| G · gaze only | **86 %** (p < 0.01) | **85 %** (p < 0.01) | 82 % (p = 0.06) | 73 %, falls back 87 % |
+| GC · gaze × controls | **85 %** (p = 0.01) | **85 %** (p < 0.01) | 79 % | 77 % |
+| I · intent × controls, no webcam | 79 % | 79 % | 79 % | 79 %, falls back 18 % |
+| GCI · all three | **84 %** (p = 0.01) | **82 %** (p = 0.02) | 82 % (p = 0.06) | 79 % |
+| GCIa · all three, escape only on disagreement | 82 % | 80 % | 82 % | 77 % |
+
+Global view (weighted over conditions; time is a mean, cost per 1,000 locates):
+
+| strategy | realistic: fair webcam 90 %, elsewhere 10 % | distracted: fair 70 %, elsewhere 30 % |
+| --- | --- | --- |
+| F · full screen | 75.0 % · 1.32 s · $0.535 | 75.0 % · 1.32 s · $0.535 |
+| G · gaze only | 83.7 % · 1.46 s · $0.581 | 81.3 % · 1.62 s · $0.650 |
+| GC · gaze × controls | 84.0 % · 1.53 s · $0.596 | 82.4 % · 1.65 s · $0.639 |
+| I · intent × controls | 79.5 % · 1.46 s · $0.594 | 79.5 % · 1.46 s · $0.594 |
+| **GCI · all three** | **81.8 % · 1.46 s · $0.569** | **81.1 % · 1.55 s · $0.602** |
+| GCIa · all three, gated escape | 80.0 % · 1.42 s · $0.547 | — |
+
+What it shows:
+
+1. **When the request is vague, the gaze makes Holo right more often**: +9 to +11 points over the full screen with
+   a good or fair webcam, significant. Here the crop buys accuracy, not compute: cost is about the same or a few
+   % higher because a crop that misses is paid twice (crop + full screen).
+2. **Intent alone (no webcam) already helps** (+4.5 points) and is robust: it does not depend on where the user
+   looks, falls back least, and needs no extra model call (local word match).
+3. **Gaze alone is fragile when the user looks elsewhere** (87 % fallbacks, +67 % cost). Adding the intent keeps the
+   crop on the right control 72 % of the time instead of 12 %, and **all three combined are the best balance**:
+   +7 points over the full screen in the realistic mix for +6 % cost, and the most stable when the user is
+   distracted.
+4. Gating the "not here" escape on gaze/intent agreement removes needless fallbacks (cheapest crop, +2 % cost) but
+   gives back part of the accuracy: a trade-off, not a free win.
+5. Requests that quote the label are easier for the intent signal (I: 91 % vs 72 % success on paraphrases); real
+   users mostly paraphrase, so the paraphrase figures are the ones to quote.
+
+
 ## Honest limits
 
 - Synthetic screens and simulated gaze: a pilot on the method, not a result on real users or real software.

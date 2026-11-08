@@ -401,6 +401,26 @@ def build(data, screens, tasks, ids, conditions, done, price, model) -> str:
             if parts:
                 L.append(f"- {name}: " + " · ".join(parts))
         L.append("")
+    # global view: every condition pooled (equal weight), and a realistic mix (fair webcam 90 %, elsewhere 10 %)
+    mixes = [("all conditions, equal weight", {c: 1 / len(conditions) for c in conditions})]
+    if "gaze120" in conditions and "elsewhere" in conditions:
+        mixes.append(("realistic: fair webcam 90 %, looking elsewhere 10 %", {"gaze120": 0.9, "elsewhere": 0.1}))
+        mixes.append(("distracted: fair webcam 70 %, looking elsewhere 30 %", {"gaze120": 0.7, "elsewhere": 0.3}))
+    for title, wts in mixes:
+        L += [f"## Global · {title}", "", "| strategy | success | mean time | cost / 1000 | fallback |", "|---|---|---|---|---|"]
+        for s in STRATS:
+            acc = {"success": 0.0, "lat": 0.0, "cost": 0.0, "fb": 0.0}
+            ok = True
+            for c, w in wts.items():
+                rs = res[(c, s)]
+                if not rs:
+                    ok = False
+                    break
+                for key in acc:
+                    acc[key] += w * st.mean(float(o[key]) for o in rs)
+            if ok:
+                L.append(f"| {names[s]} | {acc['success']:.1%} | {acc['lat']:.2f} s | ${acc['cost'] * 1000:.3f} | {acc['fb']:.0%} |")
+        L.append("")
     return "\n".join(L) + "\n"
 
 
