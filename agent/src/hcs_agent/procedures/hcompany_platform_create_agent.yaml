@@ -1,0 +1,97 @@
+# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
+# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+id: hcompany_platform_create_agent
+software: hcompany
+software_version: "2026-11"
+session_type: configuration
+title: Create a reusable agent on the H Platform
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: agent_name
+    description: Name of the agent (lowercase letters, digits, hyphens), e.g. "demo-web-reader"
+    required: false
+    default: "demo-web-reader"
+  - name: environment
+    description: "Where it acts: web (cloud browser), browser (your Chrome) or desktop (your Mac)"
+    required: false
+    default: "web"
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+objective: >-
+  Create an agent named "{agent_name}" with a {environment} environment and the default model, and save it.
+
+planned_changes:
+  - One agent "{agent_name}" is added to the catalog. It can be deleted afterwards.
+allowed_actions:
+  - Navigate to Agents, click Create, fill name, description and environment, save.
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Revealing, copying or reading aloud an API key or secret; the overlay never frames a secret value.
+  - Deleting agents, keys, sessions or environments.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
+  Procedure:
+  1. Open Agents (Computer Use Agents, then Agents) and click Create agent (or New agent).
+  2. Name: "{agent_name}" (lowercase letters, digits and hyphens only). Description: one line.
+  3. Environment: {environment}. Model: leave the default (holo4-27b).
+  4. Save. Confirm "{agent_name}" appears in the agents list.
+  Do not run a session from it in this procedure.
+guide_steps:
+  - instruction: "Open Agents in the left navigation"
+    element: "the Agents entry in the left navigation menu of the platform"
+    why: "An agent is a saved configuration: environment, model, instructions."
+    done_when: "an agents page is displayed listing the pre-built h/ agents and a create button"
+  - instruction: "Click Create agent"
+    element: "the Create agent (or New agent) button on the agents page"
+    why: "A form opens; only name, description and environment are required."
+    done_when: "an agent creation form is open with a name field"
+  - instruction: "Type \"{agent_name}\" as the name"
+    kind: type
+    element: "the name field of the agent creation form"
+    why: "Names use lowercase letters, digits and hyphens; this is the id you pass when running sessions."
+    done_when: "the name field of the form contains {agent_name}"
+  - instruction: "Pick the {environment} environment"
+    element: "the environment selector of the agent creation form (web, browser, desktop)"
+    why: "web = a cloud browser; browser = your own Chrome; desktop = your Mac screen."
+    done_when: "the environment selector of the form shows {environment}"
+  - instruction: "Click Save"
+    element: "the Save (or Create) button at the bottom of the agent creation form"
+    why: "The agent is now in your catalog and can be run by name."
+    done_when: "the agents list shows an agent named {agent_name}"
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to go back to the platform home"
+    element: "the H Company logo at the top-left of the platform page"
+    why: "The home page is where every section starts from."
+  - instruction: "Click the Computer Use Agents section in the left navigation"
+    element: "the Computer Use Agents entry in the left navigation menu"
+    why: "Agents, sessions and keys live under this product."
+    optional: true
+
+postcondition:
+  description: >-
+    The agents list shows "{agent_name}".
+  checks:
+    - key: agents_page
+      prompt: The agents page of the platform is displayed.
+    - key: agent_listed
+      prompt: An agent named "{agent_name}" appears in the list.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
+    you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must check the agent naming rules and the plan's agent limits.
+  default_category: unknown

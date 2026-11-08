@@ -1,0 +1,86 @@
+# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
+# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+id: hcompany_hub_find_documentation
+software: hcompany
+software_version: "2026-11"
+session_type: onboarding
+title: Find the right page in the H documentation (hub)
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: topic
+    description: What the user wants to find, e.g. "desktop permissions on macOS"
+    required: true
+  - name: page_title
+    description: Title of the page or section expected, e.g. "Desktop permissions"
+    required: false
+    default: "{topic}"
+preconditions:
+  - The H documentation hub (hub.hcompany.ai) is open in the browser on the main display.
+objective: >-
+  Find the documentation page about "{topic}" on hub.hcompany.ai and leave the useful section visible.
+
+planned_changes:
+  - Navigation only; nothing is created or changed.
+allowed_actions:
+  - Use the hub search bar and the left navigation of hub.hcompany.ai.
+  - Scroll to the relevant section of the page found.
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Revealing, copying or reading aloud an API key or secret; the overlay never frames a secret value.
+  - Deleting agents, keys, sessions or environments.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user find their way in the H Company documentation (hub.hcompany.ai) in a browser on macOS.
+  Work only inside the visible hub tab. Procedure:
+  1. Click the search field at the top of the hub (or press Cmd+K) and type "{topic}".
+  2. Open the most relevant result ("{page_title}").
+  3. Scroll until the useful section is visible and stop there.
+  If the search gives nothing useful, use the left navigation (Agents API, Holo CLI, Models API).
+guide_steps:
+  - instruction: "Click the search bar at the top of the hub"
+    element: "the search input at the top of the documentation hub page (placeholder Search..., with a Cmd K hint)"
+    why: "The hub search covers every page of the H documentation."
+    done_when: "a search dialog or an active search input is open with a text cursor"
+  - instruction: "Type \"{topic}\" and press Enter"
+    kind: type
+    element: "the active search input of the documentation hub"
+    why: "Results show the page and the section that match."
+    done_when: "search results are listed under the search input, mentioning {topic}"
+  - instruction: "Open the result \"{page_title}\""
+    element: "the search result titled {page_title}"
+    why: "This is the page that answers your question."
+    done_when: "a documentation page titled {page_title} is displayed"
+  - instruction: "Look at this section: it is the answer"
+    why: "Read it here; the left column lists the sibling pages if you need more."
+
+expected_screen: "the H documentation hub (hub.hcompany.ai) in a browser, with a search bar at the top"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to return to the hub home"
+    element: "the H Company logo at the top-left of the documentation hub"
+    why: "Every search starts from here."
+
+postcondition:
+  description: >-
+    The hub shows the documentation page about "{topic}" with the section "{page_title}" visible.
+  checks:
+    - key: page_open
+      prompt: A documentation page about "{topic}" is displayed on hub.hcompany.ai.
+    - key: section_visible
+      prompt: A section matching "{page_title}" is visible in the viewport.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
+    you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must point the user to the right documentation page if the hub search does not surface it.
+  default_category: unknown

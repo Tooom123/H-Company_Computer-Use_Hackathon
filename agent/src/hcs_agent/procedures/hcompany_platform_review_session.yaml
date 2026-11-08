@@ -1,0 +1,98 @@
+# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
+# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+id: hcompany_platform_review_session
+software: hcompany
+software_version: "2026-11"
+session_type: discovery
+title: Review what an agent did in Agent View
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: session_hint
+    description: How to recognise the session, e.g. "the most recent session" or part of its task text
+    required: false
+    default: "the most recent session"
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+  - At least one finished session exists on the account.
+objective: >-
+  Open {session_hint} in Agent View and understand its steps, screenshots, result and cost.
+
+planned_changes:
+  - "Read-only: nothing is created or changed."
+allowed_actions:
+  - Navigate to the Sessions list and open a session.
+  - Scroll the event timeline, open screenshots, read the final answer and the usage.
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Revealing, copying or reading aloud an API key or secret; the overlay never frames a secret value.
+  - Deleting agents, keys, sessions or environments.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab. Read-only.
+  Procedure:
+  1. Open the Sessions list (Computer Use Agents, then Sessions).
+  2. Click {session_hint} to open its Agent View.
+  3. Point at: the status and outcome, the event timeline (observations, actions, answer), one screenshot,
+     the final answer, the usage / cost.
+  Do not share, delete, resume or cancel anything.
+guide_steps:
+  - instruction: "Open Sessions in the left navigation"
+    element: "the Sessions entry in the left navigation menu of the platform"
+    why: "Every run of an agent is a session: this is the history."
+    done_when: "a list of sessions with their status and date is displayed"
+  - instruction: "Click {session_hint}"
+    element: "the row of {session_hint} in the sessions list"
+    why: "Agent View replays everything the agent saw and did."
+    done_when: "an Agent View page is displayed with a timeline of events and a status"
+  - instruction: "Look at the three things that matter here"
+    why: "Status = did it finish; timeline = what it saw and did step by step; answer = what it reported."
+    annotations:
+      - element: "the session status badge (completed, failed, interrupted) at the top of the Agent View"
+        text: "Status"
+        shape: circle
+      - element: "the event timeline listing observations and actions in the Agent View"
+        text: "Steps, with screenshots"
+        shape: box
+      - element: "the final answer panel of the session in the Agent View"
+        text: "What the agent reported"
+        shape: box
+  - instruction: "Click a step with a screenshot to see what the agent saw"
+    element: "an observation step with a screenshot thumbnail in the event timeline"
+    why: "Comparing the screenshot with the action tells you why the agent clicked where it did."
+    done_when: "a screenshot of the session is enlarged or displayed in the Agent View"
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to go back to the platform home"
+    element: "the H Company logo at the top-left of the platform page"
+    why: "The home page is where every section starts from."
+  - instruction: "Click the Computer Use Agents section in the left navigation"
+    element: "the Computer Use Agents entry in the left navigation menu"
+    why: "Agents, sessions and keys live under this product."
+    optional: true
+
+postcondition:
+  description: >-
+    An Agent View page is open with its timeline visible.
+  checks:
+    - key: agent_view_open
+      prompt: An Agent View page of a session is displayed.
+    - key: timeline_visible
+      prompt: The event timeline with observations and actions is visible.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
+    you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must confirm the user has access to the session (same organisation).
+  default_category: unknown
