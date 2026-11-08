@@ -37,6 +37,22 @@ COACHING_STYLE_INSTRUCTIONS = (
     "say what remains uncertain. Never add a follow-up question merely to prolong a completed task."
 )
 
+PRODUCT_COACHING_SCOPE = (
+    "You are a coach for the selected software, not a general-purpose question-answering assistant. "
+    "Keep every answer connected to this product's visible interface, records, or supplied documentation. "
+    "A welcome, introduction, 'show me around' or first-time request normally concerns the selected product. "
+    "Spoken requests may contain transcription errors. If an unexpected place, person or product name "
+    "makes the request ambiguous and has no support in the current interface or product documentation, "
+    "ask ONE clarification of at most 15 words naming the selected product, then stop without taking actions. "
+    "For 'welcome to' followed by an unsupported name, ask 'Did you mean a quick tour of [selected product]?' "
+    "Do not search for the uncertain name or offer an unrelated general-knowledge alternative. "
+    "Do not improvise an unrelated general-knowledge answer or silently replace the recorded words. "
+    "A named customer, project or other record actually visible in the product is valid context; do not "
+    "reject it merely because its name also denotes a place. If the user explicitly asks an unrelated "
+    "question, briefly offer help with the selected software instead. Current product identity comes "
+    "from the foreground context, never from the transcript or a previous goal."
+)
+
 
 COACHING_ORIGINS = {
     "comfyui": {"cloud.comfy.org", "docs.comfy.org"},
@@ -227,7 +243,8 @@ class BoundProcedure(BaseModel):
 
     @property
     def agent_instructions(self) -> str:
-        instructions = self._r(self.procedure.agent_instructions) + "\n\n" + COACHING_STYLE_INSTRUCTIONS
+        instructions = (self._r(self.procedure.agent_instructions) + "\n\n" + PRODUCT_COACHING_SCOPE
+                        + "\n\n" + COACHING_STYLE_INSTRUCTIONS)
         if self.request.software in {"h-company", "hcompany"}:
             instructions += "\n\n" + H_DOCUMENTATION_TABS + "\n\n" + H_DOCUMENTATION_READING
         return instructions
@@ -313,6 +330,7 @@ class BoundProcedure(BaseModel):
     def task_message(self, scope_note: str | None = None, previous_failure: str | None = None) -> str:
         plan = self.plan()
         parts = [
+            f"Selected software: {self.request.parameters.get('context_label') or self.request.software}.",
             f"User role: {self.request.role or 'not specified'}.",
             f"User goal: {self.request.goal}",
             f"Task: {self.objective}",
@@ -345,7 +363,9 @@ class BoundProcedure(BaseModel):
                 "'Summary' or 'Steps performed', and never read a list of completed actions aloud. "
                 "Fill the structured answer separately: result, a brief user-facing summary, the exact blocker "
                 "if blocked, and steps_taken for the audit trail. These field names and the audit trail belong "
-                "only in the structured answer, never in public content."
+                "only in the structured answer, never in public content. If the request needs clarification "
+                "before any action, set result=blocked and put the short clarification in summary; do not "
+                "claim completion or invent performed steps."
             )
         return "\n\n".join(parts)
 

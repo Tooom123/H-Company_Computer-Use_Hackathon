@@ -154,3 +154,19 @@ def test_interruption_does_not_replay_an_already_presented_closing(rig):
     cli._show_outcome(rig.overlay, it)
     assert rig.overlay.scene.text == "I've stopped the task."
     assert all(it._presented_actor_answer not in s for speech in rig.spoken for s in speech)
+
+
+def test_clarification_before_acting_does_not_get_a_failed_task_narration(rig):
+    question = 'Did you mean a quick tour of H Platform?'
+    it = intervention(question, status=CaseStatus.escalated, outcome='blocked')
+    cli._show_outcome(rig.overlay, it)
+    assert rig.overlay.scene.text == question and rig.overlay.scene.why == ''
+    assert rig.spoken == [(question, '')]
+    assert it.report.status is CaseStatus.escalated and not it.report.verification.satisfied
+
+
+def test_blocker_after_actions_keeps_its_verification_qualification(rig):
+    it = intervention('Should we try a different filter?', status=CaseStatus.escalated, outcome='blocked')
+    it.report.declared.steps_taken = ['Changed the search filter']
+    cli._show_outcome(rig.overlay, it)
+    assert rig.overlay.scene.why == "I couldn't confirm the result yet."

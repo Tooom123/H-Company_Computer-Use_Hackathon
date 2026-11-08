@@ -722,6 +722,9 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     presented_answer = (clean_narration(getattr(it, "_presented_actor_answer", "")) if final is None
                         and r.status.value != "abandoned" and getattr(declared, "outcome", "not_run") != "not_run"
                         and (r.mode is Mode.act or getattr(it, "takeover", False)) else "")
+    clarification = (getattr(declared, "outcome", "") == "blocked" and not getattr(declared, "steps_taken", [])
+                     and (presented_answer or actor_answer).endswith("?"))
+    answer_note = "" if clarification else text  # a question is not a completed task to verify
     ov.badge(None)
     if final is not None:
         # The model's explanation is useful even when verification is inconclusive;
@@ -733,10 +736,10 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         # The public closing has already entered the speech queue. Keep it
         # visible with verification, without replaying the audit summary or
         # interrupting its voice with another closing message.
-        ov.show_scene(Scene(text=presented_answer, why=text, doodle=doodle), animate=False)
+        ov.show_scene(Scene(text=presented_answer, why=answer_note, doodle=doodle), animate=False)
     elif actor_answer:
-        _say(actor_answer, text)
-        ov.show_scene(Scene(text=actor_answer, why=text, doodle=doodle))
+        _say(actor_answer, answer_note)
+        ov.show_scene(Scene(text=actor_answer, why=answer_note, doodle=doodle))
     else:
         _say(text, why)
         ov.show_scene(Scene(text=text, why=why, doodle=doodle))
@@ -757,7 +760,7 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
 
 def cmd_talk(args: argparse.Namespace) -> int:
     """Push-to-talk: hold the key, speak, release; the request is routed and run after approval."""
-    from .voice import IntentRouter, PushToTalk, intent_to_request
+    from .voice import AUTO_PRODUCT_VOCABULARY, IntentRouter, PushToTalk, intent_to_request
 
     registry = ProcedureRegistry()
     coaching_software = getattr(args, "software", None)
@@ -772,7 +775,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
         registry.get(_COACHING_SOFTWARE[coaching_software][1])  # fail before opening devices if the fixture is missing
         _set_autonomy(0)
     # Proper nouns only: common words in the vocabulary made Gladia swap real words for them.
-    vocab = _COACHING_SOFTWARE[coaching_software][2] if coaching else ["Acme Demo", "Acme Corp", "Odoo"]
+    vocab = (list(AUTO_PRODUCT_VOCABULARY) if automatic else
+             _COACHING_SOFTWARE[coaching_software][2] if coaching else ["Acme Demo", "Acme Corp", "Odoo"])
     ov = None
     if not args.no_overlay and sys.platform == "darwin":
         from .overlay import Overlay

@@ -45,7 +45,7 @@ class InterventionAnswer(BaseModel):
     """
 
     result: Literal["done", "blocked", "unclear"] | None = Field(
-        default=None, description="done if the task was completed, blocked if something prevented it, else unclear.")
+        default=None, description="done if the task was completed, blocked if something prevented it or clarification is needed before acting, else unclear.")
     summary: str = Field(default="", description=(
         "A short, conversational answer for the user, in English, without report headings. "
         "For a tour, close warmly in one sentence without repeating the sections already explained. "

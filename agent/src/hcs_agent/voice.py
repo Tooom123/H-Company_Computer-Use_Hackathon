@@ -29,6 +29,14 @@ from .procedures import Procedure, ProcedureRegistry
 SAMPLE_RATE = 16_000
 H_MODELS_URL = os.environ.get("HAI_MODELS_BASE_URL", "https://api.hcompany.ai/v1")
 
+# Automatic mode can start on any supported product. Keep this to proper names:
+# biasing ordinary words previously caused substitutions in unrelated speech.
+# These are recognition hints only; provider transcripts remain verbatim.
+AUTO_PRODUCT_VOCABULARY = (
+    "H Company", "H Platform", "Holo", "H Companion", "Devin", "Cognition",
+    "Odoo", "SAP", "ComfyUI", "Comfy Cloud", "CapCut",
+)
+
 
 # --------------------------------------------------------------------------- recording
 

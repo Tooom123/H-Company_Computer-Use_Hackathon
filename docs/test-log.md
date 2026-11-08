@@ -1412,3 +1412,35 @@ replay of the actual actor archive preserved four public explanations and a
 verifier archive and was corrected to the actor archive. No external call or
 desktop action was performed during replay. Live voice/layout validation awaits
 the user's next trial; no latency or task-success improvement is claimed.
+
+### Misheard welcome tour produced an unrelated travel answer — 2026-11-08
+
+The user's photo and stored transcript match: the requested welcome tour became
+"Hello, give me a quick welcome to Orkney." The selected product was correctly
+H Company, but ACT answered with tourism information instead of checking the
+meaning against the product context. The run was independently unverified and
+escalated. The user's later Skills run completed with a satisfied verification;
+neither run receives a new human usefulness label here.
+
+Two fixes: automatic mode now supplies the supported products' proper names to
+Gladia instead of the old Odoo/Acme vocabulary. Both live and fallback requests
+keep gentle vocabulary intensity and preserve the provider transcript verbatim.
+ACT and GUIDE now receive an explicit software-coaching scope: welcome/help
+requests refer to the foreground product; unsupported names require one short
+clarification, not an unrelated general-knowledge answer or a silent rewrite.
+Real named records visible in a product remain valid. ACT reports clarification
+before actions as blocked, avoiding a pointless result-verification pass. Its
+question is presented without an additional failed-task announcement; the report
+remains blocked. No extra classifier call was added to the app's normal path.
+
+Validation: 181 focused offline tests passed, followed by 40 narration/grounding/
+interruption checks after the final clarification-presentation change. Eight
+Holo4 Models API calls used synthetic text observations only, without screenshots
+or desktop control. The ambiguous phrase now asks about the intended H tour in
+both modes; the final ACT probe was blocked with no steps, and GUIDE selected
+an info question with no target and done=false. Normal welcome/Skills examples
+stayed about H; an Odoo customer named Orkney was accepted when present in the
+fixture. Earlier clarification probes were too wordy and the instruction was
+tightened to one short question. These are prompt/interpretation tests, not an
+end-to-end Agents or microphone benchmark. No stored audio is available to
+prove improved recognition; a live voice retry is still needed.
