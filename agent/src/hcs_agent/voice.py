@@ -130,6 +130,8 @@ class Intent(BaseModel):
     procedure_id: str | None = Field(description="One of the known procedure ids, or null if none fits.")
     question: str | None = Field(default=None, description="One short English question to ask the user when the "
                                                            "task or a required value is unclear; null otherwise.")
+    point_at: str | None = Field(default=None, description="When the user asks where something is on the current "
+                                                           "screen, an English description of that element; else null.")
     mode: str | None = Field(default="act", description="'guide' if the user wants to be shown/explained how, else 'act'.")
     parameters: dict[str, str | int | float | None] | None = Field(default_factory=dict)
     role: str | None = None
@@ -139,6 +141,7 @@ class Intent(BaseModel):
     def model_post_init(self, __context) -> None:
         self.goal = self.goal or ""
         self.question = self.question or None
+        self.point_at = (self.point_at or None) and str(self.point_at)
         self.role = self.role or None
         self.mode = self.mode if self.mode in ("act", "guide") else "act"
         self.parameters = {k: str(v) for k, v in (self.parameters or {}).items() if v not in (None, "")}
@@ -166,6 +169,9 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say), "
         "role (string or null), goal (one clean sentence in English, whatever language the user spoke), "
+        "point_at (string or null: when the user asks WHERE something is on the screen in front of them — 'where is the "
+        "login button?', 'which field is the amount?' — give an English visual description of that element, e.g. 'the "
+        "Log in button', and set procedure_id null and question null), "
         "missing (required parameters the user did not give), question (string or null: when the request could "
         "match several procedures, or a required value is missing, or the sentence is too garbled, ONE short "
         "friendly English question that gets exactly the missing piece; null when everything is clear). No prose."
@@ -207,7 +213,7 @@ class IntentRouter:
             if intent.missing and not intent.question:
                 descs = [next(p.description for p in proc.parameters if p.name == n) for n in intent.missing]
                 intent.question = "Which " + " and which ".join(d.split(",")[0].lower() for d in descs) + "?"
-        elif not intent.question:
+        elif not intent.question and not intent.point_at:
             intent.question = "I did not catch what you want to do. Which task should I help with?"
         return intent
 

@@ -379,6 +379,34 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
         print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
+def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
+    """'Where is X?': locate it on the current screen and circle it, no procedure involved."""
+    from .overlay import Scene
+
+    if ov is not None:
+        ov.badge("Looking at the screen…", pulsing=True)
+    loc = backend.locate(element, "Point at what the user asks about on the screen in front of them.") \
+        if hasattr(backend, "locate") else None
+    if loc is None or not loc.found:
+        print(f"  could not find: {element}")
+        _say(f"I can't see {element} on this screen.")
+        _flash(ov, f"I can't see {element} here", "question", why=(loc.visible[:80] if loc else ""))
+        return
+    text = f"Here: {element}"
+    print(f"  -> pointing at {element} {loc.screen_xy}")
+    _say(text)
+    if ov is None:
+        return
+    ov.badge(None)
+    ov.show_scene(Scene(text=text, target=loc.screen_xy, target_box=loc.box))
+    t0 = time.time()
+    try:
+        ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
+    except KeyboardInterrupt:
+        ov.hide()
+    ov.badge("⌘H: new request")
+
+
 def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: float = 3.5) -> None:
     """Short on-screen note outside of a task (routing feedback), then back to the listening hint."""
     if ov is None:
@@ -512,6 +540,10 @@ def cmd_talk(args: argparse.Namespace) -> int:
             except Exception as exc:  # noqa: BLE001
                 print(f"  could not understand the request ({exc}); try again.")
                 _flash(ov, "I did not get that, please rephrase", "question")
+                continue
+            if intent.point_at and not intent.procedure_id:
+                _point_at(ov, backend, intent.point_at)
+                history.clear()
                 continue
             if not intent.procedure_id or intent.missing:
                 # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
