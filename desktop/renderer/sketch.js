@@ -88,3 +88,24 @@ export function paintBadge(svg, w, h, { seed = 11, dot = "on", dotX = 19 } = {})
     svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": 1.6, "stroke-linecap": "round", class: dot === "on" ? "ring" : "ring faint" }));
   }
 }
+
+/** A pen tick for a QCM box of size `s`: starts inside, ends past the top-right corner, like a quick hand. */
+export function tickPoints(s) {
+  return [
+    [s * 0.12, s * 0.5],
+    [s * 0.3, s * 0.72],
+    [s * 0.45, s * 0.92],
+    [s * 0.62, s * 0.55],
+    [s * 0.85, s * 0.12],
+    [s * 1.15, -s * 0.28],
+  ];
+}
+
+/** Paint the red pen tick into `svg` (box size `s`), two passes like every overlay stroke. */
+export function paintTick(svg, s, seed = 5) {
+  svg.replaceChildren();
+  const r = rng(seed);
+  for (const d of wobble(tickPoints(s), r, 1.1)) {
+    svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round", pathLength: 1 }));
+  }
+}

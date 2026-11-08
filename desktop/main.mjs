@@ -6,6 +6,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +18,9 @@ const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test|p
 let mainWin = null;
 
 const smoke = process.argv.includes("--smoke");
+// A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
+// preferences (voice, key) when it clicks around.
+if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
 const section = (process.argv.find((a) => a.startsWith("--section=")) || "").split("=")[1] || "home";
 
 async function call(base, method, p, body, headers = {}) {
@@ -107,6 +111,7 @@ function createWindow() {
     // `npm run smoke -- --section=usage`: render, capture a PNG, quit (used to check the UI without a Mac).
     win.webContents.once("did-finish-load", () => {
       setTimeout(async () => {
+        try {
         if (process.env.HCS_SMOKE_JS) {
           // e.g. click a control, then capture what the app shows after the agent answered
           await win.webContents.executeJavaScript(process.env.HCS_SMOKE_JS);
@@ -116,6 +121,10 @@ function createWindow() {
         const out = process.env.HCS_SMOKE_OUT || path.join(here, `smoke-${section}.png`);
         fs.writeFileSync(out, img.toPNG());
         console.log(`smoke: wrote ${out}`);
+        } catch (err) {
+          console.error(`smoke: failed: ${err}`);
+          process.exitCode = 1;
+        }
         app.quit();
       }, Number(process.env.HCS_SMOKE_WAIT_MS || 2500));
     });

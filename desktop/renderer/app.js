@@ -1,16 +1,11 @@
 // H Companion app — renderer. Polls the assistant once a second (that poll is also the app's heartbeat:
 // while it lasts, the on-screen Magnet stays hidden and the setting lives here).
-import { paintBadge } from "./sketch.js";
+import { paintBadge, paintTick } from "./sketch.js";
 import { STATUS_LABEL, duration, isBusy, keyLabel, procedureName, readyBadge, taskLine, when } from "./view.js";
 
 const $ = (id) => document.getElementById(id);
 const api = window.hcs;
 const LABELS = ["Show me", "Help if I'm stuck", "Do it, I watch"];
-const HINTS = [
-  "I point at each control and explain. You click; I never take the controls.",
-  "I guide you. If you are stuck twice on a step, or ask me, I finish it myself and narrate.",
-  "I do the task in front of you and annotate every action. Stop at any time.",
-];
 const VOICES = [
   { id: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", note: "warm, reassuring" },
   { id: "cgSgspJ2msm6clMCkdW9", name: "Jessica", note: "bright, playful" },
@@ -93,13 +88,20 @@ function go(name) {
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 if (api.platform === "darwin") document.body.classList.add("mac");
 
-// home: autonomy as three paper badges -------------------------------------------------------------
+// home: autonomy as a multiple-choice question, ticked in red pen ----------------------------------
+const BOX = 20; // px, the black square
 function buildLevels() {
   const box = $("levels");
   LABELS.forEach((label, i) => {
-    const b = el("button", "badge-paper level");
+    const b = el("button", "opt");
     b.setAttribute("role", "radio");
-    b.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"), el("span", "hand", label));
+    const sq = el("span", "box");
+    const tick = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    tick.setAttribute("class", "tick");
+    tick.setAttribute("viewBox", `0 0 ${BOX} ${BOX}`);
+    paintTick(tick, BOX, 5 + i);
+    sq.append(tick);
+    b.append(sq, el("span", "lbl", label));
     b.addEventListener("click", () => setAutonomy(i));
     box.append(b);
   });
@@ -117,14 +119,12 @@ async function setAutonomy(level) {
 
 function renderAutonomy() {
   const level = pendingAutonomy ?? (status ? status.autonomy : null);
-  $("levels").querySelectorAll(".level").forEach((b, i) => {
+  $("levels").querySelectorAll(".opt").forEach((b, i) => {
     const on = i === level;
-    b.classList.toggle("on", on);
+    b.classList.toggle("on", on); // CSS draws the tick in, like a pen stroke
     b.setAttribute("aria-checked", String(on));
     b.disabled = !status;
-    paint(b, { seed: 21 + i, dot: on ? "on" : "off" });
   });
-  $("autHint").textContent = level === null ? "Start the assistant to choose." : HINTS[level];
 }
 
 // home: ready badge, running task, numbers -------------------------------------------------------
@@ -154,8 +154,6 @@ function renderHome() {
     }
   }
   renderAutonomy();
-  const said = status && status.voice && status.voice.last_text;
-  $("said").textContent = said ? `Last request: “${said}”` : "";
 }
 
 $("stopBtn").addEventListener("click", async () => {

@@ -3,12 +3,13 @@
 The assistant's home window, like a dictation app: you work in your software, the app sits next to it.
 Plain Electron, no build step. It steers the agent that runs on this Mac (`hcs-agent talk`).
 
-Four tabs on top, like a browser:
+Four tabs centred on top, like a browser (the active one with a red-tinted shadow), and the landing's stick
+figure sitting on the edge of the bar, legs swinging:
 
 | Tab | What it does |
 | --- | --- |
-| Home | Idle: Matteo's paper badge "⌘H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy as three paper badges (dot + pencil ring on the chosen one). This month: tasks, checked, typical time. |
-| Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ / ✗**: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
+| Home | Idle: Matteo's paper badge "⌘H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy as a multiple-choice question: black square boxes, the chosen one ticked in red pen. This month: tasks, checked, typical time. |
+| Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ (green) / ✗ (red)**: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
 | Voice | Spoken notes on/off, voice (Sarah, Jessica, Bella, Matilda: plain American), speed, test; **push-to-talk key** (⌘H, ⌘J, Right ⌥, F9), applied live. |
 | Vision | **Recalibrate**: opens Édouard's Vision Lab on the calibration screen. |
 
@@ -37,7 +38,7 @@ Env: `HCS_CONTROL_URL`, `HCS_BACKEND_URL`; agent side `HCS_CONTROL=0` disables t
 
 ```bash
 npm test                                   # UI logic (node --test)
-npm run smoke -- --section=usage           # renders, writes smoke-usage.png, quits
+npm run smoke -- --section=activity        # renders, writes smoke-activity.png, quits (own temp profile)
 HCS_SMOKE_JS='document.getElementById("stopBtn").click()' npm run smoke   # click, then capture
 ```
 
