@@ -57,7 +57,7 @@ a{color:inherit}
 [data-write],.billing-msg,.hero .pen{clip-path:inset(-30% 100% -30% -10%);transition:clip-path .75s cubic-bezier(.45,.05,.55,.95)}
 [data-write].on,.billing-msg.on,.hero .pen.on{clip-path:inset(-30% -10% -30% -10%)}
 
-.sub{margin-top:30px;max-width:560px;min-height:3em}
+.sub{margin-top:clamp(40px,6vh,64px);max-width:560px;min-height:3em}
 
 .slogan{margin:0;line-height:1.5;font-size:clamp(15px,1.8vw,19px);
   color:var(--grey-400);opacity:0;transform:translateY(8px);transition:opacity .6s,transform .6s}
@@ -145,3 +145,69 @@ p{line-height:1.6}
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01s!important}}
 .no-anim *{transition:none!important}
 @media (max-width:700px){.title.corrected{transform:translateX(-.42em)}}
+
+/* example: a real-size Mac screen (1440x900) scaled to the page, cut out of paper and taped on */
+.cutout{position:relative;margin:48px auto 0;max-width:1080px;transform:rotate(-.8deg);
+  /* the paper's edge on the white page: a thin contact shadow all around (on the parent: the clip-path of
+     .screen would cut a shadow of its own) */
+  filter:drop-shadow(0 0 1px rgba(4,4,5,.22)) drop-shadow(0 3px 6px rgba(4,4,5,.10))}
+/* bottom-left corner lifting off the page (the taped top corners stay flat): a shadow that only peeks out there */
+.cutout::before{content:"";position:absolute;z-index:0;left:10px;bottom:14px;width:32%;height:24%;
+  box-shadow:-14px 20px 20px rgba(4,4,5,.42);transform:rotate(-5deg) skewX(-8deg);transform-origin:left bottom}
+.screen{position:relative;z-index:1;overflow:hidden;height:calc(900px * var(--k,.75));background:#f6f6f6;
+  clip-path:polygon(0% 1%,6% 0%,14% .7%,23% .1%,31% .8%,42% 0%,51% .6%,60% .1%,71% .9%,80% 0%,89% .7%,100% .2%,
+    99.5% 12%,100% 25%,99.4% 38%,99.9% 51%,99.3% 64%,100% 77%,99.5% 89%,99.8% 100%,
+    90% 99.3%,79% 100%,68% 99.2%,57% 99.9%,46% 99.3%,35% 100%,24% 99.4%,13% 99.9%,4% 99.2%,0% 99.8%,
+    .5% 88%,0% 75%,.6% 62%,.1% 49%,.7% 36%,0% 23%,.5% 11%)}
+.stage{position:absolute;left:0;top:0;width:1440px;height:900px;transform-origin:0 0;
+  transform:translate(calc(var(--ox,0px) * -1),calc(var(--oy,0px) * -1)) scale(var(--k,.75));
+  font-family:var(--sans);color:#151519;background:#f6f6f6}
+.cutout figcaption{margin-top:14px;text-align:center}
+.tape{position:absolute;z-index:2;top:-16px;width:130px;height:36px;background:rgba(236,226,196,.75);
+  box-shadow:0 1px 2px rgba(4,4,5,.08);clip-path:polygon(2% 8%,9% 0,17% 9%,26% 1%,35% 8%,46% 0,58% 9%,70% 1%,81% 9%,92% 0,100% 7%,98% 92%,90% 100%,79% 91%,67% 99%,55% 92%,43% 100%,31% 91%,20% 100%,9% 92%,0 98%)}
+.tape-l{left:-30px;transform:rotate(-32deg)}
+.tape-r{right:-30px;transform:rotate(28deg)}
+@media (max-width:700px){.tape{width:74px;height:24px;top:-10px}.tape-l{left:-14px}.tape-r{right:-14px}}
+/* macOS menu bar + Chrome */
+.mac-bar{height:25px;display:flex;align-items:center;gap:18px;padding:0 18px 0 44px;background:rgba(236,236,240,.96);font-size:13.5px;color:#1d1d1f}
+.mac-bar b{font-weight:700}.mac-bar em{margin-left:auto;font-style:normal}
+.chrome-tabs{height:40px;display:flex;align-items:flex-end;gap:8px;padding:0 12px;background:#dee1e6}
+.tl{width:12px;height:12px;border-radius:50%;align-self:center;margin-right:-1px}
+.tl.r{background:#ff5f57}.tl.y{background:#febc2e}.tl.g{background:#28c840;margin-right:14px}
+.chrome-tab{display:flex;align-items:center;gap:8px;width:240px;height:34px;padding:0 12px;background:#fff;border-radius:10px 10px 0 0;font-size:13px}
+.chrome-tab svg{width:12px;height:13px;fill:#151519}
+.chrome-tab span{margin-left:auto;color:#6b6b75}
+.chrome-plus{align-self:center;color:#4a4a58;font-size:18px}
+.chrome-bar{height:42px;display:flex;align-items:center;gap:14px;padding:0 14px;background:#fff;border-bottom:1px solid #e3e3e8}
+.chrome-bar .nav{color:#5f6368;font-size:17px;letter-spacing:8px}
+.omni{flex:1;height:30px;border-radius:15px;background:#f1f3f4;display:flex;align-items:center;padding:0 16px;font-size:14px;color:#202124}
+/* H Platform (same look as its login page: light grey, white bordered cards, grey fields) */
+.plat{display:grid;grid-template-columns:232px 1fr;height:793px}
+.plat-side{background:#fff;border-right:1px solid #e7e7ec;padding:20px 14px;display:flex;flex-direction:column;gap:2px;font-size:14.5px;color:#3a3a44}
+.plat-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;color:#151519;margin:0 8px 22px}
+.plat-logo svg{width:16px;height:18px;fill:#151519}
+.plat-side span{padding:9px 10px;border-radius:8px}
+.plat-side small{margin:18px 10px 6px;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a96}
+.plat-side .on{background:#f2f2f5;color:#151519;font-weight:600}
+.plat-main{padding:34px 44px;display:flex;flex-direction:column;gap:20px}
+.plat-head{display:flex;justify-content:space-between;align-items:flex-start}
+.plat-head h4{margin:0;font-size:24px;letter-spacing:-.02em}
+.plat-head p{margin:4px 0 0;color:#6b6b75;font-size:14px}
+.plat-btn{background:#151519;color:#fff;border-radius:8px;padding:11px 18px;font-weight:600;font-size:14px}
+.plat-card{background:#fff;border:1px solid #e7e7ec;border-radius:12px;overflow:hidden}
+.plat-row{display:grid;grid-template-columns:1.2fr 1.2fr .8fr 1fr;padding:14px 20px;border-top:1px solid #efeff3;font-size:14px}
+.plat-th{border-top:0;background:#fafafb;color:#7a7a86;font-size:12.5px}
+.plat-use{padding:20px 22px}
+.plat-use h5{margin:0 0 12px;font-size:16px}
+.plat-use dl{display:grid;grid-template-columns:180px 1fr;gap:10px 16px;margin:0 0 16px;font-size:14px}
+.plat-use dt{color:#6b6b75}.plat-use dd{margin:0}
+.plat-use h6{margin:0 0 8px;font-size:13px;color:#6b6b75;font-weight:600}
+.plat-use pre{margin:0;background:#f2f2f5;border-radius:8px;padding:14px 16px;font-size:13px;line-height:1.6}
+/* the overlay: red pencil on paper scraps (agent/src/hcs_agent/overlay.py) */
+.pencil{position:absolute;inset:0;width:1440px;height:900px;overflow:visible;pointer-events:none}
+.pencil .ink{fill:none;stroke:rgba(219,43,31,.92);stroke-linecap:round;stroke-linejoin:round}
+.pencil .scrap{filter:drop-shadow(2px 3px 3px rgba(0,0,0,.33))}
+.pencil text{font-family:"Caveat",cursive;font-weight:700;fill:rgba(219,43,31,.92)}
+.pencil .dot{fill:rgb(219,43,31)}
+.pencil .dot.pulse{animation:pdot .52s ease-in-out infinite alternate}
+@keyframes pdot{from{opacity:.35}to{opacity:1}}
