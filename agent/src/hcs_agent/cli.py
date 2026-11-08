@@ -374,7 +374,8 @@ def cmd_procedures(_: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     params = dict(kv.split("=", 1) for kv in args.param or [])
-    request = InterventionRequest(software=args.software, role=args.role, goal=args.goal, symptom=args.symptom,
+    software = args.software or (ProcedureRegistry().get(args.procedure).software if args.procedure else "odoo")
+    request = InterventionRequest(software=software, role=args.role, goal=args.goal, symptom=args.symptom,
                                   procedure_id=args.procedure, parameters=params, mode=args.mode)
     # `run` is explicit about the mode: the Magnet follows the flag instead of overriding it.
     _MAGNET["level"] = 2 if args.mode == "act" else min(_MAGNET["level"], 1)
@@ -1542,7 +1543,7 @@ def main(argv: list[str] | None = None) -> int:
     bench.set_defaults(fn=cmd_bench)
 
     run = sub.add_parser("run", help="Run one intervention from the terminal")
-    run.add_argument("--software", default="odoo")
+    run.add_argument("--software", default=None, help="defaults to the procedure's software")
     run.add_argument("--procedure", required=True)
     run.add_argument("--role")
     run.add_argument("--goal", required=True)
