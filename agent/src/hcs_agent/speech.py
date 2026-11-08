@@ -122,7 +122,7 @@ def system_player() -> Player | None:
 class Speaker:
     """One voice for the whole process. Thread-safe; playback runs on its own worker thread."""
 
-    def __init__(self, synth: Synth, player: Player, cache_dir: Path, *, max_hold_s: float = 1.5,
+    def __init__(self, synth: Synth, player: Player, cache_dir: Path, *, max_hold_s: float = 0.35,
                  provider: str = "custom", voice: str = "", speed: float = 1.0) -> None:
         self._synth, self._player = synth, player
         self.provider, self.voice, self.speed = provider, voice, speed

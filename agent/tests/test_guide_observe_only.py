@@ -94,6 +94,7 @@ def test_desktop_channel_installs_read_only_bridge(monkeypatch):
 @pytest.mark.parametrize("bad", [None, (True,), (True, ""), (1, "observed"), (True, None), RuntimeError("private-marker")])
 def test_base_backend_visual_checks_fail_closed(monkeypatch, method, bad):
     backend = object.__new__(HBackend)
+    backend.use_a11y = False  # exercise malformed visual responses without reading the real browser tree
     def check(_):
         if isinstance(bad, Exception):
             raise bad
@@ -142,6 +143,8 @@ def test_dynamic_guide_still_waits_for_human_and_cannot_raise_autonomy(tmp_path,
         assert reply == (True, None)
         return AttemptResult(None, "completed", DeclaredResult(outcome="done"))
     monkeypatch.setattr(backend, "run_guidance", guidance)
+    # This exercises the Agents fallback, independently of the new AX planner path.
+    monkeypatch.setattr(backend, "page_catalogue", lambda *args: None)
     runner.start()
     assert runner.request.mode is Mode.guide and runner.autonomy == 0
     runner.approve(ApproveCommand())

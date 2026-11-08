@@ -43,13 +43,21 @@ class Recorder:
         self._chunks: list[np.ndarray] = []
         self._stream = None
 
+    on_chunk: Callable[[bytes], None] | None = None  # live listener (streaming transcription)
+
     def start(self) -> None:
         self._chunks = []
 
         def cb(indata, frames, time_info, status):  # noqa: ARG001
             self._chunks.append(indata.copy())
+            if self.on_chunk is not None:
+                try:
+                    self.on_chunk(indata.tobytes())
+                except Exception:  # noqa: BLE001 - the live path is best effort; the WAV fallback remains
+                    pass
 
-        self._stream = self._sd.InputStream(samplerate=self.sample_rate, channels=1, dtype="int16", callback=cb)
+        self._stream = self._sd.InputStream(samplerate=self.sample_rate, channels=1, dtype="int16", callback=cb,
+                                             blocksize=int(self.sample_rate * 0.1))
         try:
             self._stream.start()
         except Exception:
@@ -88,6 +96,163 @@ class Recorder:
 
 
 # --------------------------------------------------------------------------- transcription
+
+
+class LiveTranscriber:
+    """Gladia live transcription: audio streams to Gladia WHILE the user speaks, so the text is ready a few
+    hundred milliseconds after the key is released instead of 3-4 s later (the Kosmo lesson).
+
+    Lifecycle per utterance: `open()` (POST /v2/live, connect the WebSocket — done at key-down, in a thread),
+    `feed(pcm16)` from the microphone callback, `finish()` at key-up (sends stop_recording, waits for the
+    final transcript). Anything failing -> None, and the caller falls back to the pre-recorded path.
+    """
+
+    INIT_URL = "https://api.gladia.io/v2/live"
+
+    def __init__(self, api_key: str | None = None, language: str | None = None, sample_rate: int = SAMPLE_RATE) -> None:
+        self.api_key = api_key or os.environ.get("GLADIA_API_KEY", "")
+        self.language = language or os.environ.get("HCS_VOICE_LANGUAGE", "fr")
+        self.sample_rate = sample_rate
+        self._ws = None
+        self._queue: "queue.Queue[bytes | None]" = queue.Queue()
+        self._finals: dict[str, str] = {}
+        self._partial = ""
+        self._full: str | None = None
+        self._done = threading.Event()
+        self._final_after_stop = threading.Event()  # an is_final transcript arrived after stop_recording
+        self._stopped_at: float | None = None
+        self._failed: str | None = None
+        self._opened = threading.Event()
+        self.on_partial: Callable[[str], None] | None = None
+
+    # -- session ---------------------------------------------------------------------------------
+    def open(self, vocabulary: list[str] | None = None) -> None:
+        """Create the session and connect; runs in its own thread so key-down returns at once."""
+        self._reset()
+        threading.Thread(target=self._run, args=(vocabulary or [],), daemon=True, name="gladia-live").start()
+
+    def _reset(self) -> None:
+        self._ws = None
+        self._queue = queue.Queue()
+        self._finals, self._partial, self._full, self._failed = {}, "", None, None
+        self._stopped_at = None
+        self._done.clear()
+        self._final_after_stop.clear()
+        self._opened.clear()
+
+    def _run(self, vocabulary: list[str]) -> None:
+        import json
+
+        import httpx
+        from websockets.sync.client import connect
+
+        try:
+            body = {
+                "encoding": "wav/pcm", "sample_rate": self.sample_rate, "bit_depth": 16, "channels": 1,
+                "model": "solaria-1",
+                "language_config": {"languages": [self.language], "code_switching": False},
+                "messages_config": {"receive_partial_transcripts": True, "receive_final_transcripts": True,
+                                    "receive_post_processing_events": False, "receive_acknowledgments": False,
+                                    "receive_lifecycle_events": False},
+            }
+            if vocabulary:  # the live API nests the vocabulary under realtime_processing
+                body["realtime_processing"] = {
+                    "custom_vocabulary": True,
+                    "custom_vocabulary_config": {"vocabulary": [_vocab_entry(v) for v in vocabulary[:50]],
+                                                 "default_intensity": 0.3},
+                }
+            r = httpx.post(self.INIT_URL, headers={"x-gladia-key": self.api_key}, json=body, timeout=8)
+            r.raise_for_status()
+            url = r.json()["url"]
+            ws = connect(url, open_timeout=8, close_timeout=2, max_size=None)
+        except Exception as exc:  # noqa: BLE001
+            self._failed = f"live init: {exc}"
+            self._opened.set()
+            self._done.set()
+            return
+        self._ws = ws
+        self._opened.set()
+
+        def sender() -> None:
+            try:
+                while True:
+                    chunk = self._queue.get()
+                    if chunk is None:
+                        ws.send(json.dumps({"type": "stop_recording"}))
+                        return
+                    ws.send(chunk)  # binary PCM16 frames
+            except Exception as exc:  # noqa: BLE001
+                self._failed = f"live send: {exc}"
+                self._done.set()
+
+        threading.Thread(target=sender, daemon=True, name="gladia-live-send").start()
+        try:
+            for raw in ws:
+                msg = json.loads(raw)
+                kind = msg.get("type")
+                if kind == "transcript":
+                    data = msg.get("data") or {}
+                    text = ((data.get("utterance") or {}).get("text") or "").strip()
+                    if data.get("is_final"):
+                        self._finals[str(data.get("id"))] = text
+                        self._partial = ""
+                        if self._stopped_at is not None:
+                            self._final_after_stop.set()
+                    else:
+                        self._partial = text
+                    if self.on_partial:
+                        self.on_partial(self.text_so_far())
+                elif kind == "post_final_transcript":
+                    full = (((msg.get("data") or {}).get("transcription") or {}).get("full_transcript") or "").strip()
+                    if full:
+                        self._full = full
+                    self._done.set()
+                    break
+                elif kind == "error":
+                    self._failed = f"live: {msg.get('data')}"
+                    self._done.set()
+                    break
+        except Exception as exc:  # noqa: BLE001 - connection closed by Gladia after the final (code 1000) is normal
+            if not self._finals and not self._full:
+                self._failed = f"live recv: {exc}"
+        finally:
+            self._done.set()
+            try:
+                ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    # -- audio -----------------------------------------------------------------------------------
+    def feed(self, pcm16: bytes) -> None:
+        if self._failed is None:
+            self._queue.put(pcm16)
+
+    def text_so_far(self) -> str:
+        return " ".join([*(t for t in self._finals.values() if t), self._partial]).strip()
+
+    def finish(self, timeout: float = 2.5) -> str | None:
+        """Key released: stop and return the text as soon as the last utterance is final (~0.1-0.5 s).
+        Gladia's post-processing (full transcript) comes 1-2 s later and is not worth waiting for.
+        None on failure (the caller uses the pre-recorded path)."""
+        if not self._opened.wait(timeout=2.0) or self._failed:
+            return None
+        self._stopped_at = time.time()
+        self._queue.put(None)
+        # Either a final arrives after the stop, or the session ends (post_final / close), or we time out.
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._final_after_stop.wait(timeout=0.05) or self._done.is_set():
+                break
+        if self._failed and not self._finals and not self._full:
+            return None
+        text = self._full or " ".join(t for t in self._finals.values() if t).strip() or self._partial.strip()
+        self.cancel()  # we have what we need; let the socket close in the background
+        return text or None
+
+    def cancel(self) -> None:
+        if self._stopped_at is None:
+            self._stopped_at = time.time()
+            self._queue.put(None)
 
 
 class Transcriber:
@@ -180,10 +345,20 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
                  "The new sentence may answer the assistant's question, correct a value ('actually 15000'), or "
                  "change the task. Merge it with the earlier turns: keep every value still valid, replace what the "
                  "user corrects.\n\n")
+    site = ""
+    try:
+        from .sitemap import platform_summary
+
+        known = "\n".join(f"{sw}:\n{platform_summary(sw, max_pages=6, max_controls=8)}" for sw in ("hcompany", "odoo")
+                           if platform_summary(sw, max_pages=6, max_controls=8))
+        if known:
+            site = "Pages of the software seen on this machine (path: controls), to recognise what the user talks about:\n" + known + "\n\n"
+    except Exception:  # noqa: BLE001
+        site = ""
     return (
         "You are the ears of a support assistant: route a spoken request to a procedure, or ask what is unclear.\n"
         f"Today is {date.today().isoformat()}.\n"
-        "Known procedures:\n" + "\n".join(cat) + "\n\n" + convo +
+        "Known procedures:\n" + "\n".join(cat) + "\n\n" + site + convo +
         f"User just said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
         "Return ONLY a JSON object with keys: procedure_id (string or null), mode ('act' if the user wants it done "
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
@@ -296,6 +471,8 @@ class PushToTalk:
         self._hub.set_combo(self.key_name)
         self._recorder = Recorder()
         self._transcriber = Transcriber()
+        self._live: LiveTranscriber | None = None
+        self.use_live = os.environ.get("HCS_STT_LIVE", "1").lower() not in {"0", "false", "no"}
         self._recording = False
         self._commands: "queue.Queue[str]" = queue.Queue()
         self._worker: threading.Thread | None = None
@@ -317,6 +494,9 @@ class PushToTalk:
                 if command == "stop":
                     self._recording = False
                     self._recorder.cancel()
+                    if self._live is not None:
+                        self._live.cancel()
+                        self._live = None
                     return
                 if command == "begin":
                     self._begin()
@@ -327,6 +507,9 @@ class PushToTalk:
 
     def _recording_error(self, exc: Exception) -> None:
         self._recording = False
+        if self._live is not None:
+            self._live.cancel()
+            self._live = None
         try:
             self._recorder.cancel()
         except Exception:
@@ -337,6 +520,13 @@ class PushToTalk:
         if not self._recording:
             try:
                 self.on_state("starting")
+                if self.use_live:
+                    self._live = LiveTranscriber()
+                    self._live.on_partial = lambda t: self.on_state(f"partial: {t}")
+                    self._live.open(self.vocabulary)
+                    self._recorder.on_chunk = self._live.feed
+                else:
+                    self._recorder.on_chunk = None
                 self._recorder.start()
             except Exception as exc:
                 self._recording_error(exc)
@@ -352,15 +542,26 @@ class PushToTalk:
             except Exception as exc:
                 self._recording_error(exc)
                 return
+            live, self._live = self._live, None
             if not path:
+                if live:
+                    live.cancel()
                 self.on_state("too_short")
                 return
             self.on_state("transcribing")
-            threading.Thread(target=self._transcribe, args=(path,), daemon=True).start()
+            threading.Thread(target=self._transcribe, args=(path, live), daemon=True).start()
 
-    def _transcribe(self, path: str) -> None:
+    def _transcribe(self, path: str, live: "LiveTranscriber | None" = None) -> None:
+        text = None
         try:
-            text = self._transcriber.transcribe(path, self.vocabulary)
+            t0 = time.time()
+            if live is not None:
+                text = live.finish()
+                if text:
+                    self.on_state(f"transcribed live in {time.time() - t0:.1f}s")
+            if not text:
+                text = self._transcriber.transcribe(path, self.vocabulary)
+                self.on_state(f"transcribed (pre-recorded fallback) in {time.time() - t0:.1f}s")
         except Exception as exc:  # noqa: BLE001
             self.on_state(f"error: {exc}")
             return
@@ -369,8 +570,12 @@ class PushToTalk:
                 os.unlink(path)
             except OSError:
                 pass
-        self.on_state("transcribed")
         self.transcripts.put(text)
+
+    def set_key(self, key_name: str) -> None:
+        """Change the hotkey live (desktop app). A recording in progress ends with the old key."""
+        self.key_name = key_name
+        self._hub.set_combo(key_name)
 
     def start(self) -> None:
         if self._worker is None or not self._worker.is_alive():

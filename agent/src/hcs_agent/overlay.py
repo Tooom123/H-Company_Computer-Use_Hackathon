@@ -257,12 +257,17 @@ def _measure(text, size, max_w):
     attrs = {AppKit.NSFontAttributeName: _hand_font(size), AppKit.NSForegroundColorAttributeName: _ink()}
     s = Foundation.NSString.stringWithString_(text)
     bound = s.boundingRectWithSize_options_attributes_((max_w, 400), 1 << 0, attrs).size
-    return attrs, s, min(bound.width, max_w) + 2, bound.height + 2
+    return attrs, s, min(bound.width, max_w) + 4, bound.height + 6
+
+
+_INSETS = {"left": 0.0, "bottom": 0.0, "right": 0.0, "top": 0.0}  # screen areas papers must avoid (menu bar, Dock)
 
 
 def _clamp(x, y, w, h, W, H, margin=14):
-    """Keep a paper of size (w, h) anchored at (x, y) inside the screen."""
-    return min(max(x, margin), W - w - margin), min(max(y, margin), H - h - margin)
+    """Keep a paper rect (x, y, w, h) inside the usable screen: away from the edges, the menu bar / notch and the Dock."""
+    lo_x, lo_y = margin + _INSETS["left"], margin + _INSETS["bottom"]
+    hi_x, hi_y = W - w - margin - _INSETS["right"], H - h - margin - _INSETS["top"]
+    return min(max(x, lo_x), max(lo_x, hi_x)), min(max(y, lo_y), max(lo_y, hi_y))
 
 
 def _overlaps(a, b, pad=8) -> bool:
@@ -288,18 +293,21 @@ def _place(x, y, w, h, bounds, placed):
 def _note(x, y, text, rnd, size=19, max_w=480, color=PAPER, underline=True, bounds=None, placed=None) -> tuple[float, float, float, float]:
     """Handwritten text on a paper scrap, anchored at its bottom-left. Returns (x, y, width, height) drawn."""
     attrs, s, tw, th = _measure(text, size, max_w)
+    pad_x, pad_y = 10, 9
+    pw, ph = tw + 2 * pad_x, th + 2 * pad_y
+    px, py = x - pad_x, y - pad_y  # the paper rect; (x, y) is the text anchor inside it
     if bounds is not None:
         if placed is not None:
-            x, y = _place(x, y, tw + 20, th + 18, bounds, placed)
+            px, py = _place(px, py, pw, ph, bounds, placed)
         else:
-            x, y = _clamp(x, y, tw + 20, th + 18, bounds[0], bounds[1])
-    pad_y = 9
-    _draw_paper(x - 10, y - pad_y, tw + 20, th + 2 * pad_y, rnd, color)
+            px, py = _clamp(px, py, pw, ph, bounds[0], bounds[1])
+        x, y = px + pad_x, py + pad_y
+    _draw_paper(px, py, pw, ph, rnd, color)
     _ink().setStroke()
-    s.drawInRect_withAttributes_(((x, y), (max_w, th)), attrs)  # text block exactly centred in the paper
+    s.drawInRect_withAttributes_(((x, y), (tw, th)), attrs)  # text block exactly centred in the paper
     if underline:
         _stroke([(x + i * (tw / 6), y - 3 + (2 if i % 2 else -2)) for i in range(0, 7)], rnd, 1.0, 1.0)
-    return x, y, tw + 20, th + 18
+    return px, py, pw, ph
 
 
 class _SketchView(AppKit.NSView):
@@ -334,26 +342,41 @@ class _SketchView(AppKit.NSView):
         _REVEAL["total"] = max(1, self.stroke_total)
         style = self.seed % 4
 
-        placed: list = []
+        placed: list = []  # paper rects and element boxes nothing may cover
+        # Every annotated element stays visible: its box (or a default area around its point) is reserved first.
+        for m in sc.marks:
+            if m.box:
+                placed.append((m.box[0] - 8, m.box[1] - 8, m.box[2] + 16, m.box[3] + 16))
+            else:
+                placed.append((m.xy[0] - 50, m.xy[1] - 36, 100, 72))
         main_note = None
         if sc.target is not None:
             tx, ty = sc.target
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
             _, _, lw, lh = _measure(label, 19, 480)
-            half_w = (sc.target_box[2] / 2 + 14) if sc.target_box else 48
-            half_h = (sc.target_box[3] / 2 + 14) if sc.target_box else 40
-            right = tx + half_w + lw + 40 < W
-            text_x, text_y = (tx + half_w if right else tx - half_w - lw), ty + half_h
+            pw, ph = lw + 20, lh + 18  # paper size
+            half_w = (sc.target_box[2] / 2 + 14) if sc.target_box else 52
+            half_h = (sc.target_box[3] / 2 + 14) if sc.target_box else 44
             if sc.target_box:
-                placed.append((sc.target_box[0] - 10, sc.target_box[1] - 10, sc.target_box[2] + 20, sc.target_box[3] + 20))
-            main_note = _place(*_clamp(text_x, text_y, lw + 20, lh + 18, W, H), lw + 20, lh + 18, (W, H), placed) + (lw + 20, lh + 18, right)
+                placed.append((sc.target_box[0] - 12, sc.target_box[1] - 12, sc.target_box[2] + 24, sc.target_box[3] + 24))
+            else:
+                placed.append((tx - 60, ty - 44, 120, 88))
+            right = tx + half_w + pw + 30 < W - _INSETS["right"]
+            paper_x = tx + half_w + 10 if right else tx - half_w - 10 - pw
+            paper_y = ty + half_h  # above the control (AppKit: y grows upwards)
+            px, py = _place(paper_x, paper_y, pw, ph, (W, H), placed)
+            main_note = (px + 10, py + 9, pw, ph, right)  # text anchor + paper size
         elif sc.text:
             _, _, lw, lh = _measure(sc.text, 19, 480)
-            main_note = _place(W / 2 - lw / 2, H - 110, lw + 20, lh + 18, (W, H), placed) + (lw + 20, lh + 18, True)
+            pw, ph = lw + 20, lh + 18
+            px, py = _place(W / 2 - pw / 2, H - 130, pw, ph, (W, H), placed)
+            main_note = (px + 10, py + 9, pw, ph, True)
         why_rect = None
         if sc.why and main_note:
             _, _, ww, wh = _measure(sc.why, 14, 420)
-            why_rect = _place(main_note[0] + 6, main_note[1] - 26 - wh, ww + 20, wh + 18, (W, H), placed)
+            pw2, ph2 = ww + 20, wh + 18
+            px2, py2 = _place(main_note[0] - 10 + 6, main_note[1] - 9 - 10 - ph2, pw2, ph2, (W, H), placed)
+            why_rect = (px2 + 10, py2 + 9)
 
         # Secondary marks (their labels avoid the papers already placed).
         for m in sc.marks:
@@ -394,9 +417,16 @@ class _SketchView(AppKit.NSView):
                 tx, ty = sc.target
                 _frame(tx, ty, rnd, style, box=sc.target_box)
                 half_w = (sc.target_box[2] / 2 + 12) if sc.target_box else 46
-                _arrow((nx + (6 if right else w - 26), ny - 12), (tx + (half_w if right else -half_w), ty + 10), rnd)
+                half_h = (sc.target_box[3] / 2 + 8) if sc.target_box else 30
+                start = (nx + (4 if right else w - 24), ny - 12)  # bottom edge of the paper
+                # Aim at the nearest edge of the frame, not at a fixed side.
+                end_x = tx + (half_w if start[0] > tx + half_w else -half_w if start[0] < tx - half_w else 0)
+                end_y = ty + (half_h if start[1] > ty + half_h else -half_h if start[1] < ty - half_h else 0)
+                if (end_x, end_y) == (tx, ty):
+                    end_y = ty + half_h
+                _arrow(start, (end_x, end_y), rnd)
             if sc.doodle:
-                _doodle(sc.doodle, nx + w - 4, ny + h + 6, rnd)
+                _doodle(sc.doodle, nx + w - 14, ny + h - 2, rnd)
         # Remember how many strokes this scene has, so the next frames reveal them in sequence.
         self.stroke_total = max(self.stroke_total, _REVEAL["index"]) if self.progress < 1 else _REVEAL["index"]
 
@@ -433,6 +463,10 @@ class Overlay:
         self.app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
         frame = AppKit.NSScreen.mainScreen().frame()
         self._screen_h = frame.size.height
+        vis = AppKit.NSScreen.mainScreen().visibleFrame()  # without the menu bar (and notch) and the Dock
+        _INSETS.update(left=float(vis.origin.x - frame.origin.x), bottom=float(vis.origin.y - frame.origin.y),
+                       right=float((frame.origin.x + frame.size.width) - (vis.origin.x + vis.size.width)),
+                       top=float((frame.origin.y + frame.size.height) - (vis.origin.y + vis.size.height)))
         self.window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             frame, AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False)
         self.window.setOpaque_(False)
@@ -458,8 +492,11 @@ class Overlay:
 
     # ------------------------------------------------------------------ API (any thread)
 
-    def show_scene(self, scene: Scene) -> None:
-        self._seed += 1
+    def show_scene(self, scene: Scene, animate: bool = True) -> None:
+        """Draw a scene. `animate=False` re-places an existing scene (the target moved) without redrawing it
+        stroke by stroke, so the frame follows the control instead of flickering."""
+        if animate:
+            self._seed += 1
         flipped = Scene(
             text=scene.text[:110], target=self._flip(scene.target), why=scene.why[:160], step=scene.step,
             marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to), self._flip_box(m.box))
@@ -470,9 +507,13 @@ class Overlay:
         def apply() -> None:
             self.view.scene = flipped
             self.view.seed = self._seed
-            self.view.progress = 0.0  # drawn progressively by run_until
-            self.view.held = self.hold_reveal is not None and self.hold_reveal()
-            self.view.stroke_total = 40
+            if animate:
+                self.view.progress = 0.0  # drawn progressively by run_until
+                self.view.held = self.hold_reveal is not None and self.hold_reveal()
+                self.view.stroke_total = 40
+            else:
+                self.view.progress = 1.0
+                self.view.held = False
             self.view.setNeedsDisplay_(True)
             self.window.orderFrontRegardless()
 

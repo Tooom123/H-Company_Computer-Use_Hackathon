@@ -172,6 +172,12 @@
       "description": "Element bounds (x, y, w, h) in screen points.",
       "title": "Box"
     },
+    "box_exact": {
+      "default": false,
+      "description": "True when the box comes from the accessibility tree (pixel-exact), False when estimated from a screenshot.",
+      "title": "Box Exact",
+      "type": "boolean"
+    },
     "kind": {
       "default": "click",
       "description": "click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.",

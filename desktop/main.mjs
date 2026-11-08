@@ -3,20 +3,23 @@
 // It talks to the running agent (`hcs-agent talk`) on 127.0.0.1:8768 and to the support backend on :8766.
 // No key ever lives here: the agent and the backend keep them; the renderer only sees JSON via IPC.
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
-const BACKEND = process.env.HCS_BACKEND_URL || "http://127.0.0.1:8766";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|feedback|feedback\/dictate)$/;
-const PLANS = new Set(["pro", "fixpack"]);
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|ptt|rate|feedback|feedback\/dictate)$/;
+let mainWin = null;
 
 const smoke = process.argv.includes("--smoke");
+// A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
+// preferences (voice, key) when it clicks around.
+if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
 const section = (process.argv.find((a) => a.startsWith("--section=")) || "").split("=")[1] || "home";
 
 async function call(base, method, p, body, headers = {}) {
@@ -38,41 +41,21 @@ ipcMain.handle("agent", async (_e, method, p, body) => {
   if (!["GET", "POST"].includes(method) || typeof p !== "string" || !AGENT_PATHS.test(p)) {
     return { ok: false, status: 400, data: { error: "not allowed" } };
   }
-  // Return to the software before H observes it, instead of capturing our confirmation panel.
+  // The window's place on screen: the agent ignores clicks in it (steering the assistant is not doing the step).
+  const headers = { "X-HCS-App": "1" };
+  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized()) {
+    const b = mainWin.getBounds();
+    headers["X-HCS-App-Bounds"] = `${b.x},${b.y},${b.width},${b.height}`;
+  }
+  // Return to the software before H observes it, rather than our confirmation panel.
   const win = method === "POST" && p === "/next" ? BrowserWindow.fromWebContents(_e.sender) : null;
   if (win) {
     win.hide();
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  const result = await call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, { "X-HCS-App": "1" });
+  const result = await call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, headers);
   if (win && !result.ok && !win.isDestroyed()) win.show();
   return result;
-});
-
-ipcMain.handle("plans", () => call(BACKEND, "GET", "/billing/plans"));
-
-ipcMain.handle("checkout", async (_e, plan) => {
-  if (!PLANS.has(plan)) return { ok: false, error: "unknown plan" };
-  const r = await call(BACKEND, "POST", "/billing/checkout", { plan });
-  const url = r.data && r.data.url;
-  if (r.ok && typeof url === "string" && url.startsWith("https://checkout.stripe.com/")) {
-    await shell.openExternal(url);
-    return { ok: true };
-  }
-  if (r.offline) return { ok: false, error: "Support backend offline: run hcs-backend serve" };
-  if (r.status === 503) return { ok: false, error: "Stripe is not set up: add a test key in backend/.env" };
-  return { ok: false, error: `Checkout failed (${r.status})` };
-});
-
-ipcMain.handle("open-case", (_e, caseId) => {
-  if (typeof caseId !== "string" || !/^[\w-]{1,80}$/.test(caseId)) return false;
-  shell.openExternal(`${BACKEND}/dashboard/cases/${caseId}`);
-  return true;
-});
-
-ipcMain.handle("open-dashboard", () => {
-  shell.openExternal(`${BACKEND}/dashboard`);
-  return true;
 });
 
 // Vision Lab (Édouard): started as its own process from app/, stopped with this app.
@@ -105,7 +88,17 @@ ipcMain.handle("vision:stop", () => {
   return { ...visionStatus(), running: false };
 });
 
+// Window controls for the frameless window (the top bar draws them; only these three actions exist).
+ipcMain.on("win", (e, action) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  if (action === "minimize") win.minimize();
+  else if (action === "maximize") win.isMaximized() ? win.unmaximize() : win.maximize();
+  else if (action === "close") win.close();
+});
+
 function createWindow() {
+  const mac = process.platform === "darwin";
   const win = new BrowserWindow({
     width: 940,
     height: 640,
@@ -113,7 +106,11 @@ function createWindow() {
     minHeight: 540,
     title: "H Companion",
     backgroundColor: "#f9f9fb",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Frameless everywhere but macOS: GNOME on Wayland gives an Electron window no title bar at all (it could not
+    // be moved, minimised or closed). The black tab bar is the title bar: drag it to move the window, its buttons
+    // on the right minimise / maximise / close. macOS keeps the native traffic lights.
+    frame: mac,
+    titleBarStyle: mac ? "hiddenInset" : undefined,
     show: !smoke,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
@@ -122,15 +119,31 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  mainWin = win;
   win.setMenuBarVisibility(false);
+  // Like Matteo's overlay: invisible to screen capture, so H never sees (or clicks) the app and the guide's
+  // screen watcher does not mistake the app's live updates for the user acting. HCS_APP_CAPTURABLE=1 to record it.
+  if (process.env.HCS_APP_CAPTURABLE !== "1") win.setContentProtection(true);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
+  const sendState = () => win.webContents.send("win:state", { maximized: win.isMaximized() });
+  win.on("maximize", sendState);
+  win.on("unmaximize", sendState);
+  win.webContents.on("did-finish-load", sendState);
+  // Keyboard: Ctrl/Cmd+W closes, Ctrl/Cmd+M minimises (no menu bar to carry the usual accelerators).
+  win.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt || input.shift) return;
+    const k = input.key.toLowerCase();
+    if (k === "w") (e.preventDefault(), win.close());
+    else if (k === "m") (e.preventDefault(), win.minimize());
+  });
   win.loadFile(path.join(here, "renderer", "index.html"), { hash: section });
 
   if (smoke) {
     // `npm run smoke -- --section=usage`: render, capture a PNG, quit (used to check the UI without a Mac).
     win.webContents.once("did-finish-load", () => {
       setTimeout(async () => {
+        try {
         if (process.env.HCS_SMOKE_JS) {
           // e.g. click a control, then capture what the app shows after the agent answered
           await win.webContents.executeJavaScript(process.env.HCS_SMOKE_JS);
@@ -140,6 +153,10 @@ function createWindow() {
         const out = process.env.HCS_SMOKE_OUT || path.join(here, `smoke-${section}.png`);
         fs.writeFileSync(out, img.toPNG());
         console.log(`smoke: wrote ${out}`);
+        } catch (err) {
+          console.error(`smoke: failed: ${err}`);
+          process.exitCode = 1;
+        }
         app.quit();
       }, Number(process.env.HCS_SMOKE_WAIT_MS || 2500));
     });

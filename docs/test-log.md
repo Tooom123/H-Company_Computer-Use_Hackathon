@@ -724,3 +724,38 @@ des serveurs de modèles existants. Résultats et fixtures archivés dans le dos
 privé HCompanionResearch/benchmarks. Protocole et limites dans
 [le rapport](holo4-latency-window-benchmark-2026-11-08.md). L’application utilise
 toujours son moteur précédent ; crop et DGX ne sont pas activés en production.
+
+## 2026-11-08 — Intégration accessibilité, coach Devin et préparation du pitch
+
+Intégration de `origin/main` à `954c0ca` : catalogue de contrôles macOS du navigateur,
+guidage textuel par Holo4 avec coordonnées AX, transcription Gladia en direct,
+nouvelle interface desktop de Tom. Nos retours vocaux/labels privés, confirmations
+liées à la session et à l'étape, mode observation seule et raccourci Ctrl+Maj+H sont
+conservés. Le cadre d'une app masquée ne filtre plus les clics dans son ancien rectangle.
+
+Nouveau `--software cognition` : procédure de guidage ouverte, réponses anglaises,
+documentation publique dédiée et traces séparées des essais H. Aucun lancement,
+message, commentaire ou merge Devin n'est autorisé par cette procédure de lecture.
+Le corpus local conserve ses citations versionnées et n'est pas une observation du compte.
+
+Validation hors ligne après résolution des conflits : **1 043 tests Python**, **11 tests
+desktop**, contrats régénérés ; contrôle headless de Home/retour/voix, y compris
+780 px de large. Les tests du microphone ne démarrent pas d'enregistrement réel.
+
+Un **appel réel Models API Holo4** sur un catalogue de trois contrôles préparés
+(`Agent`, `Ask`, `Prompt`) a reçu une question française : il a sélectionné `Ask`
+et produit une instruction et une explication anglaises. Durée client **3,222 s**.
+Il s'agit d'un test de raccordement sur fixture, sans capture ni clic dans le compte,
+sans label humain, pas d'une mesure de performance du parcours utilisateur. Résultat
+conservé hors Git dans le dossier privé `human-cognition/cognition-planner-probe.json`.
+
+Compte Devin ouvert : l'utilisateur a ajouté des crédits par coupon, et la bannière
+d'épuisement a disparu après actualisation. L'espace ne montre encore aucune session.
+Le clonage vocal autorisé a abouti chez ElevenLabs après ajout du droit de création à
+la clé par l'utilisateur ; aperçu anglais généré. Échantillon, identifiant de voix et
+clé restent privés. La qualité perçue de cette voix et le guidage live restent à noter
+par un humain. Aucun essai H actif n'a été arrêté pour ces vérifications.
+
+Préparation éditoriale : [dix scénarios Devin](scenarios/cognition-human-session.md),
+[conducteur 120 secondes](pitch-video-2min.md). Ce sont des plans de recette/tournage,
+pas des vidéos réalisées ni dix réussites acquises.

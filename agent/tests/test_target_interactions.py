@@ -115,6 +115,25 @@ def test_wrong_click_invalidates_old_coordinates_even_if_next_click_hits(rig):
     assert rig.w.acted("click")
 
 
+def test_ax_box_follows_layout_but_does_not_resurrect_invalidated_coordinates(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    rig.w.update_target_box((280, 80, 40, 40))
+    click(rig, (300, 100))
+    assert rig.w.acted("click")
+    rig.w._on_event("scroll", (0, 0, 0, 1))
+    rig.w.update_target_box((280, 80, 40, 40))
+    click(rig, (300, 100))
+    assert not rig.w.acted("click")
+
+
+def test_ax_control_disappearing_after_target_click_still_requests_verification(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    click(rig)
+    rig.w.update_target_box(None)
+    assert rig.w.acted("click")
+    assert "Result not verified" in rig.w.observation_note("click")
+
+
 @pytest.mark.parametrize("event,payload", [("scroll", (100, 100, 0, -1)), ("combo_down", None)])
 def test_scroll_or_voice_shortcut_invalidates_old_target(rig, event, payload):
     arm(rig)

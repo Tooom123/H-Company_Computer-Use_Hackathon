@@ -26,7 +26,7 @@ from hai_agents_local.desktop import PyautoguiDesktopBridge
 from .contract import Category, DeclaredResult, GuidanceStep, Step
 from .grounding import Located
 from .knowledge import DocAnswer, Knowledge, NoKnowledge
-from .procedures import BoundProcedure
+from .procedures import BoundProcedure, RESPONSE_LANGUAGE_INSTRUCTIONS
 
 StepCallback = Callable[[Step], None]
 LookupCallback = Callable[[DocAnswer], None]
@@ -370,7 +370,7 @@ class HBackend:
             "name": _agent_name(name),
             "description": "Customer-success assistant driving the user's own desktop.",
             "model": self.model,
-            "instructions": instructions,
+            "instructions": instructions + "\n\n" + RESPONSE_LANGUAGE_INSTRUCTIONS,
             "environments": [
                 # host=user_device is what makes the SDK serve this Mac from this process; without it H
                 # provisions a cloud desktop and the screen seen by the agent is not the user's.
@@ -588,16 +588,108 @@ class HBackend:
             self._grounder = Grounder()
         return self._grounder
 
-    def locate(self, description: str, context: str = "") -> Located | None:
+    use_a11y: bool = os.environ.get("HCS_A11Y", "1").lower() not in {"0", "false", "no"}
+
+    def _tree_locate(self, description: str) -> tuple[Located | None, list]:
+        """Element from the browser accessibility tree: exact box in milliseconds. (None, ties) when unsure."""
+        if not self.use_a11y:
+            return None, []
         try:
-            return self._grounding().locate(description, context)
+            from . import a11y
+
+            t0 = time.time()
+            best, ties, info = a11y.find(description)
+            if info is not None:
+                from . import sitemap
+
+                if not getattr(self, "observe_only", False):
+                    sitemap.remember(info)
+            if best is None or info is None or not info.is_front:
+                return None, []
+            if best.score < 10:  # only word overlap, no label match: let Holo look
+                return None, []
+            if ties:
+                cands = [best, *ties][:8]
+                try:  # text-only pick (~0.6 s): role, label and where it sits on screen
+                    sw, sh = __import__("hcs_agent.overlay", fromlist=["screen_size_points"]).screen_size_points()
+                    opts = [f"{c.role.replace('AX', '')} '{c.name[:50]}' at {_where(c.center, sw, sh)}" for c in cands]
+                    idx = self._grounding().choose(description, opts)
+                except Exception:  # noqa: BLE001
+                    idx = None
+                if idx is None:
+                    return None, cands
+                pick = cands[idx]
+                return Located(True, pick.center, f"tree+pick: {pick.role} '{pick.name[:40]}'", time.time() - t0, pick.box), []
+            return Located(True, best.center, f"tree: {best.role} '{best.name[:40]}'", time.time() - t0, best.box), []
+        except Exception:  # noqa: BLE001 - the tree is an accelerator, never a blocker
+            return None, []
+
+    def page_catalogue(self, bound=None, max_items: int = 90):  # noqa: ARG002 - the mock uses `bound`
+        """(PageInfo, [Candidate]) of the browser page in front: the controls a planner may point at.
+        None when there is no browser page (or the tree is off)."""
+        if not self.use_a11y:
+            return None
+        try:
+            from . import a11y, sitemap
+
+            info = a11y.page()
+            if info is None or len(info.elements) <= 1:
+                return None
+            if not getattr(self, "observe_only", False):
+                sitemap.remember(info)
+            seen: set[tuple[str, str]] = set()
+            items = []
+            for e in info.elements:
+                if e.role not in (*a11y.INTERACTIVE, "AXHeading"):
+                    continue
+                key = (e.role, e.name.lower())
+                if key in seen or e.frame[2] * e.frame[3] > 500 * 400:
+                    continue
+                if not a11y.visible_at_point(e):
+                    continue
+                seen.add(key)
+                items.append(e)
+                if len(items) >= max_items:
+                    break
+            return info, items
+        except Exception:  # noqa: BLE001
+            return None
+
+    def plan_step(self, goal: str, context: str, page: str, candidates: list[str], history: list[str]) -> dict | None:
+        try:
+            return self._grounding().plan_step(goal, context, page, candidates, history)
+        except Exception as exc:  # noqa: BLE001
+            return {"done": False, "instruction": "", "why": f"planner error: {exc}", "kind": "info", "target": None}
+
+    def locate(self, description: str, context: str = "") -> Located | None:
+        hit, ties = self._tree_locate(description)
+        if hit is not None:
+            return hit
+        try:
+            loc = self._grounding().locate(description, context)
         except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
             return Located(False, None, f"grounding error: {exc}")
+        if ties and loc and loc.found and loc.screen_xy:
+            # Several tree elements share the label: Holo decides which one, the tree gives the exact box.
+            x, y = loc.screen_xy
+            near = min(ties, key=lambda c: (c.center[0] - x) ** 2 + (c.center[1] - y) ** 2)
+            if abs(near.center[0] - x) < 80 and abs(near.center[1] - y) < 60:
+                return Located(True, near.center, f"tree+holo: {near.role} '{near.name[:40]}'", loc.latency_s, near.box)
+        return loc
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:
         return self._visual_check("effect_visible", expected)
 
-    def screen_matches(self, expected: str) -> tuple[bool, str]:
+    def screen_matches(self, expected: str, software: str = "") -> tuple[bool, str]:
+        if getattr(self, "use_a11y", False):
+            try:
+                from . import a11y
+                ok, where = a11y.screen_check(expected, software)
+                if type(ok) is bool and isinstance(where, str) and where.strip():
+                    self.last_visual_check = {"check": "screen_matches", "status": "observed", "matched": ok}
+                    return ok, f"tree: {where}"
+            except Exception:
+                pass
         return self._visual_check("screen_matches", expected)
 
     def _visual_check(self, method: str, expected: str) -> tuple[bool, str]:
@@ -749,6 +841,14 @@ def _agent_xy_to_screen(x, y) -> tuple[int, int] | None:
         return None
 
 
+def _where(center: tuple[int, int], sw: float, sh: float) -> str:
+    """Coarse position words for a point: 'top left', 'centre', 'bottom right'..."""
+    x, y = center
+    col = "left" if x < sw / 3 else "right" if x > 2 * sw / 3 else "centre"
+    row = "top" if y < sh / 3 else "bottom" if y > 2 * sh / 3 else "middle"
+    return f"{row} {col}" if (row, col) != ("middle", "centre") else "centre"
+
+
 def _agent_name(raw: str) -> str:
     """H agent names: lowercase ASCII letters, digits and hyphens, alphanumeric at both ends, <= 63 chars."""
     import re
@@ -885,11 +985,33 @@ class MockBackend:
                             "[simulated] " + ("all checks visible" if satisfied else "expected element not found"),
                             cost_usd=0.0)
 
-    def screen_matches(self, expected: str) -> tuple[bool, str]:
+    def screen_matches(self, expected: str, software: str = "") -> tuple[bool, str]:
         return True, "[simulated] expected screen displayed"
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:
         return True, "[simulated] effect visible"
+
+    def page_catalogue(self, bound=None, max_items: int = 90):
+        from types import SimpleNamespace
+
+        from .a11y import Candidate
+
+        if bound is not None and self._scenario(bound) != "done":
+            return None  # simulate a page that cannot be read: the H agent path (and its blocked outcome) runs
+        info = SimpleNamespace(url="https://platform.example/sessions", title="Sessions", is_front=True, elements=[])
+        items = [Candidate("AXButton", "New session", (400, 300, 120, 32)), Candidate("AXLink", "Agents", (40, 120, 80, 24)),
+                 Candidate("AXHeading", f"[simulated] page state {self._plans}", (40, 60, 300, 24))]  # changes per step
+        return info, items
+
+    _plans = 0
+
+    def plan_step(self, goal: str, context: str, page: str, candidates: list[str], history: list[str]) -> dict | None:
+        self._plans += 1
+        if self._plans >= 3 or len(history) >= 2:
+            return {"done": True, "instruction": "", "why": "", "kind": "info", "target": None,
+                    "summary": "[simulated] goal reached"}
+        return {"done": False, "instruction": f"Click New session ({self._plans})", "why": "It starts a session.",
+                "kind": "click", "target": 0}
 
     def locate(self, description: str, context: str = "") -> Located | None:
         time.sleep(self.step_delay_s)

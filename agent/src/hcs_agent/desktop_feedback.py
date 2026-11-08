@@ -46,7 +46,7 @@ class RunJournal:
         self._sink, self._lock = sink, threading.Lock()
         _json_file(self.directory / "request.json", request.model_dump(mode="json"), exclusive=True)
         now = datetime.now(timezone.utc).isoformat()
-        self._episode = {"id": sid, "scenario_id": "H-LIVE" if request.software == "h-company" else request.procedure_id,
+        self._episode = {"id": sid, "scenario_id": {"h-company": "H-LIVE", "cognition": "COGNITION-LIVE"}.get(request.software, request.procedure_id),
                          "source": request.software, "software": request.software, "goal": request.goal,
                          "mode": request.mode.value, "human_present": True, "simulated": bool(simulated),
                          "state": "created", "created_at": now, "updated_at": now, "export_status": "pending"}

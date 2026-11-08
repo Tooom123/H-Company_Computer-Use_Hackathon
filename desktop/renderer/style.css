@@ -1,5 +1,5 @@
 /* H Companion app. Palette: the landing (near-black, greys, white, red pen) and Matteo's overlay
-   (red pencil on white paper scraps, dark status pill with a red dot). Plain, straight to the point. */
+   (red pencil, handwriting on white paper scraps). Tabs on top like a browser. */
 :root {
   --black: #040405;
   --grey-800: #0d0d12;
@@ -13,12 +13,12 @@
   --grey-200: #f2f2f5;
   --grey-100: #f9f9fb;
   --white: #fff;
-  --paper: #fffffb;
   --red: #e3242b; /* landing pen */
   --pencil: #db2b1f; /* overlay pencil */
+  --ink: rgba(219, 43, 31, 0.92); /* overlay GRAPHITE */
   --sans: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", "Fira Code", monospace;
-  --hand: "Bradley Hand", "Noteworthy", "Segoe Print", "Comic Neue", cursive; /* the overlay's fonts */
+  --hand: "Bradley Hand", "Noteworthy", "Marker Felt", "Segoe Print", "Comic Neue", cursive; /* overlay fonts */
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -26,6 +26,7 @@ html, body { height: 100%; }
 body {
   margin: 0;
   display: flex;
+  flex-direction: column;
   background: var(--grey-100);
   color: var(--grey-750);
   font: 14px/1.5 var(--sans);
@@ -38,59 +39,96 @@ h2 { font-size: 15px; margin: 0; color: var(--black); letter-spacing: -0.01em; }
 p { margin: 6px 0; }
 .muted { color: var(--grey-600); }
 .small { font-size: 12.5px; }
-.hand { font-family: var(--hand); color: var(--pencil); }
-code, .kbd { font-family: var(--mono); }
+code { font-family: var(--mono); }
+.hand { font-family: var(--hand); }
 
-/* sidebar: the landing's black hero ------------------------------------------------------------- */
-.side {
-  width: 196px;
+/* red pencil line around the window */
+.frame {
+  position: fixed; inset: 0; pointer-events: none; z-index: 10;
+  border: 2px solid var(--pencil); border-radius: 10px; opacity: 0.85;
+}
+
+/* top bar: tabs centred, the active one lifted with a red-tinted shadow on its right side ------- */
+.bar {
+  position: relative;
   flex: none;
-  background: var(--black);
-  color: var(--grey-300);
+  height: 50px;
   display: flex;
-  flex-direction: column;
-  padding: 0 12px 14px;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--black);
+  -webkit-app-region: drag;
+  z-index: 5;
 }
-.drag { height: 38px; -webkit-app-region: drag; }
-.brand { display: flex; align-items: center; gap: 9px; padding: 0 6px 22px; }
+.brand { position: absolute; left: 16px; top: 0; bottom: 0; display: flex; align-items: center; gap: 9px; }
+body.mac .brand { left: 84px; } /* room for the traffic lights */
+body.mac .buddy { right: 34px; } /* no window buttons on macOS */
 .key {
-  width: 30px; height: 30px; flex: none;
+  width: 26px; height: 26px; flex: none;
   display: grid; place-items: center;
-  border-radius: 7px;
+  border-radius: 6px;
   background: linear-gradient(#26262f, #121218);
-  box-shadow: inset 0 1px 0 #3a3a46, 0 3px 0 #000, 0 0 0 1px #2a2a34;
-  color: var(--white); font-weight: 700; font-size: 16px;
+  box-shadow: inset 0 1px 0 #3a3a46, 0 2px 0 #000, 0 0 0 1px #2a2a34;
+  color: var(--white); font-weight: 700; font-size: 14px;
 }
-.word { font-weight: 700; font-size: 16px; color: var(--grey-100); letter-spacing: -0.02em; position: relative; }
-.struck { position: relative; color: var(--grey-500); }
-.struck::after {
-  content: ""; position: absolute; left: -2px; right: -2px; top: 52%;
-  height: 2px; background: var(--red); border-radius: 2px; transform: rotate(-6deg);
+.head { width: 28px; height: 28px; display: block; } /* the website's favicon: the companion's red head */
+.tabs { display: flex; flex: 1; min-width: 0; max-width: 640px; margin-left: 100px; margin-right: 120px; align-items: flex-end; gap: 4px; height: 100%; -webkit-app-region: no-drag; }
+body.mac .tabs { margin-left: 150px; margin-right: 70px; }
+.tab {
+  position: relative;
+  height: 38px;
+  width: 124px;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  border-radius: 11px 11px 0 0;
+  background: none;
+  color: var(--grey-400);
+  font-weight: 500;
+  text-align: center;
+  transition: color 0.15s, background 0.15s;
 }
-.pen { font-family: var(--hand); color: var(--red); font-weight: 400; font-size: 17px; margin-left: 3px; }
-nav { display: flex; flex-direction: column; gap: 2px; }
-nav button {
-  text-align: left; background: none; border: 0; border-radius: 8px;
-  padding: 7px 10px; color: var(--grey-400);
+.tab:hover:not(.on) { color: var(--grey-100); background: rgba(255, 255, 255, 0.06); }
+.tab.on {
+  background: var(--grey-100);
+  color: var(--black);
+  font-weight: 600;
+  box-shadow: 7px -1px 14px -6px rgba(227, 36, 43, 0.75);
 }
-nav button:hover { background: var(--grey-800); color: var(--grey-200); }
-nav button.on { background: var(--grey-750); color: var(--white); }
-.agent-line { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 0 8px; font-size: 12px; color: var(--grey-500); }
-.agent-line i { width: 8px; height: 8px; border-radius: 50%; background: var(--grey-600); flex: none; }
-.agent-line i.on { background: #3fb950; }
+/* the browser's curved feet, so the active tab flows into the page */
+.tab.on::before, .tab.on::after { content: ""; position: absolute; bottom: 0; width: 11px; height: 11px; pointer-events: none; }
+.tab.on::before { left: -11px; background: radial-gradient(circle at 0 0, transparent 10.5px, var(--grey-100) 11px); }
+.tab.on::after { right: -11px; background: radial-gradient(circle at 100% 0, transparent 10.5px, var(--grey-100) 11px); }
+
+/* window controls, top right of the bar (frameless window) */
+.winctl { position: absolute; top: 0; right: 0; display: flex; -webkit-app-region: no-drag; z-index: 2; }
+.wc { width: 40px; height: 30px; border: 0; background: none; display: grid; place-items: center; color: var(--grey-400); transition: background 0.12s, color 0.12s; }
+.wc svg { width: 10px; height: 10px; overflow: visible; }
+.wc path, .wc rect { fill: none; stroke: currentColor; stroke-width: 1.2; }
+.wc:hover { background: var(--grey-700); color: var(--white); }
+.wc.close:hover { background: var(--red); color: var(--white); }
+.wc.close { border-top-right-radius: 10px; }
+.wc .i-restore, .maximized .wc .i-max { display: none; }
+.maximized .wc .i-restore { display: block; }
+body.mac .winctl { display: none; }
+
+/* the landing's stick figure, sitting on the edge of the bar */
+.buddy { position: absolute; right: 150px; top: -7px; width: 62px; height: 98px; overflow: visible; pointer-events: none; } /* hips (y 44 of 76) on the bar's bottom edge */
+.buddy path { fill: none; stroke: var(--red); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.buddy .shin { transform-box: view-box; animation: swing 2.6s ease-in-out infinite; }
+.buddy .shin.a { transform-origin: 32px 44.8px; }
+.buddy .shin.b { transform-origin: 30px 47.2px; animation-delay: -1.3s; }
+.buddy .wave { transform-box: view-box; transform-origin: 23.7px 27px; animation: wave 5s ease-in-out infinite; }
+@keyframes swing { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(14deg); } }
+/* the hand only swings outwards (clockwise, away from the head): it never passes over it */
+@keyframes wave { 0%, 70%, 100% { transform: rotate(0deg); } 76%, 88% { transform: rotate(18deg); } 82%, 94% { transform: rotate(4deg); } }
 
 /* content --------------------------------------------------------------------------------------- */
-main { flex: 1; overflow-y: auto; padding: 34px 34px 28px; }
-.view { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
+.view { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
 .view-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.card {
-  background: var(--white);
-  border: 1px solid var(--grey-250);
-  border-radius: 12px;
-  padding: 16px 18px;
-}
-.card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-.sec { margin-top: 8px; }
+.card { background: var(--white); border: 1px solid var(--grey-250); border-radius: 12px; padding: 16px 18px; }
+.section-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .eyebrow { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--grey-500); margin: 0 0 2px; }
 .row { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
 
@@ -101,27 +139,52 @@ main { flex: 1; overflow-y: auto; padding: 34px 34px 28px; }
 .btn:hover { background: var(--grey-750); }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .btn.ghost { background: var(--white); color: var(--black); border-color: var(--grey-300); }
-.btn.ghost:hover { border-color: var(--grey-500); }
+.btn.ghost:hover { border-color: var(--pencil); }
 .btn.stop { background: var(--red); border-color: var(--red); padding: 8px 22px; font-size: 14px; }
 .btn.stop:hover { background: #c81e24; }
 
-/* status pill: Matteo's on-screen badge ------------------------------------------------------- */
-.pill {
-  align-self: flex-start;
-  display: inline-flex; align-items: center; gap: 10px;
-  background: rgba(20, 20, 20, 0.92); color: var(--white);
-  border-radius: 999px; padding: 9px 18px 9px 14px; font-size: 15px; font-weight: 600;
+/* paper badges: Matteo's on-screen "⌘H: new request" badge (sketch.js paints the paper) -------- */
+.badge-paper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: none;
+  padding: 10px 22px 10px 40px;
+  color: var(--ink);
+  text-align: left;
 }
-.pill i { width: 12px; height: 12px; border-radius: 50%; background: var(--pencil); flex: none; }
-.pill.pulse i { animation: pulse 1s ease-in-out infinite; }
-.pill.off i { background: var(--grey-500); }
-.pill.done i { background: #3fb950; }
-.pill.warn i { background: #e8a33a; }
-@keyframes pulse { 50% { opacity: 0.35; } }
-.pill-sub { margin: -4px 0 4px 4px; color: var(--grey-600); min-height: 21px; font-size: 14px; }
+.badge-paper svg { position: absolute; left: -6px; top: -6px; overflow: visible; pointer-events: none; }
+.badge-paper svg .paper { filter: drop-shadow(2px 3px 3px rgba(0, 0, 0, 0.28)); }
+.badge-paper svg .ring.faint { opacity: 0.3; }
+.badge-paper span { position: relative; font-size: 21px; line-height: 1.2; }
+.badge-paper.pulse svg .dot { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
 
+.hero { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 0 6px; text-align: center; }
+.badge-paper.big { padding: 13px 28px 13px 44px; cursor: default; }
+.badge-paper.big span { font-size: 27px; }
+
+/* autonomy: wide pencil slider, the three levels written out (sketch.js drawAutonomy) */
+.magnet { position: relative; width: 100%; margin: 2px auto 0; }
+.magnet svg { display: block; width: 100%; height: auto; overflow: visible; }
+.magnet svg .paper { filter: drop-shadow(2px 3px 3px rgba(0, 0, 0, 0.28)); }
+.magnet.off { opacity: 0.55; }
+.level-label { font-family: var(--hand); font-size: 21px; fill: var(--grey-600); }
+.level-label.on { fill: var(--ink); }
+.magnet path.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.45s ease-out forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.magnet { cursor: pointer; touch-action: none; outline: none; border-radius: 10px; }
+.magnet.dragging { cursor: grabbing; }
+.magnet.off { cursor: default; }
+.magnet:focus-visible { outline: 2px dashed var(--pencil); outline-offset: 4px; }
+.magnet .held { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3)); }
+.aut-msg { min-height: 19px; margin: 6px 4px 0; text-align: center; }
+
+.now { border-color: rgba(219, 43, 31, 0.4); }
 .now-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .now h2 { font-size: 17px; }
+.now-step { margin: 6px 0 0; color: var(--grey-700); }
 .steps { display: flex; gap: 6px; margin-top: 14px; }
 .steps span { height: 4px; flex: 1; border-radius: 2px; background: var(--grey-250); }
 .steps span.done { background: var(--black); }
@@ -129,36 +192,16 @@ main { flex: 1; overflow-y: auto; padding: 34px 34px 28px; }
 .offline .cmd { display: flex; align-items: center; gap: 10px; margin: 10px 0; background: var(--grey-200); border-radius: 8px; padding: 8px 8px 8px 12px; }
 .offline code { flex: 1; user-select: text; }
 
-/* autonomy: the Magnet, now inside the app ---------------------------------------------------- */
-.rail { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); padding-top: 24px; }
-.rail .track { position: absolute; left: 16.6%; right: 16.6%; top: 11px; height: 2px; background: var(--grey-300); border-radius: 2px; }
-.notch {
-  position: relative; background: none; border: 0; padding: 0 8px 4px;
-  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
-}
-.notch::before {
-  content: ""; position: absolute; top: -18px; left: 50%; width: 14px; height: 14px; margin-left: -7px;
-  border-radius: 50%; background: var(--white); border: 2px solid var(--grey-400);
-}
-.notch b { font-size: 14px; color: var(--grey-600); font-weight: 600; }
-.notch:hover b { color: var(--black); }
-.notch.on b { color: var(--black); }
-.notch.on::before { background: var(--pencil); border-color: var(--pencil); box-shadow: 0 0 0 4px rgba(219, 43, 31, 0.15); }
-.notch svg { position: absolute; top: -27px; left: 50%; width: 34px; height: 32px; margin-left: -17px; overflow: visible; pointer-events: none; }
-.notch svg path { fill: none; stroke: var(--pencil); stroke-width: 1.6; stroke-linecap: round; }
-.notch:disabled { cursor: default; }
-.hint { font-size: 17px; margin: 14px 4px 0; min-height: 26px; }
-
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
 .stat { background: var(--white); border: 1px solid var(--grey-250); border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; }
 .stat b { font-size: 22px; color: var(--black); letter-spacing: -0.02em; }
 .stat span { font-size: 12.5px; color: var(--grey-600); }
-.said { min-height: 20px; }
 
 /* activity --------------------------------------------------------------------------------------- */
 .list { display: flex; flex-direction: column; background: var(--white); border: 1px solid var(--grey-250); border-radius: 12px; }
-.item { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--grey-250); }
+.item { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--grey-250); }
 .item:first-child { border-top: 0; }
+.item .mid { min-width: 0; }
 .item .goal { color: var(--black); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .meta { font-size: 12.5px; color: var(--grey-600); }
 .chip { font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; justify-self: start; border: 1px solid var(--grey-300); color: var(--grey-600); }
@@ -166,30 +209,17 @@ main { flex: 1; overflow-y: auto; padding: 34px 34px 28px; }
 .chip.escalated { border-color: var(--pencil); color: var(--pencil); }
 .sim { font-family: var(--mono); font-size: 10.5px; color: var(--grey-500); border: 1px dashed var(--grey-400); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 .empty { padding: 26px 16px; text-align: center; color: var(--grey-600); }
-.link { background: none; border: 0; color: var(--grey-600); font-size: 12.5px; padding: 0; }
-.link:hover { color: var(--black); text-decoration: underline; }
-
-/* usage ------------------------------------------------------------------------------------------- */
-.seg { display: inline-flex; background: var(--grey-200); border-radius: 999px; padding: 3px; }
-.seg button { border: 0; background: none; border-radius: 999px; padding: 3px 12px; font-size: 12.5px; color: var(--grey-600); }
-.seg button.on { background: var(--white); color: var(--black); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); font-weight: 600; }
-.meter-line { display: flex; align-items: baseline; gap: 8px; }
-.meter-line b { font-size: 22px; color: var(--black); }
-.meter { height: 6px; background: var(--grey-250); border-radius: 3px; overflow: hidden; margin: 8px 0 14px; }
-.meter span { display: block; height: 100%; width: 0; background: var(--black); border-radius: 3px; transition: width 0.4s; }
-.meter.high span { background: var(--pencil); }
-.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.plan { border: 1px solid var(--grey-250); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
-.plan.cur { border-color: var(--black); }
-.plan .price b { font-size: 18px; color: var(--black); }
-.plan .price span { font-size: 12px; color: var(--grey-600); margin-left: 3px; }
-.plan .btn { align-self: flex-start; margin-top: 4px; }
-.msg { min-height: 24px; font-size: 16px; margin: 8px 0 0; }
-.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.prov h2 { display: flex; justify-content: space-between; gap: 8px; }
-.prov h2 span { font-weight: 400; color: var(--grey-500); font-size: 12.5px; }
-.prov .big { font-size: 20px; font-weight: 700; color: var(--black); margin: 6px 0 2px; }
-.prov .meter { margin: 6px 0 6px; }
+.rating { display: flex; gap: 6px; }
+.mark {
+  position: relative; width: 34px; height: 34px; border: 0; background: none;
+  font-size: 18px; line-height: 1; color: var(--grey-400);
+}
+.mark:hover { color: var(--black); }
+.mark.on { color: var(--black); font-weight: 700; }
+.mark .ring { position: absolute; left: -3px; top: -3px; width: 40px; height: 40px; overflow: visible; pointer-events: none; }
+.mark .ring path { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+.mark.on .ring path { opacity: 1; animation: draw 0.4s ease-out forwards; }
+.mark.on .ring path + path { animation-delay: 0.05s; }
 
 /* voice ------------------------------------------------------------------------------------------- */
 .switch { width: 42px; height: 24px; border-radius: 12px; border: 0; background: var(--grey-300); position: relative; flex: none; padding: 0; }
@@ -205,13 +235,21 @@ main { flex: 1; overflow-y: auto; padding: 34px 34px 28px; }
 .voice:disabled { opacity: 0.5; cursor: default; }
 .speed { justify-content: flex-start; }
 .speed input { flex: 1; max-width: 220px; accent-color: var(--pencil); }
-.kbd { display: inline-block; border: 1px solid var(--grey-300); border-bottom-width: 2px; border-radius: 6px; padding: 0 7px; background: var(--grey-100); color: var(--black); font-weight: 600; }
+.keys { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 4px; }
+.keycap {
+  min-width: 58px; padding: 7px 14px; border-radius: 8px;
+  background: linear-gradient(#fff, #f2f2f5); border: 1px solid var(--grey-300); border-bottom-width: 3px;
+  font-weight: 700; color: var(--black);
+}
+.keycap.on { border-color: var(--pencil); color: var(--pencil); box-shadow: 0 0 0 3px rgba(219, 43, 31, 0.12); }
+.keycap:disabled { opacity: 0.5; cursor: default; }
 .badge { font-size: 12.5px; border: 1px solid var(--grey-300); border-radius: 999px; padding: 3px 10px; color: var(--grey-600); }
 .badge.on { border-color: #3fb950; color: #1f7a33; }
 
 @media (max-width: 860px) {
-  main { padding: 26px 20px; }
-  .plans, .grid, .voices { grid-template-columns: 1fr; }
+  main { padding: 24px 20px; }
+  .tab { min-width: 0; }
+  .voices { grid-template-columns: 1fr; }
 }
 /* Explicit human labels; no positive answer is selected by default. */
 .feedback-field { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; font-size: 14px; }

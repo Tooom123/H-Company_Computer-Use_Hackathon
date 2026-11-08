@@ -43,6 +43,11 @@ def rig(monkeypatch):
     monkeypatch.setattr(InputHub, "get", lambda: hub)
     monkeypatch.setattr(voice, "Recorder", lambda: recorder)
     monkeypatch.setattr(voice, "Transcriber", lambda: SimpleNamespace())
+    live = SimpleNamespace(cancelled=False, opened=False)
+    live.open = lambda _: setattr(live, 'opened', True)
+    live.cancel = lambda: setattr(live, 'cancelled', True)
+    live.feed = lambda _: None
+    monkeypatch.setattr(voice, "LiveTranscriber", lambda: live)
     states = []
     ptt = voice.PushToTalk(key_name="ctrl+shift+h", on_state=states.append)
     ptt.start()
@@ -103,6 +108,26 @@ def test_stop_discards_audio_without_transcription(rig):
     ptt.stop()
     ptt._worker.join(1)
     assert not ptt._recording and recorder.cancels == 1 and recorder.stops == 0
+
+
+def test_live_audio_starts_once_and_is_cancelled_on_short_recording(rig):
+    ptt, recorder, states = rig
+    ptt._on_event('combo_down', None)
+    drain(ptt)
+    live = ptt._live
+    assert live.opened and recorder.starts == 1
+    assert recorder.on_chunk == live.feed
+    ptt._on_event('combo_up', None)
+    drain(ptt)
+    assert live.cancelled and ptt._live is None
+
+
+def test_failed_microphone_closes_live_transcription(rig):
+    ptt, recorder, _ = rig
+    recorder.fail_start = True
+    ptt._on_event('combo_down', None)
+    drain(ptt)
+    assert ptt._live is None and not ptt._recording
 
 
 @pytest.mark.parametrize("mods,flags,remaining", [({"cmd"}, 1, 0), ({"ctrl", "shift"}, 12, 4)])

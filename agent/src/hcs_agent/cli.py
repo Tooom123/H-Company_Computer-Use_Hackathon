@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -91,7 +92,7 @@ _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": Non
 _FEEDBACK = DesktopFeedback()
 _RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
 _GUIDE_REPLY_LOCK = threading.Lock()
-_TEST_SENTENCE = "Bonjour, je suis H Companion. Je peux maintenant lire les indications à voix haute."
+_TEST_SENTENCE = "Hello, I am H Companion. I can now read the guidance aloud."
 
 
 def _set_autonomy(level: int) -> None:
@@ -213,6 +214,23 @@ def _control_voice(opts: dict) -> dict:
     return _control_status()["speech"]
 
 
+def _key_label(key: str | None) -> str:
+    """cmd+h -> ⌘H, alt_r -> Right ⌥, f9 -> F9: what the badge and the app show."""
+    if not key:
+        return "⌘H"
+    names = {"cmd": "⌘", "ctrl": "⌃", "alt": "⌥", "shift": "⇧", "alt_r": "Right ⌥", "cmd_r": "Right ⌘"}
+    return "".join(names.get(p, p.upper()) for p in key.lower().split("+"))
+
+
+def _control_ptt(key: str) -> bool:
+    ptt = _VOICE.get("ptt")
+    if ptt is None or not hasattr(ptt, "set_key"):
+        return False
+    ptt.set_key(key)
+    print(f"\n  [app] push-to-talk key: {_key_label(key)}", flush=True)
+    return True
+
+
 def _control_test_voice() -> bool:
     sp = _SPEECH["speaker"]
     if sp is None or sp.muted:
@@ -239,7 +257,7 @@ def _start_control(runs_dir: Path, command: str, backend) -> None:
     _CONTROL.update(command=command, backend=backend, since=time.strftime("%Y-%m-%dT%H:%M:%S"))
     _speaker()  # the app's Voice page can set and test the voice even before the first note is shown
     ctl = Controller(runs_dir, status=_control_status, set_autonomy=_set_autonomy, stop=_control_stop,
-                     set_voice=_control_voice, test_voice=_control_test_voice, on_app_presence=_app_presence,
+                     set_voice=_control_voice, test_voice=_control_test_voice, set_ptt_key=_control_ptt, on_app_presence=_app_presence,
                      feedback=_FEEDBACK, next_step=_control_next)
     try:
         port = int(os.environ.get("HCS_CONTROL_PORT", DEFAULT_PORT))
@@ -422,12 +440,24 @@ def _notify_run_finished(it) -> None:
     threading.Thread(target=call, name=f"run-export-{it.request.session_id}", daemon=True).start()
 
 
-def _hcompany_request(text: str, context: str = "") -> InterventionRequest:
-    """The H demo is an open-ended question, never an approximate match to an Odoo procedure."""
+_COACHING_SOFTWARE = {
+    "hcompany": ("h-company", "hcompany_general_guide", ["H Company", "Holo", "H Companion"]),
+    "cognition": ("cognition", "cognition_general_guide", ["Cognition", "Devin", "H Companion"]),
+    "devin": ("cognition", "cognition_general_guide", ["Cognition", "Devin", "H Companion"]),
+}
+
+
+def _coaching_request(text: str, software: str, context: str = "") -> InterventionRequest:
+    """Keep free-form questions verbatim; never route a sponsor question into an Odoo task."""
     if not text.strip():
         raise ValueError("Please say a question")
-    return InterventionRequest(software="h-company", goal=text, procedure_id="hcompany_general_guide",
+    site, procedure, _ = _COACHING_SOFTWARE[software]
+    return InterventionRequest(software=site, goal=text, procedure_id=procedure,
                                parameters={"question": text, "context": context}, mode=Mode.guide, autonomy=0)
+
+
+def _hcompany_request(text: str, context: str = "") -> InterventionRequest:
+    return _coaching_request(text, "hcompany", context)
 
 
 def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
@@ -474,6 +504,30 @@ def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
     except KeyboardInterrupt:
         ov.hide()
     ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+
+
+def _inside(point, box, margin: float = 0) -> bool:
+    x, y = point
+    bx, by, bw, bh = box
+    return bx - margin <= x <= bx + bw + margin and by - margin <= y <= by + bh + margin
+
+
+def _follow_target(ov, shown: dict, tracker: "_TargetTracker") -> None:
+    """Apply the tracker's latest measurement to what is drawn: move the frame, hide it, or bring it back."""
+    from dataclasses import replace
+
+    new_box = tracker.box
+    if new_box is None:
+        if not shown["hidden"]:
+            ov.hide()  # control gone or covered: no frame on a wrong spot (the note comes back with it)
+            shown["hidden"] = True
+        return
+    moved = shown["box"] is None or any(abs(a - b) > 6 for a, b in zip(new_box, shown["box"]))
+    if shown["hidden"] or moved:
+        cx, cy = new_box[0] + new_box[2] // 2, new_box[1] + new_box[3] // 2
+        scene = replace(shown["scene"], target=(cx, cy), target_box=new_box)
+        ov.show_scene(scene, animate=shown["hidden"])  # a comeback is drawn again; a move just slides
+        shown.update(scene=scene, box=new_box, hidden=False)
 
 
 def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: float = 3.5) -> None:
@@ -540,12 +594,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
     from .voice import IntentRouter, PushToTalk, intent_to_request
 
     registry = ProcedureRegistry()
-    hcompany = getattr(args, "software", None) == "hcompany"
-    if hcompany:
-        registry.get("hcompany_general_guide")  # fail before opening devices if the fixture is missing
+    coaching_software = getattr(args, "software", None)
+    coaching = coaching_software in _COACHING_SOFTWARE
+    if coaching:
+        registry.get(_COACHING_SOFTWARE[coaching_software][1])  # fail before opening devices if the fixture is missing
         _set_autonomy(0)
     # Proper nouns only: common words in the vocabulary made Gladia swap real words for them.
-    vocab = ["H Company", "Holo", "H Companion"] if hcompany else ["Acme Demo", "Acme Corp", "Odoo"]
+    vocab = _COACHING_SOFTWARE[coaching_software][2] if coaching else ["Acme Demo", "Acme Corp", "Odoo"]
     ov = None
     if not args.no_overlay and sys.platform == "darwin":
         from .overlay import Overlay
@@ -554,6 +609,10 @@ def cmd_talk(args: argparse.Namespace) -> int:
     voice_state = {"s": None}
 
     def on_state(s: str) -> None:
+        if s.startswith("partial: "):
+            if ov is not None and voice_state["s"] == "recording":
+                ov.badge(_short(s[9:], 70) or "Listening…", pulsing=True)  # live words while speaking
+            return
         voice_state["s"] = s
         _VOICE["state"] = s
         print(f"  [voice] {s}", flush=True)
@@ -582,14 +641,26 @@ def cmd_talk(args: argparse.Namespace) -> int:
         # setup and a running listener initialising at the same time abort the process on macOS.
         print("  preparing the desktop channel…", flush=True)
         backend._desktop_channel()
+    try:
+        from . import a11y
+
+        if not args.mock and a11y.available():
+            n = a11y.warm_up()
+            from . import sitemap
+
+            info = a11y.page()
+            if info is not None and os.environ.get("HCS_GUIDE_OBSERVE_ONLY") != "1":
+                sitemap.remember(info)
+            print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  (accessibility tree unavailable: {exc})")
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     _VOICE["ptt"] = ptt
-    router = None if hcompany else IntentRouter(registry)
+    router = None if coaching else IntentRouter(registry)
     ptt.start()
-    print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
-          f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
+    print(f"Hold [{ptt.key_name}] and tell me what you need. Release to send. Responses are in English. Ctrl+C to quit.")
     if ov is not None:
-        ov.badge("Hold ⌘H and say what you need" if "cmd" in ptt.key_name else f"Hold {ptt.key_name} and speak")
+        ov.badge(f"Hold {_key_label(ptt.key_name)} and say what you need")
 
     def next_transcript() -> str:
         """Wait for a transcript while keeping the overlay (badge) alive on the main thread."""
@@ -618,7 +689,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if _FEEDBACK.consume_transcript(text):
                 _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
                 continue
-            if last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
+            if not coaching and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
                 print(f"  -> resuming {request.procedure_id} from the current screen")
                 try:
@@ -632,14 +703,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             if ov is not None:
                 ov.badge("Thinking…", pulsing=True)
-            if hcompany:
+            if coaching:
                 context = ""
                 if last_request is not None:
                     context = "Previous request (historical context, not a new authorization): " + last_request.goal
                     previous = _MAGNET.get("current")
                     if previous is not None and previous.guidance:
                         context += "\nLast guidance shown: " + previous.guidance[-1].instruction
-                request = _hcompany_request(text, context)
+                request = _coaching_request(text, coaching_software, context)
             else:
                 history.append(f"User: {text}")
                 try:
@@ -656,11 +727,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     # No script for this: the general agent works from the screen, with the vendor docs as context.
                     from .voice import generic_request
 
-                    doc = None
+                    from . import sitemap
+                    software = intent.software or "hcompany"
+                    doc = sitemap.context_for(software, intent.task) or None
                     try:
-                        ans = backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
+                        ans = None if doc else backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
                                                     software=intent.software or "hcompany", depth="fast")
-                        doc = ans.as_text(2) if ans and ans.answer else None
+                        doc = ans.as_text(2) if ans and ans.answer else doc
                         if ans:
                             print(f"  [docs] {ans.answer[:120]}")
                     except Exception:  # noqa: BLE001
@@ -715,8 +788,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     continue
                 history.clear()
                 request = intent_to_request(intent)
+                if request.procedure_id == "hcompany_hub_find_documentation" and request.parameters.get("topic") \
+                        and not request.parameters.get("page_title"):
+                    from . import sitemap
+                    pages = sitemap.find_doc_pages(request.parameters["topic"], k=1)
+                    if pages:
+                        request.parameters["page_title"] = pages[0]["title"]
             last_request = request
-            if not hcompany:
+            if not coaching:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
@@ -732,7 +811,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if _new_request_pending():
                 continue  # the user spoke during the task: it was stopped, run the new request right away
             if ov is not None:
-                ov.badge(f"⌘H: new request" if "cmd" in ptt.key_name else f"{ptt.key_name}: new request")
+                ov.badge(f"{_key_label(ptt.key_name)}: new request")
             print(f"\nHold [{ptt.key_name}] for another request, Ctrl+C to quit.")
     except KeyboardInterrupt:
         print("\nbye")
@@ -808,6 +887,51 @@ class _ScreenWatcher:
             else:
                 self._changed_at = None
         return False
+
+
+class _TargetTracker:
+    """While a step is shown, re-measure its control through the accessibility tree every ~0.5 s so the frame
+    follows the control (scroll, layout change) and disappears when the control is gone or covered."""
+
+    def __init__(self) -> None:
+        self.description: str | None = None
+        self.step: int | None = None
+        self.box: tuple[int, int, int, int] | None = None  # latest measured box (None = not visible)
+        self.measured_at = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def follow(self, step: int, description: str | None, box) -> None:
+        self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
+        if self._thread is None and description and sys.platform == "darwin":
+            self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
+            self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            from . import a11y
+
+            if not a11y.available():
+                return
+        except Exception:  # noqa: BLE001
+            return
+        while not self._stop.wait(0.5):
+            desc, step = self.description, self.step
+            if not desc:
+                continue
+            try:
+                best, ties, info = a11y.find(desc)
+            except Exception:  # noqa: BLE001
+                continue
+            if (self.description, self.step) != (desc, step):
+                continue  # the step changed meanwhile
+            if info is None or len(info.elements) <= 1:
+                continue  # no page to compare with: keep what we have
+            self.box = best.box if (best and not ties and info.is_front) else None
+            self.measured_at = time.time()
+
+    def stop(self) -> None:
+        self._stop.set()
 
 
 class _InputWatcher:
@@ -901,6 +1025,9 @@ class _InputWatcher:
             magnet = _MAGNET.get("widget")
             if magnet is not None and magnet.contains(*payload):
                 return
+            server = _CONTROL.get("server")
+            if server is not None and server.ctl.app_contains(*payload):
+                return  # desktop controls are not interactions with the guided site
             self.last_click, self.last_click_xy = now, tuple(payload)
             if now <= self.armed_at + 0.3:
                 return  # ignore the click that may have opened/revealed the step
@@ -942,6 +1069,21 @@ class _InputWatcher:
         elif self._finite(pointer, 2):
             self._target = ("point", tuple(pointer))
 
+    def update_target_box(self, box) -> None:
+        """Follow an AX box without resurrecting a target invalidated by scroll/navigation."""
+        if self._target is None:
+            return
+        if self._target_click and (self._kind == "click" or self.last_submit > self.armed_at):
+            return  # the control may disappear because a valid interaction just happened; H must check it
+        if not self._finite(box, 4) or box[2] <= 0 or box[3] <= 0:
+            self._invalidate()
+            return
+        target = ("box", tuple(box))
+        if target != self._target:
+            self._target = target
+            self._target_click = self._field_focused = False
+            self.typed, self.last_submit = 0, 0.0
+
     def acted(self, kind: str, settle_s: float = 0.5) -> bool:
         if self._target is None or kind not in ("click", "type"):
             return False  # no target, informational text or unspecified key: explicit confirmation only
@@ -980,6 +1122,9 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         _voice_for(ov)
         _prefetch_voice(it.request)
     shown_step = 0
+    shown_key = None
+    shown = {"scene": None, "box": None, "hidden": False, "text": None}
+    tracker = _TargetTracker()
     prompted = False
     guidance_scene_shown = False
     inputs = _InputWatcher()
@@ -1032,7 +1177,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     interrupted = {"done": False}
 
     def tick() -> None:
-        nonlocal shown_step, prompted, guidance_scene_shown
+        nonlocal shown_step, shown_key, prompted, guidance_scene_shown
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
             print("\n>> new voice request: stopping the current task", flush=True)
@@ -1041,6 +1186,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 ov.hide()
                 ov.badge("New request…", pulsing=True)
             it.stop(StopCommand(reason="replaced by a new voice request"))
+            return
+        if interrupted["done"]:
             return
         if guidance_scene_shown and it.state is not State.awaiting_user:
             ov.hide()  # desktop Next runs on another thread; clear its old marker on the UI thread
@@ -1055,8 +1202,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     ov.hide()
                     guidance_scene_shown = False
                 return  # desktop confirmation already consumed this step; do not replay it
-            if g.index != shown_step:
-                shown_step = g.index
+            key = (g.index, g.shown_at.isoformat() if g.shown_at else None)
+            if key != shown_key:
+                same_step = shown_step == g.index and shown["text"] == g.instruction
+                shown_step, shown_key = g.index, key
                 prompted = False
                 inputs.arm(g)
                 if ov:
@@ -1064,17 +1213,25 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
 
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
-                    _say(g.instruction, _short(why, 90))
-                    ov.show_scene(Scene(
+                    if not same_step:
+                        _say(g.instruction, _short(why, 90))
+                    shown["text"] = g.instruction
+                    scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
                         doodle="question" if "can't see" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
                                     None, a.box)
-                               for a in g.annotations if a.pointer]))
+                               for a in g.annotations if a.pointer])
+                    ov.show_scene(scene)
+                    shown.update(scene=scene, box=g.box, hidden=False)
                     guidance_scene_shown = True
+                tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None, g.box)
                 speaker = _SPEECH.get("speaker")
                 if speaker is not None:
                     speaker.prefetch(list(getattr(g, "prepared_speech", [])), replace=True)
+            if ov and shown["scene"] is not None and tracker.step == g.index and tracker.description:
+                _follow_target(ov, shown, tracker)
+                inputs.update_target_box(tracker.box)
             if auto:
                 time.sleep(0.3)
                 advance(note="Observed interaction: automated test advance; no human action observed. Result not verified.")
@@ -1088,7 +1245,10 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
                 return
-            ready, _, _ = select.select([sys.stdin], [], [], 0)
+            try:
+                ready, _, _ = select.select([sys.stdin], [], [], 0)
+            except (OSError, ValueError, io.UnsupportedOperation):
+                ready = []
             if ready:
                 line = sys.stdin.readline()
                 if not line:
@@ -1121,6 +1281,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 it.wait(0.1)
     finally:
         inputs.stop()
+        tracker.stop()
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
@@ -1242,7 +1403,7 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(fn=cmd_run)
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
-    talk.add_argument("--software", choices=["hcompany"], help="Open-ended H Company coaching instead of Odoo routing")
+    talk.add_argument("--software", choices=list(_COACHING_SOFTWARE), help="Open-ended H Company or Cognition coaching; responses in English")
     talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
     talk.add_argument("--confirm", action="store_true", help="Ask for approval before running (default: the spoken request is the approval)")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")

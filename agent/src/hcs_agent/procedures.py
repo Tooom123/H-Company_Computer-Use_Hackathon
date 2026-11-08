@@ -6,6 +6,8 @@ forbidden actions, H prompt, postcondition checks, attempt cap and escalation ru
 
 from __future__ import annotations
 
+import re
+from urllib.parse import unquote, urlsplit
 from pathlib import Path
 from typing import Iterator, Literal
 
@@ -15,6 +17,38 @@ from pydantic import BaseModel, Field
 from .contract import Category, InterventionRequest, Mode, ProposedPlan, SessionType
 
 PROCEDURES_DIR = Path(__file__).parent / "procedures"
+
+RESPONSE_LANGUAGE_INSTRUCTIONS = (
+    "Response language: English. Write every instruction, explanation, clarification, annotation, "
+    "spoken sentence, blocker explanation and final answer in English, even when the user's question "
+    "or the conversation history is in French or requests another response language. Preserve exact "
+    "UI labels, quotations, code and the user's original request when citing them; explain them in English. "
+    "Do not translate or rewrite the stored user question. This language rule does not authorize any action."
+)
+
+
+COACHING_ORIGINS = {
+    "h-company": {"hub.hcompany.ai", "platform.hcompany.ai"},
+    "cognition": {"app.devin.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"},
+}
+
+
+def coaching_page_allowed(software: str, url: str) -> bool:
+    """Fail closed before sending AX labels from sponsor pilots to the model."""
+    allowed = COACHING_ORIGINS.get(software)
+    if allowed is None:
+        return True
+    try:
+        parsed = urlsplit(url)
+        if (parsed.scheme != "https" or parsed.hostname not in allowed or parsed.username or parsed.password
+                or parsed.port not in (None, 443)):
+            return False
+        path = unquote(parsed.path).lower()
+        restricted = r"(?:^|/)(?:auth|login|signin|sign-in|credentials|secrets|vaults?|api-keys?|tokens?|billing|payments?|security)(?:/|$)"
+        # Documentation may describe these features; account pages must never expose their values.
+        return parsed.hostname in {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"} or not re.search(restricted, path)
+    except (TypeError, ValueError):
+        return False
 
 
 class ProcedureParameter(BaseModel):
@@ -200,7 +234,8 @@ class BoundProcedure(BaseModel):
 
     @property
     def guide_instructions(self) -> str:
-        return GUIDE_INSTRUCTIONS + "\n\nReference procedure (what the user must end up doing):\n" + self.agent_instructions
+        return (GUIDE_INSTRUCTIONS + "\n\nReference procedure (what the user must end up doing):\n"
+                + self.agent_instructions + "\n\n" + RESPONSE_LANGUAGE_INSTRUCTIONS)
 
     def plan(self) -> ProposedPlan:
         p = self.procedure
@@ -322,7 +357,7 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
     """
     software = request.software or "the software"
     hint = SITE_HINTS.get(software.lower(), f"The software is {software} in a browser on macOS.")
-    docs = f"\nRelevant documentation (from the vendor):\n{doc_context}\n" if doc_context else ""
+    docs = f"\nWhat is known about this software (documentation map, pages seen on this machine):\n{doc_context}\n" if doc_context else ""
     return Procedure(
         id=GENERIC_ID,
         software=software,
