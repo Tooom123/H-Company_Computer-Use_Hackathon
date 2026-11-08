@@ -8,6 +8,7 @@ developed without a Mac that has H permissions. Mock runs are never a validation
 from __future__ import annotations
 
 import base64
+import math
 import os
 import sys
 import threading
@@ -17,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from hai_agents.polling import AnswerValidationError
 from hai_agents_local.desktop import PyautoguiDesktopBridge
@@ -79,15 +80,30 @@ def _lenient(model: type[BaseModel], raw: Any) -> BaseModel | None:
         return None
 
 
-class GuideSubStep(BaseModel):
+class GuideTarget(BaseModel):
+    """A point in the explicit full-screenshot normalized frame, never guessed pixels."""
+
+    target_x: float | None = Field(default=None, ge=0, le=1000,
+        description="Horizontal position normalized to 0..1000 across the FULL screenshot: 0 left, 1000 right. Null if uncertain.")
+    target_y: float | None = Field(default=None, ge=0, le=1000,
+        description="Vertical position normalized to 0..1000 across the FULL screenshot: 0 top, 1000 bottom. Null if uncertain.")
+
+    @field_validator("target_x", "target_y", mode="before")
+    @classmethod
+    def valid_coordinate_or_none(cls, value):
+        # Keep useful guidance text even if the model supplies an invalid point.
+        if type(value) not in (int, float) or not 0 <= value <= 1000 or not math.isfinite(value):
+            return None
+        return value
+
+
+class GuideSubStep(GuideTarget):
     instruction: str = Field(default="", description="One short imperative line, max 12 words.")
     where: str | None = ""
     why: str | None = ""
-    target_x: int | None = None
-    target_y: int | None = None
 
 
-class GuideAnswer(BaseModel):
+class GuideAnswer(GuideTarget):
     """Guidance answered by the H agent in guide mode: the next step, plus following steps visible on the same screen."""
 
     steps: list[GuideSubStep] | None = Field(
@@ -97,11 +113,16 @@ class GuideAnswer(BaseModel):
     instruction: str = Field(default="", description="What the user should do now. One short line, max 12 words.")
     where: str | None = Field(default="", description="Where the control is on screen, in words.")
     why: str | None = Field(default="", description="One or two sentences: what this step achieves for the user.")
-    target_x: int | None = Field(default=None, description="X pixel of the control in the screenshot you see, or null if there is nothing to point at.")
-    target_y: int | None = Field(default=None, description="Y pixel of the control in the screenshot you see, or null.")
+    coordinate_system: Literal["normalized_1000"] | None = Field(default=None,
+        description="Set normalized_1000 explicitly whenever returning a target, including targets in steps. Applies to both axes and every step. Never pixels or viewport coordinates.")
     last: bool | None = Field(default=False, description="True when the goal is visibly achieved or the user is blocked.")
     blocked: bool | None = Field(default=False, description="True if the user cannot proceed (error, permission).")
     blocker: str | None = Field(default=None, description="Exact message seen on screen when blocked.")
+
+    @field_validator("coordinate_system", mode="before")
+    @classmethod
+    def explicit_coordinate_system_or_none(cls, value):
+        return value if value == "normalized_1000" else None
 
     def model_post_init(self, __context) -> None:
         self.where, self.why = self.where or "", self.why or ""
@@ -442,7 +463,6 @@ class HBackend:
                 if ans is None:
                     declared = DeclaredResult(outcome="unclear", summary=str(result.answer or ""))
                     break
-                width = min(self.screenshot_max_width, 1024)
                 subs = ans.steps or [GuideSubStep(instruction=ans.instruction, where=ans.where, why=ans.why,
                                                   target_x=ans.target_x, target_y=ans.target_y)]
                 subs = [x for x in subs if x.instruction] or [GuideSubStep(instruction=ans.instruction or "…")]
@@ -452,7 +472,8 @@ class HBackend:
                 aborted = False
                 for k, sub in enumerate(subs[:3]):
                     gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where or "",
-                                      why=sub.why or "", pointer=_to_screen_points(sub.target_x, sub.target_y, width),
+                                      why=sub.why or "", pointer=_guide_target_to_screen(
+                                          sub.target_x, sub.target_y, ans.coordinate_system),
                                       last=(ans.last or ans.blocked))
                     guidance.append(gs)
                     reply = on_guidance(gs)  # blocks until the user did it (or stop); None on last steps
@@ -613,6 +634,30 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
     if etype == "AgentErrorEvent":
         return Step(index=index, attempt=attempt, timestamp=ts, kind="error", summary=str(d.get("error"))[:300])
     return None
+
+
+def _guide_target_to_screen(x, y, coordinate_system, *, screen_size=None) -> tuple[int, int] | None:
+    """Full-main-display GUIDE target -> overlay points; missing/unknown frames hide the target.
+
+    No pixel/normalized heuristic. This mapping is for uncropped full-display
+    captures only; a future cropped/window capture needs its own explicit frame.
+    """
+    if coordinate_system != "normalized_1000":
+        return None
+    if any(type(v) not in (int, float) or not 0 <= v <= 1000 or not math.isfinite(v) for v in (x, y)):
+        return None
+    try:
+        if screen_size is None:
+            from .overlay import screen_size_points
+
+            screen_size = screen_size_points()
+        sw, sh = screen_size
+        if any(type(v) not in (int, float) or not math.isfinite(v) or v < 1 for v in (sw, sh)):
+            return None
+        # Each axis has its own scale; Retina backing pixels never enter here.
+        return min(round(x * sw / 1000), math.ceil(sw) - 1), min(round(y * sh / 1000), math.ceil(sh) - 1)
+    except Exception:
+        return None
 
 
 def _to_screen_points(x: int | None, y: int | None, screenshot_max_width: int) -> tuple[int, int] | None:

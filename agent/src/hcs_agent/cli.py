@@ -90,7 +90,7 @@ def _prefetch_voice(request: InterventionRequest) -> None:
 _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
 _FEEDBACK = DesktopFeedback()
 _RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
-_TEST_SENTENCE = "Hi, I'm your H Companion. Hold Command H and tell me what you need."
+_TEST_SENTENCE = "Bonjour, je suis H Companion. Je peux maintenant lire les indications à voix haute."
 
 
 def _set_autonomy(level: int) -> None:
@@ -140,8 +140,9 @@ def _control_status() -> dict:
         "voice": {"state": _VOICE.get("state"), "last_text": _VOICE.get("last_text"),
                   "ptt_key": getattr(ptt, "key_name", None)},
         "speech": {"available": sp is not None, "enabled": bool(sp is not None and not sp.muted),
-                   "voice": os.environ.get("HCS_TTS_VOICE") or "EXAVITQu4vr4xnSDxMaL",
-                   "speed": float(os.environ.get("HCS_TTS_SPEED") or 1.0),
+                   "provider": getattr(sp, "provider", None),
+                   "voice": getattr(sp, "voice", None) or os.environ.get("HCS_TTS_VOICE") or "EXAVITQu4vr4xnSDxMaL",
+                   "speed": getattr(sp, "speed", None) or float(os.environ.get("HCS_TTS_SPEED") or 1.0),
                    "speaking": bool(sp is not None and sp.speaking)},
         "current": cur,
     }
@@ -226,10 +227,15 @@ def _new_request_pending() -> bool:
     return ptt is not None and not ptt.transcripts.empty()
 
 
-def _ensure_magnet():
+def _ensure_magnet(ov=None):
     """Bottom-left autonomy slider; clicks change the running intervention and the default for the next ones."""
-    if _MAGNET["widget"] is not None or sys.platform != "darwin":
+    if _MAGNET["widget"] is not None:
+        if ov is not None:
+            _MAGNET["widget"].on_compact_changed = ov.set_compact
+            ov.set_compact(_MAGNET["widget"].compact)
         return _MAGNET["widget"]
+    if sys.platform != "darwin":
+        return None
     try:
         from .overlay import AUTONOMY_LABELS, MagnetWidget
 
@@ -237,7 +243,9 @@ def _ensure_magnet():
             print(f"\n  [magnet] {AUTONOMY_LABELS[level]}", flush=True)
             _set_autonomy(level)
 
-        _MAGNET["widget"] = MagnetWidget(_MAGNET["level"], on_change)
+        _MAGNET["widget"] = MagnetWidget(_MAGNET["level"], on_change,
+                                         on_compact_changed=ov.set_compact if ov is not None else None,
+                                         shortcut=os.environ.get("HCS_PTT_KEY", "ctrl+shift+h"))
         srv = _CONTROL.get("server")
         if srv is not None and srv.ctl.app_present:
             _MAGNET["widget"].hide()  # the desktop app is already open and holds the setting
@@ -316,7 +324,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
     _FEEDBACK.register(it)
     _MAGNET["current"] = it
     if ov is not None:
-        _ensure_magnet()
+        _ensure_magnet(ov)
     print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, "
           f"mode: {request.mode.value}, autonomy: {request.autonomy})")
     if ov is not None:
@@ -424,7 +432,7 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
     ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
     ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
-    ov.badge("⌘H: new request")
+    ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
@@ -474,11 +482,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
         voice_state["s"] = s
         _VOICE["state"] = s
         print(f"  [voice] {s}", flush=True)
-        if s == "recording":
+        if s in {"starting", "recording"}:
             _hush()  # the user speaks: we stop talking (and the mic does not hear us)
         if ov is None:
             return
-        if s == "recording":
+        if s == "starting":
+            ov.badge("Opening microphone…", pulsing=True)
+        elif s == "recording":
             ov.badge("Listening…", pulsing=True)
         elif s == "transcribing":
             ov.badge("Transcribing…")
@@ -486,7 +496,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             ov.badge(None)
 
     if ov is not None:
-        _ensure_magnet()
+        _ensure_magnet(ov)
         _voice_for(ov)
         if _SPEECH["speaker"] is not None:
             _SPEECH["speaker"].prefetch(list(_COMMON_LINES))
@@ -771,7 +781,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif time.time() - _LAST_LOOKUP_AT < 4:
             ov.badge("Searching the web…", pulsing=True)
         elif it.state is State.running:
-            ov.badge("Looking at the screen…", pulsing=True)
+            ov.badge("Holo is preparing guidance…", pulsing=True)
         elif it.state is State.verifying:
             ov.badge("Checking the result…", pulsing=True)
         elif it.state.terminal:

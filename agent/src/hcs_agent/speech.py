@@ -1,4 +1,4 @@
-"""Spoken notes (ElevenLabs TTS): the assistant reads aloud what the overlay writes on screen.
+"""Spoken notes: the assistant reads aloud what the overlay writes on screen.
 
 Synchronisation with the overlay:
 - `say()` is called right before a scene is shown; the overlay holds the pencil reveal while `holding()` is
@@ -11,8 +11,11 @@ Latency: ~1 s per sentence from ElevenLabs. The guide steps of a procedure are k
 so `prefetch()` synthesises them in the background; every clip is cached on disk (keyed by voice, model and
 text), so a repeated step or a second demo take plays instantly.
 
-Config: ELEVENLABS_API_KEY (or ELEVEN; also read from backend/.env), HCS_TTS=0 to mute, HCS_TTS_VOICE
+Config: HCS_TTS_PROVIDER=auto (ElevenLabs when configured, otherwise macOS locally), elevenlabs or macos.
+ELEVENLABS_API_KEY (or ELEVEN; also read from backend/.env), HCS_TTS=0 to mute, HCS_TTS_VOICE
 (voice id, default Sarah), HCS_TTS_MODEL (default eleven_flash_v2_5), HCS_TTS_SPEED (0.7-1.2).
+HCS_TTS_MACOS_VOICE selects an installed macOS voice; unset uses the system voice. Local synthesis
+uses `say` into a temporary WAV, without speaking during prefetch or sending the text over the network.
 Playback: afplay on macOS (aplay / paplay elsewhere); no audio player = no speech, never an error.
 """
 
@@ -82,6 +85,29 @@ def elevenlabs_synth(api_key: str, voice: str = DEFAULT_VOICE, model: str = DEFA
     return synth
 
 
+def macos_synth(executable: str, voice: str = "", speed: float = 1.0) -> Synth:
+    """Produce PCM locally and silently; the normal player owns all audible output and interruption."""
+    def synth(text: str) -> bytes:
+        with tempfile.TemporaryDirectory(prefix="hcs-local-tts-") as folder:
+            path = Path(folder) / "speech.wav"
+            args = [executable, "-o", str(path), "--file-format=WAVE",
+                    f"--data-format=LEI16@{SAMPLE_RATE}", "-r", str(round(175 * speed))]
+            if voice:
+                args.extend(["-v", voice])
+            # Stdin keeps arbitrary text out of argv/options; no shell, no command interpolation.
+            args.extend(["-f", "-"])
+            subprocess.run(args, input=text, encoding="utf-8", check=True, timeout=20,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with wave.open(str(path), "rb") as wav:
+                if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) != (1, 2, SAMPLE_RATE):
+                    raise RuntimeError("macOS voice returned an unsupported audio format")
+                pcm = wav.readframes(wav.getnframes())
+                if not pcm:
+                    raise RuntimeError("macOS voice returned no audio")
+                return pcm
+    return synth
+
+
 def system_player() -> Player | None:
     """afplay on macOS; aplay / paplay on Linux. None when nothing can play audio."""
     for cmd in (["afplay"], ["aplay", "-q"], ["paplay"]):
@@ -96,8 +122,10 @@ def system_player() -> Player | None:
 class Speaker:
     """One voice for the whole process. Thread-safe; playback runs on its own worker thread."""
 
-    def __init__(self, synth: Synth, player: Player, cache_dir: Path, *, max_hold_s: float = 1.5) -> None:
+    def __init__(self, synth: Synth, player: Player, cache_dir: Path, *, max_hold_s: float = 1.5,
+                 provider: str = "custom", voice: str = "", speed: float = 1.0) -> None:
         self._synth, self._player = synth, player
+        self.provider, self.voice, self.speed = provider, voice, speed
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.max_hold_s = max_hold_s
@@ -278,22 +306,40 @@ def _api_key() -> str | None:
 
 
 def make_speaker() -> Speaker | None:
-    """The process voice, or None (muted, no key, or no audio player): callers then simply stay silent."""
+    """The process voice, or None when disabled/unavailable. macOS fallback is local and keyless."""
     if os.environ.get("HCS_TTS", "1").lower() in {"0", "false", "no", "off"}:
         return None
-    key = _api_key()
-    if not key:
-        print("(voice off: no ElevenLabs key — set ELEVENLABS_API_KEY or ELEVEN)", flush=True)
+    provider = os.environ.get("HCS_TTS_PROVIDER", "auto").lower().strip()
+    if provider not in {"auto", "elevenlabs", "macos"}:
+        print("(voice off: unsupported HCS_TTS_PROVIDER)", flush=True)
         return None
+    key = _api_key() if provider != "macos" else None
+    if provider == "auto":
+        provider = "elevenlabs" if key else "macos"
     player = system_player()
     if player is None:
         print("(voice off: no audio player found)", flush=True)
         return None
-    voice = os.environ.get("HCS_TTS_VOICE", DEFAULT_VOICE)
-    model = os.environ.get("HCS_TTS_MODEL", DEFAULT_MODEL)
     try:
         speed = min(1.2, max(0.7, float(os.environ.get("HCS_TTS_SPEED", "1.0"))))
     except ValueError:
         speed = 1.0
-    cache = Path(tempfile.gettempdir()) / "hcs-tts" / f"{voice}-{model}-{speed:g}"
-    return Speaker(elevenlabs_synth(key, voice, model, speed), player, cache)
+    if provider == "macos":
+        executable = shutil.which("say") if sys.platform == "darwin" else None
+        if not executable:
+            print("(voice off: no ElevenLabs key or local macOS voice available)", flush=True)
+            return None
+        voice = os.environ.get("HCS_TTS_MACOS_VOICE", "").strip()
+        synth = macos_synth(executable, voice, speed)
+        model = "macos-say"
+        print("(voice: local macOS synthesis)", flush=True)
+    else:
+        if not key:
+            print("(voice off: no ElevenLabs key — set ELEVENLABS_API_KEY or ELEVEN)", flush=True)
+            return None
+        voice = os.environ.get("HCS_TTS_VOICE", DEFAULT_VOICE)
+        model = os.environ.get("HCS_TTS_MODEL", DEFAULT_MODEL)
+        synth = elevenlabs_synth(key, voice, model, speed)
+    cache_id = hashlib.sha256(f"{provider}:{voice}:{model}:{speed:g}".encode()).hexdigest()[:20]
+    cache = Path(tempfile.gettempdir()) / "hcs-tts" / cache_id
+    return Speaker(synth, player, cache, provider=provider, voice=voice or "System", speed=speed)

@@ -601,3 +601,24 @@ La vérification directe du modèle conserve ses observations sans ajouter un
 faux identifiant de session H dans l'archive. Les logs du lanceur humain suivent
 désormais le même dossier privé que les épisodes. Aucun nouvel essai H ni retour
 humain n'a été fabriqué pour ces contrôles.
+
+## 2026-11-08 — Positionnement, voix locale et encombrement du coaching
+
+Retour humain dans le chat : consignes claires, repères mal placés. Ce retour
+ne fournit pas de label de réussite ou d'utilité pour chaque essai.
+
+Dans l'essai privé `sess_218da7c4dd91`, le premier guidage arrive 12,53 s après
+le début de l'essai ; les cinq suivants arrivent entre 5,78 et 6,96 s après
+reprise, médiane 6,37 s. Entre réception d'une observation et émission de la
+consigne : 4,90 à 6,04 s. Ces temps comprennent la boucle API et la restitution,
+pas uniquement l'inférence. Le temps de lecture/action humaine est exclu de ces
+intervalles ; le temps total de séance ne mesure pas la latence du modèle.
+
+Correctifs préparés : contrat de coordonnées GUIDE explicite 0–1000, échelles
+X/Y indépendantes, cibles invalides ou ambiguës masquées ; Magnet repliable et
+badge de raccourci masqué en mode compact, états actifs conservés ; voix macOS
+locale Thomas quand le pilote humain est lancé sans fournisseur vocal externe.
+La transcription Gladia et la synthèse vocale sont des composants distincts.
+La synthèse Thomas a produit un WAV valide hors sandbox, sans lecture audio
+pendant ce contrôle. Aucun gain de latence H ni précision réelle après correctif
+n'est encore établi par ces tests techniques.

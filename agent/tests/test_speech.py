@@ -5,6 +5,9 @@ from __future__ import annotations
 import threading
 import time
 import wave
+from pathlib import Path
+
+import pytest
 
 from hcs_agent import speech
 from hcs_agent.speech import Speaker, clean, write_wav
@@ -158,6 +161,8 @@ def test_make_speaker_off_without_key_or_when_muted(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)  # no backend/.env up the tree from here
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     monkeypatch.delenv("ELEVEN", raising=False)
+    monkeypatch.setenv("HCS_TTS_PROVIDER", "elevenlabs")
+    monkeypatch.setenv("HCS_TTS", "1")
     assert speech.make_speaker() is None
     monkeypatch.setenv("ELEVEN", "k")
     monkeypatch.setenv("HCS_TTS", "0")
@@ -174,3 +179,155 @@ def test_key_read_from_backend_env(monkeypatch, tmp_path):
     assert speech._api_key() == "from-file"
     monkeypatch.setenv("ELEVENLABS_API_KEY", "from-env")
     assert speech._api_key() == "from-env"
+
+
+def test_macos_synthesis_is_file_only_and_text_is_stdin(monkeypatch):
+    calls = []
+    pcm = b"\x01\x00" * 100
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        write_wav(Path(args[args.index("-o") + 1]), pcm)
+
+    monkeypatch.setattr(speech.subprocess, "run", run)
+    text = "-v BadVoice; $(touch /tmp/unwanted) `echo nope` Bonjour !"
+    assert speech.macos_synth("/usr/bin/say", "Thomas", 1.2)(text) == pcm
+    args, opts = calls[0]
+    assert args[0] == "/usr/bin/say" and args[-2:] == ["-f", "-"]
+    assert "--file-format=WAVE" in args and "--data-format=LEI16@22050" in args
+    assert args[args.index("-v") + 1] == "Thomas"
+    assert args[args.index("-r") + 1] == "210"
+    assert text not in args and opts["input"] == text
+    assert not opts.get("shell", False) and opts["check"] and opts["timeout"] == 20
+    assert not Path(args[args.index("-o") + 1]).exists()  # temporary audio removed
+
+
+@pytest.mark.parametrize("rate,pcm", [(44100, b"\x00\x00"), (22050, b"")])
+def test_macos_synthesis_rejects_unusable_audio_and_cleans_up(monkeypatch, rate, pcm):
+    paths = []
+
+    def run(args, **kwargs):
+        path = Path(args[args.index("-o") + 1])
+        paths.append(path)
+        write_wav(path, pcm, rate)
+
+    monkeypatch.setattr(speech.subprocess, "run", run)
+    with pytest.raises(RuntimeError):
+        speech.macos_synth("/usr/bin/say")("Bonjour")
+    assert paths and not paths[0].exists()
+
+
+@pytest.fixture
+def provider_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("HCS_TTS", "1")
+    monkeypatch.setenv("HCS_TTS_PROVIDER", "auto")
+    monkeypatch.setenv("HCS_TTS_SPEED", "1.0")
+    monkeypatch.setenv("HCS_TTS_MACOS_VOICE", "Thomas")
+    monkeypatch.setattr(speech, "_api_key", lambda: None)
+    monkeypatch.setattr(speech.sys, "platform", "darwin")
+    monkeypatch.setattr(speech.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(speech.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(speech, "system_player", lambda: lambda path: FakeProc(0))
+    # Provider creation alone must never synthesise, play, or send an HTTP request.
+    monkeypatch.setattr(speech, "macos_synth", lambda *args: lambda text: b"\x00\x00")
+    monkeypatch.setattr(speech, "elevenlabs_synth", lambda *args: lambda text: b"\x00\x00")
+
+
+def test_auto_without_key_uses_macos_and_reports_provider(provider_env):
+    sp = speech.make_speaker()
+    try:
+        assert sp is not None
+        assert (sp.provider, sp.voice, sp.speed) == ("macos", "Thomas", 1.0)
+        assert not sp.speaking and sp.spoken == []
+    finally:
+        if sp:
+            sp.close()
+
+
+def test_auto_preserves_elevenlabs_when_key_exists(provider_env, monkeypatch):
+    monkeypatch.setattr(speech, "_api_key", lambda: "test-key")
+    sp = speech.make_speaker()
+    try:
+        assert sp is not None and sp.provider == "elevenlabs"
+    finally:
+        if sp:
+            sp.close()
+
+
+def test_explicit_macos_does_not_read_elevenlabs_key(provider_env, monkeypatch):
+    monkeypatch.setenv("HCS_TTS_PROVIDER", "macos")
+    monkeypatch.setattr(speech, "_api_key", lambda: pytest.fail("No key needed for local speech"))
+    sp = speech.make_speaker()
+    try:
+        assert sp is not None and sp.provider == "macos"
+    finally:
+        if sp:
+            sp.close()
+
+
+@pytest.mark.parametrize("failure", ["muted", "linux", "missing-say", "missing-player", "explicit-elevenlabs", "invalid-provider"])
+def test_local_fallback_does_not_override_disabled_or_unavailable_audio(provider_env, monkeypatch, failure):
+    if failure == "muted":
+        monkeypatch.setenv("HCS_TTS", "0")
+    elif failure == "linux":
+        monkeypatch.setattr(speech.sys, "platform", "linux")
+    elif failure == "missing-say":
+        monkeypatch.setattr(speech.shutil, "which", lambda _: None)
+    elif failure == "missing-player":
+        monkeypatch.setattr(speech, "system_player", lambda: None)
+    elif failure == "explicit-elevenlabs":
+        monkeypatch.setenv("HCS_TTS_PROVIDER", "elevenlabs")
+    else:
+        monkeypatch.setenv("HCS_TTS_PROVIDER", "invalid")
+    assert speech.make_speaker() is None
+
+
+def test_stop_during_local_synthesis_prevents_late_playback(provider_env, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    played = []
+
+    def synth(text):
+        entered.set()
+        assert release.wait(2)
+        return b"\x00\x00" * 100
+
+    monkeypatch.setattr(speech, "macos_synth", lambda *args: synth)
+    monkeypatch.setattr(speech, "system_player", lambda: lambda path: played.append(path))
+    sp = speech.make_speaker()
+    try:
+        sp.say("Instruction")
+        assert entered.wait(1)
+        sp.stop()  # same hook used by PTT recording and Stop
+        assert not sp.holding()
+        release.set()
+        assert sp.wait_idle(2)
+        assert played == [] and sp.spoken == []
+    finally:
+        release.set()
+        sp.close()
+
+
+def test_local_playback_mute_and_close_use_existing_interruptible_player(provider_env, monkeypatch):
+    played = []
+
+    def player(path):
+        proc = FakeProc(5)
+        played.append(proc)
+        return proc
+
+    monkeypatch.setattr(speech, "system_player", lambda: player)
+    sp = speech.make_speaker()
+    try:
+        sp.muted = True
+        sp.say("Muted")
+        assert sp.wait_idle(1) and not played
+        sp.muted = False
+        sp.say("Playing")
+        deadline = time.time() + 1
+        while not played and time.time() < deadline:
+            time.sleep(0.005)
+        assert played
+        sp.close()
+        assert played[0].killed and sp.wait_idle(2)
+    finally:
+        sp.close()

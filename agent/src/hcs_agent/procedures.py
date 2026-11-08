@@ -276,7 +276,12 @@ Rules:
 - Work one step at a time. Look at the screen, then answer with exactly one step.
   `instruction`: one short line, max 12 words, imperative ("Click the CRM app icon").
   `why`: one or two sentences for a first-week user.
-  `target_x`/`target_y`: the pixel position of the control in the screenshot you are looking at.
+  `coordinate_system`: explicitly return "normalized_1000" whenever any target is present.
+  `target_x` = 1000 * horizontal position / full screenshot width;
+  `target_y` = 1000 * vertical position / full screenshot height. Both axes range from 0 to 1000,
+  with origin at the top-left of the FULL screenshot, including browser chrome. This applies to
+  every entry in `steps` too. Never return screenshot pixels, viewport pixels or physical Retina pixels.
+  If the control is not visible or the coordinates are uncertain, return null targets and explain in words.
 - If the expected software is not visible (another app or tab is in front), do NOT hunt for it: answer
   with target null and an instruction like "Bring the Odoo tab to the front", nothing else.
 - After each answer the user tells you they did the step (or could not). Look at the screen again before
@@ -289,6 +294,10 @@ Rules:
   `blocker` and set last=true, blocked=true.
 - If you are not sure what a menu or a field is for, or where a feature lives, call `lookup_docs` and
   put the answer in `why`, briefly. Say "I am not sure" rather than guessing.
+- The reference procedure's scope remains binding when you guide a HUMAN action. An action forbidden
+  by that procedure must not be performed indirectly by asking the user to do it. For a read-only
+  procedure, do not instruct the user to upload, create, change, delete, start or confirm a mutation.
+  Explain the relevant documentation instead and state that carrying it out is outside this procedure.
 """
 
 

@@ -59,6 +59,10 @@ def main():
         HCS_BACKEND_URL=f'http://127.0.0.1:{args.backend_port}', HCS_INGEST_TOKEN=credentials['ingest_token'],
         HCS_SUPPORT_USER='human-h-company', HCS_SUPPORT_EVENTS='1', HCS_PTT_KEY=args.key,
         HCS_RUNS_DIR=str(runs))
+    # This Mac pilot can speak without an external TTS account. Keep an explicit
+    # provider override (and HCS_TTS=0) available to the operator.
+    os.environ.setdefault('HCS_TTS_PROVIDER', 'macos' if sys.platform == 'darwin' else 'auto')
+    os.environ.setdefault('HCS_TTS_MACOS_VOICE', 'Thomas')
     from hcs_backend.app import create_app
     from hcs_backend.config import Settings
     import uvicorn

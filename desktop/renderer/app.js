@@ -323,7 +323,10 @@ function renderProviders() {
   );
   const e = usage.elevenlabs;
   box.append(
-    e
+    status?.speech?.provider === "macos"
+      ? provider("Voix macOS", "voix locale", status.speech.voice || "Système",
+          "La voix est produite sur ce Mac, sans appel ElevenLabs.", null)
+      : e
       ? provider("ElevenLabs", "voice", `${(e.characters_used ?? 0).toLocaleString()} chars`,
           `of ${(e.characters_limit ?? 0).toLocaleString()} on ${e.tier || "your"} plan` +
             (e.resets_at ? ` · resets ${new Date(e.resets_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""),
@@ -372,6 +375,7 @@ let speedTouched = 0;
 function renderVoice() {
   const sp = (status && status.speech) || null;
   const usable = Boolean(sp && sp.available);
+  const localVoice = sp?.provider === "macos";
   const sw = $("ttsSwitch");
   sw.setAttribute("aria-checked", String(Boolean(sp && sp.enabled)));
   sw.disabled = !usable;
@@ -382,6 +386,7 @@ function renderVoice() {
       b.dataset.id = v.id;
       b.append(el("b", null, v.name), el("span", null, v.note));
       b.addEventListener("click", async () => {
+        if (status?.speech?.provider === "macos") return;
         await api.agent("POST", "/voice", { voice: v.id });
         poll();
       });
@@ -390,7 +395,8 @@ function renderVoice() {
   }
   box.querySelectorAll(".voice").forEach((b) => {
     b.classList.toggle("on", Boolean(sp && sp.voice === b.dataset.id));
-    b.disabled = !usable;
+    b.disabled = !usable || localVoice;
+    b.title = localVoice ? "Ces voix ElevenLabs sont indisponibles en mode voix locale." : "";
   });
   if (sp && Date.now() - speedTouched > 2000) $("speed").value = String(sp.speed ?? 1);
   $("speed").disabled = !usable;
@@ -399,8 +405,10 @@ function renderVoice() {
   $("ttsNote").textContent = !status
     ? "Start the agent to set the voice."
     : usable
-      ? "Voices by ElevenLabs. Sentences are prepared ahead, so the voice starts with the drawing."
-      : "Voice unavailable: add the ElevenLabs key (ELEVEN in backend/.env), then restart the agent.";
+      ? localVoice
+        ? `Voix locale macOS : ${sp.voice || "voix système"}. Le son, la vitesse et le test restent disponibles ; les voix ElevenLabs sont désactivées.`
+        : "Voices by ElevenLabs. Sentences are prepared ahead, so the voice starts with the drawing."
+      : "Voix indisponible. Vérifie la sortie audio et la configuration du moteur vocal.";
   $("pttKey").textContent = keyLabel(status && status.voice && status.voice.ptt_key);
 }
 $("ttsSwitch").addEventListener("click", async () => {
@@ -439,6 +447,7 @@ async function poll() {
   renderHome();
   await loadFeedback();
   if (view === "voice") renderVoice();
+  if (view === "usage" && was?.speech?.provider !== status?.speech?.provider) renderProviders();
   // A task just ended (or the agent came up): refresh the numbers and the list.
   const key = status && status.current ? `${status.current.session_id}:${status.current.terminal}` : String(Boolean(status));
   if (key !== lastSessionKey || Boolean(was) !== Boolean(status)) {
