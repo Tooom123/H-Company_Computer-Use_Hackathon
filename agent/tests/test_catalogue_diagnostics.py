@@ -80,3 +80,29 @@ def test_local_status_copies_only_the_saved_diagnostic(catalogue, monkeypatch):
     assert diagnostic == backend.last_catalogue_diagnostic
     backend.last_catalogue_diagnostic['status'] = 'unavailable'
     assert diagnostic['status'] == 'ready'
+
+
+def test_web_response_text_is_separate_from_controls_and_excludes_covered_or_offscreen(catalogue, monkeypatch):
+    backend, page = catalogue
+    page.native = False
+    page.viewport = (0, 0, 1000, 700)
+    answer = a11y.Candidate('AXStaticText', 'The answer is displayed. ' * 12, (500, 200, 450, 200))
+    covered = a11y.Candidate('AXStaticText', 'Covered text', (300, 300, 100, 20))
+    offscreen = a11y.Candidate('AXStaticText', 'Outside viewport', (300, 900, 100, 20))
+    page.elements.extend([answer, covered, offscreen])
+    monkeypatch.setattr(a11y, 'visible_at_point', lambda e: e is not covered)
+    info, controls = backend.page_catalogue()
+    assert info.readable_text == (answer.name,)
+    assert len(controls) == 2 and all(e.role != 'AXStaticText' for e in controls)
+    assert 'answer is displayed' not in json.dumps(backend.last_catalogue_diagnostic)
+
+
+def test_text_excerpts_are_bounded_and_do_not_consume_control_slots(catalogue, monkeypatch):
+    backend, page = catalogue
+    page.native = False
+    page.elements += [a11y.Candidate('AXStaticText', f'{n}: ' + 'word ' * 300, (10, 100, 800, 100))
+                      for n in range(100)]
+    monkeypatch.setattr(a11y, 'visible_at_point', lambda _: True)
+    info, controls = backend.page_catalogue(max_items=2)
+    assert len(controls) == 2
+    assert 0 < sum(map(len, info.readable_text)) <= 6000

@@ -90,6 +90,7 @@ class PageInfo:
     walk_s: float = 0.0
     native: bool = False
     bundle_id: str | None = None
+    readable_text: tuple[str, ...] = ()  # bounded visible excerpts, never input values or click targets
 
 
 def available() -> bool:
@@ -272,7 +273,9 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
         # into a field never does: field values are not read (they can hold personal data or secrets).
         if not name and role in ("AXStaticText", "AXHeading", "AXLink", "AXButton"):
             name = _text(_attr(el, "AXValue"))
-        if not name or len(name) > 120:
+        if role in {"AXStaticText", "AXHeading"} and len(name) > 2048:
+            name = name[:2048] + "… [excerpt truncated]"
+        if not name or (len(name) > 120 and role not in {"AXStaticText", "AXHeading"}):
             continue
         frame = None
         if frame_v is not None and not isinstance(frame_v, (str, int, float)):

@@ -1002,6 +1002,14 @@ class _TargetTracker:
             if info is None or len(info.elements) <= 1:
                 continue  # no page to compare with: keep what we have
             tracked = self._choose_candidate(best, ties) if info.is_front else None
+            if tracked is None and info.is_front:
+                # A scoring shortlist can omit the exact originally grounded control.
+                # Recover only its exact label and anchored geometry, still hit-tested.
+                exact = [e for e in info.elements if e.role in a11y.INTERACTIVE
+                         and e.name.casefold().strip() == desc.casefold().strip()]
+                candidate = self._choose_candidate(None, exact)
+                if candidate is not None and a11y.visible_at_point(candidate):
+                    tracked = candidate
             self.box = tracked.box if tracked else None
             if tracked:
                 self._anchor_box, self._target_role = tracked.box, tracked.role
@@ -1277,7 +1285,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             message = None
             if inputs.invalidated_at is not None:
                 message = ("Keep the app in front. Updating the guidance…" if reobserve_allowed and reobservations < 1
-                           else "The target is no longer visible. Stop task, then ask again.")
+                           else "I couldn't keep track of the target. Stop task, then ask again.")
             ov.badge(message)
         elif time.time() - _LAST_LOOKUP_AT < 4:
             ov.badge("Searching the web…", pulsing=True)
@@ -1380,7 +1388,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             g = it.guidance[-1]
             if inputs.acted(g.kind):
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
-                advance(note=inputs.observation_note(g.kind))
+                if advance(note=inputs.observation_note(g.kind)):
+                    reobservations = 0
                 return
             if reobserve_allowed and reobservations < 1 and inputs.reobservation_ready(
                     tracker.measurement, g.index, allow_missing_target=automatic):

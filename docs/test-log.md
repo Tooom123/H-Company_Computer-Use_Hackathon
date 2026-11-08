@@ -1144,3 +1144,30 @@ catalogue/launcher, product identity preserved in the shared tower, preparation
 stage timings, reuse of an unchanged unique target after unrelated layout jitter,
 and removal of the unused screen-difference watcher. 325 targeted offline tests
 passed. A human voice/click trial is still needed to validate the latency fix.
+
+### H session review: missing response text and target recovery — 2026-11-08
+
+Human trial `sess_b784d78bf8ac` recognized clicks on Answer but repeated the
+instruction and eventually escalated. The later `sess_1a5225af2124` exhausted
+its target-reobservation budget. Its stopped trace is retained; no successful
+human outcome or feedback label is inferred.
+
+The browser catalogue excluded static text and the AX collector discarded
+paragraphs over 120 characters. The planner could read controls but not the
+response content. It now receives bounded, hit-tested page-text excerpts,
+separately from actionable controls (maximum 6,000 characters / 32 excerpts).
+Input values and input descendants remain excluded. Changes to those excerpts
+invalidate stale plans and count as observed page changes, not task success.
+The tracker can recover an exact anchored control omitted by its scoring
+shortlist. A recognized interaction renews the one-reobservation budget;
+consecutive invalidations without interaction remain bounded.
+
+243 targeted offline tests passed. Three real Holo4 Models API planner calls
+used synthetic replay inputs derived from observed non-secret labels, without
+browser actions. First replay read the response but unnecessarily asked the
+user to inspect it (1.595 s). After the prompt correction, the paired cases
+returned: populated AGENT ANSWER -> direct informational answer, done=true
+(1.596 s); no answer text -> click Answer, done=false (1.461 s). These are
+individual planner latencies, not end-to-end voice latency or a human benchmark.
+Replay records remain private under human-cognition/diagnostics. Live voice,
+target placement and post-click continuation still need the human retest.

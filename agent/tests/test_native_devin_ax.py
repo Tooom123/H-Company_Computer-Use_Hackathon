@@ -318,6 +318,18 @@ def test_walk_never_requests_values_from_input_or_password_controls(fake_ax):
     assert any(node is static and name == "AXValue" for node, name in fake_ax.reads)
 
 
+def test_long_page_response_is_kept_as_bounded_text_instead_of_disappearing(fake_ax):
+    response = "The agent produced an answer. " * 120
+    text = _node("AXStaticText", AXValue=response)
+    secret = _node("AXStaticText", AXValue="private-editor-content")
+    editor = _node("AXTextArea", "Message", [secret])
+    items = a11y._walk(_node("AXWebArea", children=[text, editor]))
+    paragraph = next(e for e in items if e.role == "AXStaticText")
+    assert paragraph.name.startswith("The agent produced an answer.")
+    assert "excerpt truncated" in paragraph.name and len(paragraph.name) < 2100
+    assert all(node is not secret for node, _ in fake_ax.reads)
+
+
 @pytest.mark.parametrize("role", [
     "AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXSecureTextField",
 ])

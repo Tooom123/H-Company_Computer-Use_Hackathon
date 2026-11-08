@@ -241,6 +241,29 @@ def test_ax_control_disappearing_after_target_click_still_requests_verification(
     assert "Result not verified" in rig.w.observation_note("click")
 
 
+def test_tracker_recovers_original_exact_control_omitted_by_scoring_shortlist(monkeypatch):
+    from hcs_agent import a11y
+    monkeypatch.setattr(a11y, 'available', lambda: True)
+    monkeypatch.setattr(cli._InputWatcher, '_frontmost_app', staticmethod(lambda: 123))
+    target = a11y.Candidate('AXCheckBox', 'Select run Example', (300, 700, 16, 16))
+    other = a11y.Candidate('AXButton', 'Example', (600, 700, 50, 20))
+    page = a11y.PageInfo('Chrome', 'Sessions', 'https://platform.hcompany.ai/agents/sessions',
+                         elements=[target, other])
+    monkeypatch.setattr(a11y, 'find', lambda _: (other, [], page))
+    monkeypatch.setattr(a11y, 'visible_at_point', lambda _: True)
+    tracker = cli._TargetTracker()
+    tracker.description, tracker.step, tracker._expected_app = target.name, 1, 123
+    tracker._anchor_box = target.box
+    waits = iter([False, True])
+    tracker._stop = SimpleNamespace(wait=lambda _: next(waits))
+    tracker._run()
+    assert tracker.box == target.box
+    monkeypatch.setattr(a11y, 'visible_at_point', lambda _: False)
+    waits = iter([False, True])
+    tracker._run()
+    assert tracker.box is None
+
+
 @pytest.mark.parametrize("event,payload", [("scroll", (100, 100, 0, -1)), ("combo_down", None)])
 def test_scroll_or_voice_shortcut_invalidates_old_target(rig, event, payload):
     arm(rig)
@@ -425,6 +448,28 @@ def test_other_modes_keep_explicit_confirmation_without_automatic_replan(
     r.actions.append(lambda: r.rig.w._on_event("scroll", (0, 0, 0, 1)))
     cli._guide_loop(r.it, auto=False, overlay=False)
     assert r.it.replies == []
+
+
+def test_loop_recovers_again_after_a_confirmed_target_interaction(loop_rig, monkeypatch):
+    r = loop_rig
+    r.it.request.software, r.it.request.autonomy, r.it.request.mode = 'h-company', 0, cli.Mode.guide
+    r.it.request.parameters = {'automatic_context': '1'}
+    tracker = SimpleNamespace(measurement=None, stop=lambda: None)
+    tracker.follow = lambda *args, **kwargs: setattr(tracker, 'measurement', None)
+    monkeypatch.setattr(cli, '_TargetTracker', lambda: tracker)
+    def invalidate():
+        r.rig.w._on_event('scroll', (0, 0, 0, 1))
+        r.rig.clock[0] += .2
+        tracker.measurement = (r.it.guidance[-1].index, r.rig.clock[0], 123, None)
+    def next_(command):
+        r.it.replies.append(command)
+        r.it.guidance.append(GuidanceStep(index=len(r.it.guidance) + 1,
+                                          instruction='Use the fresh target', pointer=(100, 100)))
+    r.it.next = next_
+    r.actions.extend([invalidate, lambda: None, lambda: click(r.rig), lambda: None,
+                      invalidate, lambda: None])
+    cli._guide_loop(r.it, auto=False, overlay=False)
+    assert [reply.done for reply in r.it.replies] == [False, True, False]
 
 
 @pytest.mark.parametrize("stdin,expected", [("", 0), ("\n", 1)])

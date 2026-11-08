@@ -643,6 +643,7 @@ class HBackend:
 
             info = a11y.page()
             if info is not None:
+                info.readable_text = ()
                 diagnostic.update(native=bool(getattr(info, "native", False)), is_front=bool(info.is_front),
                                   raw=len(info.elements))
             automatic = bool(bound and bound.request.parameters.get("automatic_context"))
@@ -659,6 +660,30 @@ class HBackend:
                 return info, []
             if not getattr(self, "observe_only", False) and not automatic:
                 sitemap.remember(info)
+            # Button labels alone cannot tell whether a response panel appeared.
+            # Keep page prose separate from actionable controls and bounded in size.
+            excerpts, text_seen, remaining = [], set(), 6000
+            if info.is_front:
+                for e in sorted(info.elements, key=lambda e: (e.frame[1], e.frame[0])):
+                    if e.role not in {"AXStaticText", "AXHeading"} or e.name in text_seen:
+                        continue
+                    if info.viewport:
+                        vx, vy, vw, vh = info.viewport
+                        cx, cy = e.center
+                        if not (vx <= cx < vx + vw and vy <= cy < vy + vh):
+                            continue
+                    if not a11y.visible_at_point(e):
+                        continue
+                    text_seen.add(e.name)
+                    excerpt = e.name[:min(1000, remaining)]
+                    if len(excerpt) < len(e.name):
+                        marker = "… [excerpt truncated]"
+                        excerpt = excerpt[:max(0, len(excerpt) - len(marker))] + marker[:len(excerpt)]
+                    excerpts.append(excerpt)
+                    remaining -= len(excerpt)
+                    if remaining <= 0 or len(excerpts) >= 32:
+                        break
+            info.readable_text = tuple(excerpts)
             seen: set[tuple[str, str]] = set()
             items = []
             for e in info.elements:

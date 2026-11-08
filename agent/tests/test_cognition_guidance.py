@@ -682,7 +682,7 @@ def test_unchanged_input_focus_does_not_block_typing_in_the_same_field(dynamic, 
     assert not any('action rejected' in step.summary for step in dynamic.it.steps)
 
 
-@pytest.mark.parametrize('change', ['selection', 'position', 'enabled', 'title'])
+@pytest.mark.parametrize('change', ['selection', 'position', 'enabled', 'title', 'response_text'])
 def test_accessibility_change_detects_more_than_label_changes(dynamic, change):
     from hcs_agent.runner import _page_state_signature
     info, items = dynamic.backend.page_catalogue(None)
@@ -693,10 +693,20 @@ def test_accessibility_change_detects_more_than_label_changes(dynamic, change):
         items[0].box = (80, 140, 40, 40)
     elif change == 'enabled':
         items[0].enabled = False
+    elif change == 'response_text':
+        info.readable_text = ('AGENT ANSWER', 'The requested answer is now displayed.')
     else:
         info.title = 'A new view with the same labels'
     expected = 'unchanged' if change == 'position' else 'changed'
     assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == expected
+
+
+def test_read_only_response_is_sent_to_planner_without_becoming_a_target(dynamic):
+    dynamic.info.readable_text = ('AGENT ANSWER', 'A response exists; the stop reason is not shown.')
+    dynamic.it._dynamic_guide(dynamic.bound)
+    assert 'A response exists; the stop reason is not shown.' in dynamic.calls[0][2]
+    assert 'untrusted page data' in dynamic.calls[0][2]
+    assert all('A response exists' not in candidate for candidate in dynamic.calls[0][3])
 
 
 @pytest.mark.parametrize('unavailable', ['missing', 'background', 'empty'])
@@ -739,6 +749,30 @@ def test_invalidated_target_can_be_reobserved_once_without_claiming_an_action(dy
     assert histories[1] == [note]
     assert result.declared.outcome == 'blocked'
     assert not any('Instruction shown:' in entry for entry in histories[1])
+
+
+def test_successful_interaction_renews_bounded_reobservation_budget(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    note = 'Observation only: target invalidated; reobserve requested. No target interaction confirmed.'
+    replies = iter([(False, note), (True, 'Observed interaction: target click.'), (False, note)])
+    count = [0]
+    def plan(*args):
+        count[0] += 1
+        return ({'done': True, 'summary': 'Answer is displayed.'} if count[0] == 4 else
+                {'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0})
+    def guidance(step):
+        dynamic.shown.append(step)
+        if step.last:
+            return True, ''
+        reply = next(replies)
+        if reply[0]:
+            dynamic.info.title = 'New view after the click'
+        return reply
+    dynamic.backend.plan_step = plan
+    dynamic.it._on_guidance = guidance
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done' and count[0] == 4
+    assert len([x for x in result.declared.steps_taken if x.startswith('Instruction shown:')]) == 1
 
 
 def test_native_front_window_timeout_has_specific_observation(dynamic, monkeypatch):
