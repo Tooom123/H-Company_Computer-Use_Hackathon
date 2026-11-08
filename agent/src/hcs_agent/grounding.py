@@ -182,6 +182,8 @@ class Grounder:
                   "The instruction must name exactly the control at target. Read 'Page after that' in the history: "
                   "if your previous step opened something (a dialog, a wizard, a form), continue inside it; never "
                   "repeat a step that already worked, and never ask to close a dialog the goal still needs. "
+                  "A suggested step whose [done when] is already true on this page is finished: skip to the next one. "
+                  "Click only buttons, links, fields, tabs or menu items, never a heading or plain text. "
                   "If the goal is reached, set done=true with a summary. If this page is unrelated and nothing "
                   "listed leads to the goal, kind=info with an instruction telling the person where to go.")
         body = {

@@ -307,7 +307,10 @@ class Intervention:
             on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
             if guide and bound.guide_script() and self.autonomy < 2 and _plan_first(bound.request.software):
                 # Every task on this software is guided from the live page; the script's steps are hints.
-                hints = [f"{st.instruction} (control: {st.element})" if st.element else st.instruction
+                # "done when" lets the planner see a hint is finished: the wizard's title is also "Build an agent",
+                # and without it the planner kept treating the open wizard as the step "Click Build an agent".
+                hints = [(f"{st.instruction} (control: {st.element})" if st.element else st.instruction)
+                         + (f" [done when: {st.done_when}]" if st.done_when else "")
                          for st in bound.guide_script()]
                 if not self._ensure_screen(bound):
                     last_attempt = AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -766,14 +769,22 @@ class Intervention:
             # shown means the user is going round in circles.
             step_key = (instruction, info.url, info.title, frozenset((e.role, e.name) for e in items))
             looped = step_key in shown_on and repeats == 0  # same page as last time: the repeat counter above decides
+            if problem is None and kind == "click" and target is not None and target.role in ("AXHeading", "AXStaticText"):
+                problem = (f"Correction: you asked to click {target.role.replace('AX', '').lower()} '{target.name[:50]}', "
+                           "which is a title or text, not a control. If it is the title of an open dialog or wizard, "
+                           "the step that opens it is done: continue inside it with a listed control.")
             if problem is None and looped:
                 problem = (f"Correction: you already gave the step \"{instruction}\" on this same page and the person "
                            "did it. Do not repeat it: give the next step from the listed controls, "
                            "or set done/blocked.")
             if problem is not None:
                 if not corrections:
-                    self._trace(f"rejected planned step ({'loop' if looped else 'label/target mismatch'}): re-planning")
+                    self._trace(f"rejected planned step ({'loop' if looped else 'inconsistent target'}): "
+                                "looking at the screen, then re-planning")
                     corrections = [problem]
+                    seen = self._screen_note(history)
+                    if seen:
+                        corrections.append(seen)
                     last_instruction = ""
                     continue
                 if native_mode:
@@ -804,6 +815,28 @@ class Intervention:
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="unclear", summary="Step limit reached while guiding from the page; outcome to verify.",
             steps_taken=history))
+
+    def _screen_note(self, history: list[str]) -> str | None:
+        """When the planner is unsure, look at a screenshot (Holo): what is open now, and did the last step work?
+        Browser pages only; the native pilot never captures the desktop."""
+        from .a11y import native_target
+
+        check = getattr(self.backend, "effect_visible", None)
+        if native_target() or check is None:
+            return None
+        last = next((h.split(". ", 1)[0].removeprefix("Instruction shown: ") for h in reversed(history)
+                     if h.startswith("Instruction shown: ")), "")
+        expected = f"the result of the step \"{last}\"" if last else "the page the user is working on"
+        t0 = time.time()
+        try:
+            ok, visible = check(expected)
+        except Exception:  # noqa: BLE001 - a missing screenshot must not stop the guide
+            return None
+        if not isinstance(visible, str) or not visible.strip():
+            return None
+        self._trace(f"screenshot check in {time.time() - t0:.1f}s: {visible[:80]}")
+        return (f"Screenshot check of the screen now (Holo, a visual description, not a guarantee): {visible[:400]}"
+                + (f" Result of the last step \"{last}\" visible: {'yes' if ok else 'no'}." if last else ""))
 
     def _wait_page_change(self, catalogue, bound, signature, timeout_s: float = 1.6):
         """After the user acted, give the page up to ~1.5 s to change (navigation, menu, dialog) before planning

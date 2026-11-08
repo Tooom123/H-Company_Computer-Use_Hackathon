@@ -44,7 +44,8 @@ def test_instruction_naming_a_missing_control_is_replanned_not_framed_on_another
     guide.it._dynamic_guide(guide.bound)
     assert all(s.where != "Close" for s in guide.shown)
     assert guide.shown[0].where == "Name"
-    assert "not among the listed controls" in guide.calls[1][4][-1]
+    assert any("not among the listed controls" in h for h in guide.calls[1][4])
+    assert any(h.startswith("Screenshot check") for h in guide.calls[1][4])
 
 
 def test_mismatched_target_is_moved_to_the_named_control(guide):
@@ -61,7 +62,7 @@ def test_same_step_across_alternating_pages_is_caught(guide):
     guide.it._wait_page_change = lambda *a: (None, guide.page.__setattr__("items", next(pages)) or guide.page.items)
     guide.page.items = AGENTS
     guide.backend.plan_step = lambda *a: guide.calls.append(a) or {
-        "done": False, "instruction": "Click the Build button.", "kind": "click", "target": 1}
+        "done": False, "instruction": "Click the Build button.", "kind": "click", "target": 0}
     result = guide.it._dynamic_guide(guide.bound)
     assert result is None  # handed over instead of looping to the step limit
     assert len(guide.shown) == 2
@@ -121,3 +122,39 @@ def test_unscripted_request_survives_braces_in_docs_and_goal():
     bound = make_generic_procedure(req, 'POST /sessions body: { "files": [...] : sessionId }').bound(req)
     assert '{ "files": [...] : sessionId }' in bound.guide_instructions
     assert "Upload files {with} this session" in bound.objective
+
+
+def test_click_on_a_heading_is_replanned_with_a_screenshot_check(guide):
+    """Live run 2026-11-08: wizard open, the planner said "Click the 'Build an agent' heading to start the wizard"."""
+    looked = []
+    guide.backend.effect_visible = lambda expected: looked.append(expected) or (
+        True, "Chrome, H Platform: the Build an agent wizard is open on Details, with a Name field")
+    plans = iter([{"done": False, "instruction": "Click the 'Build an agent' heading to start the wizard.", "kind": "click", "target": 1},
+                  {"done": False, "instruction": "Click the 'Name' field.", "kind": "click", "target": 3},
+                  {"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: guide.calls.append(a) or next(plans)
+    guide.it._dynamic_guide(guide.bound)
+    assert [s.where for s in guide.shown][0] == "Name"
+    notes = guide.calls[1][4]
+    assert any("not a control" in h for h in notes) and any("wizard is open on Details" in h for h in notes)
+    assert len(looked) == 1  # one screenshot, only when unsure
+
+
+def test_screenshot_check_is_never_taken_by_the_native_pilot(guide, monkeypatch):
+    monkeypatch.setenv("HCS_AX_NATIVE_BUNDLE_ID", "com.exafunction.windsurf")
+    guide.backend.effect_visible = lambda *a: pytest.fail("native pilot must not capture the desktop")
+    assert guide.it._screen_note(["Instruction shown: Click 'Build'. ..."]) is None
+
+
+def test_scripted_hints_carry_their_done_when(tmp_path, monkeypatch):
+    from hcs_agent.contract import InterventionRequest, Mode
+
+    req = InterventionRequest(software="hcompany", goal="Build an agent and run it", mode=Mode.guide,
+                              procedure_id="hcompany_platform_run_cloud_session")
+    backend = MockBackend()
+    it = Intervention(req, backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    seen = {}
+    monkeypatch.setattr(it, "_ensure_screen", lambda b: True)
+    monkeypatch.setattr(it, "_dynamic_guide", lambda b, hints=None, **k: seen.setdefault("hints", hints) and None)
+    it.start(); it.approve(__import__("hcs_agent.contract", fromlist=["ApproveCommand"]).ApproveCommand()); it.wait(3)
+    assert any("Build an agent" in h and "[done when:" in h and "name field" in h for h in seen["hints"])
