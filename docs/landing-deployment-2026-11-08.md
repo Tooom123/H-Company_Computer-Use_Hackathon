@@ -10,6 +10,17 @@ illustratifs et les boutons de démonstration n'appellent aucun backend local.
 - Preview HTTPS vérifiée : **https://hcompanion.62.83.79.254.sslip.io/**.
 - La preview envoie `X-Robots-Tag: noindex, nofollow, noarchive`.
 
+## Raccourci du portail pour le pitch
+
+Après publication, ouvrir `https://hcompanion.help/?present=1` affiche un bouton
+**Company portal**. Il ouvre le portail local `http://127.0.0.1:8771/company/sessions`
+dans un nouvel onglet ; le lien Tour de contrôle de ce portail donne accès aux
+captures des essais. Les identifiants privés restent nécessaires. Ce bouton ne
+déploie pas le backend sur Internet : il fonctionne sur le Mac où ce serveur tourne.
+La homepage ordinaire reste sans raccourci local ; aucun service local n'est sondé
+automatiquement. La page de sessions sert de point d'entrée avant la tour de
+contrôle, dont les endpoints de données conservent leur restriction même origine.
+
 ## DNS Namecheap
 
 Les enregistrements suivants sont configurés dans Namecheap BasicDNS :

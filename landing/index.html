@@ -19,6 +19,9 @@
 </script>
 </head>
 <body>
+<a id="companyPortal" class="company-portal" href="http://127.0.0.1:8771/company/sessions" target="_blank" rel="noopener noreferrer" hidden>
+  <span>Company portal ↗</span><small>Presentation · this Mac</small>
+</a>
 <!-- ink filter: slightly ragged edges, like a felt pen on paper -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <filter id="ink"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="3"/><feDisplacementMap in="SourceGraphic" scale="1.6"/></filter>
@@ -170,6 +173,10 @@
   <span>H Companion — built at the Computer Use Hackathon (H Company × 42AI, Paris, Nov 2026).</span>
   <span class="muted">Powered by H Company's agents. Not an official H Company product.</span>
 </footer>
+<script>
+// Explicit presenter shortcut: never probe a visitor's local services.
+document.getElementById('companyPortal').hidden = new URLSearchParams(location.search).get('present') !== '1';
+</script>
 <script type="module" src="main.js"></script>
 <script type="module" src="annotate.js"></script>
 <script type="module" src="margin.js"></script>
