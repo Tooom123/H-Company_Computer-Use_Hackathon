@@ -32,6 +32,19 @@ def observation(url='https://hub.hcompany.ai/agents-api/browser/configuration', 
         'image': image or {'type': 'base64', 'source': base64.b64encode(png()).decode()}}}
 
 
+def policy(tool='click_web', args=None, errors=None):
+    return {'type': 'AgentEvent', 'data': {'kind': 'policy_event',
+            'tool_reqs': [] if errors else [{'tool_name': tool, 'args': args or {}}],
+            'validation_errors': errors or []}}
+
+
+def scoped_task(**overrides):
+    page = 'https://platform.hcompany.ai/agents/sessions/approved-session'
+    return task(start_url=page, allowed_origins=('https://platform.hcompany.ai', 'https://hub.hcompany.ai'),
+                browser_profile_id='profile-test', display_allowed_paths=('/agents/sessions/approved-session',),
+                allowed_page_urls=(page,), **overrides)
+
+
 class FakeClient:
     def __init__(self, *, events=None, late_events=None, quota_active=3, gate=None):
         self.sessions = self
@@ -122,6 +135,7 @@ def test_cloud_configuration_has_no_local_bridge_or_implicit_profile():
     authenticated = task(vault_id='vault-test', browser_profile_id='profile-test')
     assert authenticated.agent()['environments'][0]['vault_id'] == 'vault-test'
     assert 'vault-test' not in authenticated.messages()
+    assert 'omit the optional scroll_element argument entirely' in task().agent()['instructions']
 
 
 @pytest.mark.parametrize('changes', [
@@ -248,6 +262,133 @@ def test_outside_origin_quarantines_entire_episode_and_cancels_owned_session(run
     assert result['scope_violation'] is True and result['phase'] == 'quarantine'
     assert result['frame_count'] == 0 and client.cancels == ['h-1']
     assert result['quarantined'] is True and (runner.root / eid / 'quarantine.json').exists()
+
+
+@pytest.mark.parametrize('suffix', ['/agents/sessions/another-session', '/agents/sessions',
+    '/agents/sessions/approved-session-other', '/agents/sessions/approved-session/../another',
+    '/agents/sessions/%61pproved-session', '/agents/sessions/approved-session?token=private'])
+def test_same_origin_other_page_quarantines_and_archives_only_owned(runners, suffix):
+    t = scoped_task()
+    client = FakeClient(events=[observation(t.start_url), observation('https://platform.hcompany.ai' + suffix)],
+                        late_events=[observation(t.start_url)])
+    client.states['foreign-session'] = 'working'
+    exports = []
+    def export(sid, folder):
+        exports.append(sid)
+        return {'archive_complete': True}
+    runner = runners(client, exporter=export)
+    eid = runner.submit(t, approved=True)
+    result = runner.wait(eid, 3)
+    assert result['state'] == 'interrupted' and result['phase'] == 'quarantine'
+    assert result['policy_stop_reason'] == 'observation_outside_task_pages'
+    assert result['scope_violation'] and result['quarantined']
+    assert result['frame_count'] == 1 and result['latest_frame'] is None
+    assert json.loads((runner.root / eid / 'frames.json').read_text())['frames'] == []
+    assert client.cancels == ['h-1'] and client.states['foreign-session'] == 'working'
+    assert exports == ['h-1'] and result['export_status'] == 'complete'
+
+
+@pytest.mark.parametrize('event', [
+    observation('https://platform.hcompany.ai/auth/login?redirect=%2Fagents%2Fsessions'),
+    policy('go_to_web', {'url': 'https://platform.hcompany.ai/auth/login'}),
+])
+def test_scoped_auth_redirect_is_not_a_page_violation(runners, event):
+    runner = runners(FakeClient(events=[event]))
+    result = runner.wait(runner.submit(scoped_task(), approved=True), 3)
+    assert result['scope_violation'] is False and result['quarantined'] is False
+    if event['data']['kind'] == 'observation_event':
+        assert result['authentication_required'] is True
+
+
+def test_scoped_task_can_still_read_allowed_documentation_origin(runners):
+    runner = runners(FakeClient(events=[observation()]))
+    result = runner.wait(runner.submit(scoped_task(), approved=True), 3)
+    assert not result['quarantined']
+
+
+def test_previous_login_mask_does_not_disable_later_page_scope_monitor(runners):
+    client = FakeClient(events=[observation('https://platform.hcompany.ai/auth/login'),
+                               observation('https://platform.hcompany.ai/agents/sessions/other')])
+    runner = runners(client)
+    result = runner.wait(runner.submit(scoped_task(), approved=True), 3)
+    assert result['authentication_required'] is True
+    assert result['policy_stop_reason'] == 'observation_outside_task_pages' and result['quarantined']
+
+
+@pytest.mark.parametrize('tool', ['web_fetch', 'web_search', 'run_command_desktop'])
+@pytest.mark.parametrize('kind', ['policy_event', 'tool_result'])
+def test_forbidden_tool_events_persist_quarantine(runners, tool, kind):
+    call = {'tool_name': tool, 'args': {'url': 'https://hub.hcompany.ai/agents-api/overview', 'private': 'do-not-log-this'}}
+    event = {'type': 'AgentEvent', 'data': {'kind': kind, **({'tool_reqs': [call]} if kind == 'policy_event' else {'tool_req': call})}}
+    client = FakeClient(events=[observation(), event], late_events=[observation()])
+    runner = runners(client)
+    eid = runner.submit(task(), approved=True)
+    result = runner.wait(eid, 3)
+    assert result['policy_stop_reason'] == 'forbidden_tool_observed' and result['scope_violation']
+    assert result['quarantined'] and result['phase'] == 'quarantine' and result['latest_frame'] is None
+    assert client.cancels == ['h-1']
+    assert 'do-not-log-this' not in (runner.root / eid / 'events.jsonl').read_text()
+
+
+@pytest.mark.parametrize('url', ['https://platform.hcompany.ai/agents/sessions/other',
+    'https://outside.test/', 'javascript:alert(1)',
+    'view-source:https://platform.hcompany.ai/agents/sessions/approved-session'])
+def test_navigation_intent_for_another_session_is_detected(runners, url):
+    client = FakeClient(events=[policy('go_to_web', {'url':url})])
+    runner = runners(client)
+    result = runner.wait(runner.submit(scoped_task(), approved=True), 3)
+    assert result['policy_stop_reason'] == 'navigation_outside_task_scope'
+    assert client.cancels == ['h-1']
+
+
+def schema_error(field='scroll_element', value='private-value'):
+    return policy(errors=[f"Tool 'scroll_web' received invalid arguments: {value}\nValidation errors:\n  - {field}: Input should be a valid dictionary"])
+
+
+def test_repeated_schema_errors_stop_without_claiming_scope_violation(runners):
+    events = [observation(), schema_error(value='secret-1'),
+              {'type':'AgentEvent','data':{'kind':'error_event'}},
+              schema_error(value='secret-2'), schema_error(value='secret-3')]
+    client = FakeClient(events=events, late_events=[observation()])
+    runner = runners(client)
+    eid = runner.submit(task(), approved=True)
+    result = runner.wait(eid, 3)
+    assert result['quarantined'] and result['phase'] == 'quarantine'
+    assert result['policy_stop_reason'] == 'repeated_tool_schema_validation'
+    assert result['scope_violation'] is False and client.cancels == ['h-1']
+    assert json.loads((runner.root / eid / 'frames.json').read_text())['frames'] == []
+    assert 'secret-' not in (runner.root / eid / 'events.jsonl').read_text()
+    report = json.loads((runner.root / eid / 'report.json').read_text())
+    assert report['quarantined'] and report['scope_violation'] is False
+
+
+@pytest.mark.parametrize('break_event', [
+    {'type': 'AgentEvent', 'data': {'kind': 'tool_result', 'tool_req': {'tool_name':'click_web','args':{}}, 'result':None}},
+    schema_error(field='num_pixels'),
+])
+def test_schema_loop_streak_resets_after_progress_or_different_error(runners, break_event):
+    client = FakeClient(events=[schema_error(), schema_error(), break_event, schema_error(), schema_error()])
+    runner = runners(client)
+    result = runner.wait(runner.submit(task(), approved=True), 3)
+    assert not result['quarantined']
+
+
+def test_interleaved_observations_metrics_and_policy_intent_do_not_reset_schema_loop(runners):
+    client = FakeClient(events=[schema_error(), observation(),
+        {'type':'MetricsUpdateEvent','data':{'metrics':{'steps':1}}},
+        schema_error(), observation(), policy(), schema_error()])
+    runner = runners(client)
+    result = runner.wait(runner.submit(task(), approved=True), 3)
+    assert result['policy_stop_reason'] == 'repeated_tool_schema_validation'
+    assert result['quarantined'] and client.cancels == ['h-1']
+
+
+@pytest.mark.parametrize('url', ['https://outside.test/anything',
+    'https://hub.hcompany.ai/agents-api/%62rowser', 'https://hub.hcompany.ai/agents-api/../private',
+    'https://hub.hcompany.ai/agents-api/browser?token=secret'])
+def test_task_page_scope_rejects_ambiguous_bindings(url):
+    with pytest.raises(ValueError):
+        task(allowed_page_urls=(url,))
 
 
 def test_string_answer_normalizes_for_consoles_and_preserves_catalog_provenance(runners):

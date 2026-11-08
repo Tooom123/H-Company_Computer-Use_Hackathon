@@ -164,6 +164,16 @@ données personnelles. H conserve ses propres événements selon sa politique.
 Les limites d'origine du navigateur H sont des instructions et une surveillance
 des observations, **pas un pare-feu réseau**.
 
+Depuis le 8 novembre, chaque cas connecté reçoit aussi les URLs exactes de ses
+sessions de démonstration. Le runner surveille les événements de navigation et
+les observations : une autre session, un outil exclu (`web_fetch`, `web_search`)
+ou trois erreurs répétées du même champ déclenchent un arrêt de sa propre session
+et une quarantaine persistante. Les captures intercalées ne remettent pas le
+compteur d'erreurs à zéro. Une boucle de schéma est distinguée d'une violation
+de périmètre. L'archive privée est conservée, les aperçus sont retirés du portail.
+Les redirections de connexion restent traitées séparément. Ce contrôle réagit
+aux événements reçus ; il ne garantit pas un blocage avant l'action chez H.
+
 Sources : [profils H](https://hub.hcompany.ai/agents-api/browser/profiles),
 [configuration du navigateur](https://hub.hcompany.ai/agents-api/browser/configuration),
 [observation et pilotage](https://hub.hcompany.ai/agents-api/observe-and-steer).

@@ -88,6 +88,28 @@ def test_retrieval_is_opt_in_and_preserves_source_in_actor_context(setup):
     assert 'expected_criteria' not in runner.tasks[0].documentation_context
 
 
+def test_authenticated_page_scope_comes_only_from_each_cases_bindings(tmp_path):
+    first = '11111111-1111-4111-8111-111111111111'
+    second = '22222222-2222-4222-8222-222222222222'
+    one = 'https://platform.hcompany.ai/agents/sessions/' + first
+    two = 'https://platform.hcompany.ai/agents/sessions/' + second
+    bindings = {'session_id': first, 'session_url': one}
+    account = {'browser_profile_id': 'explicit-profile',
+               'display_allowed_paths': ['/agents/sessions/unrelated-account-session'],
+               'bindings': {'HC07': bindings, 'HC09': {**bindings, 'comparison_session_id': second, 'comparison_session_url': two}}}
+    runner = Runner()
+    app = create_cloud_app(private_root=tmp_path, token='offline-test-token', runner=runner,
+        knowledge=Knowledge(), username='support', password='offline-password', account_configuration=account)
+    client = TestClient(app, base_url='http://127.0.0.1:8771')
+    client.headers['Authorization'] = 'Bearer offline-test-token'
+    response = client.post('/cloud/campaigns', json={'scenario_ids':['HC07','HC09'], 'approved':True})
+    assert response.status_code == 200, response.text
+    assert runner.tasks[0].allowed_page_urls == (one,)
+    assert set(runner.tasks[1].allowed_page_urls) == {one,two}
+    assert runner.tasks[0].display_allowed_paths == ('/agents/sessions/' + first,)
+    assert 'unrelated-account-session' not in str(runner.tasks[1].display_allowed_paths)
+
+
 @pytest.mark.parametrize('extra', [{'Origin': 'http://evil.test'}, {'Host': 'evil.test'}, {'Authorization': 'Bearer nope'}])
 def test_operator_boundary(setup, extra):
     client, _, _ = setup

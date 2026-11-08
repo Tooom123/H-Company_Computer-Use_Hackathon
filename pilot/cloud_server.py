@@ -96,6 +96,10 @@ def create_cloud_app(*, private_root, token, runner, knowledge, username, passwo
                 authenticated = scenario['requires_auth']
                 if authenticated and not account.get('browser_profile_id'):
                     raise ValueError('This case requires a dedicated authenticated browser profile and explicit demo-session bindings.')
+                # Task bindings, not all sessions configured for the account,
+                # define the restricted platform pages for this particular run.
+                page_urls = tuple(value for name, value in scenario.get('bindings', {}).items()
+                                  if name in {'session_url', 'comparison_session_url'}) if authenticated else ()
                 context = ''
                 if body.use_knowledge:
                     hits = knowledge.search(scenario['prompt'], top_k=6)
@@ -112,7 +116,8 @@ def create_cloud_app(*, private_root, token, runner, knowledge, username, passwo
                     catalog_version=scenario['catalog_version'], comparison_family=scenario['comparison_family'],
                     documentation_context=context,
                     browser_profile_id=account.get('browser_profile_id') if authenticated else None,
-                    display_allowed_paths=tuple(account.get('display_allowed_paths', ())) if authenticated else (),
+                    allowed_page_urls=page_urls,
+                    display_allowed_paths=tuple(urlsplit(url).path for url in page_urls),
                 ))
             except (ValueError, KeyError) as exc:
                 raise HTTPException(422, str(exc)) from None

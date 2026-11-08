@@ -1,6 +1,14 @@
 # H-Company : dix tickets de support dans des navigateurs isolés
 
-Version du 7 novembre 2026. Catalogue exécutable : [`pilot/sponsor_catalog.py`](../../pilot/sponsor_catalog.py). Ces cartes sont **préparées, pas des résultats de tests**. Les six premières utilisent des tickets fictifs et la documentation publique ; les quatre dernières nécessitent des sessions de démonstration explicitement choisies par l'opérateur. Les anciennes cartes H01–H10 restent un autre protocole, dans [h-company-scenarios.md](h-company-scenarios.md).
+Cartes initiales du 7 novembre 2026 ; catalogue exécutable révisé `2026-11-08.1` : [`pilot/sponsor_catalog.py`](../../pilot/sponsor_catalog.py). Ces cartes décrivent les tests ; leurs résultats figurent séparément dans le [journal](../test-log.md). Les six premières utilisent des tickets fictifs et la documentation publique ; les quatre dernières nécessitent des sessions de démonstration explicitement choisies par l'opérateur. Les anciennes cartes H01–H10 restent un autre protocole, dans [h-company-scenarios.md](h-company-scenarios.md).
+
+La révision du 8 novembre demande explicitement de séparer observations,
+hypothèses et inconnues, de qualifier chaque mesure et de ne pas assimiler un
+statut terminal à la réussite métier. HC08 traite le signalement « rien ne s'est
+passé » comme une déclaration à examiner, pas comme une panne acquise. Les
+critères du vérificateur et les faits connus de préparation ne sont pas injectés
+dans le prompt de l'acteur. Un retest avec cette révision reste une nouvelle
+condition et ne remplace pas sa baseline.
 
 L'objectif est de résoudre un problème de support qui demande de croiser plusieurs sources, puis de montrer comment cette capacité peut alimenter le coaching. Une bonne réponse documentaire n'est pas une manipulation réussie du compte. Une manipulation autonome réussie ne prouve pas que l'utilisateur sait refaire la tâche.
 
