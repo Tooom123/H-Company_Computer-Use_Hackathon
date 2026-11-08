@@ -1,0 +1,101 @@
+# Routing evaluation set: what a spoken request must become. kind: proc | task | ask | point
+# Run: uv run python scripts/eval_routing.py   (needs HAI_API_KEY; not a pytest)
+- text: "Montre-moi comment mettre une note interne sur Acme Demo"
+  kind: proc
+  procedure: odoo_crm_log_note
+- text: "Explique-moi comment qualifier l'opportunité Acme Demo pour le client Acme Corp avec douze mille euros"
+  kind: proc
+  procedure: odoo_crm_qualify_opportunity
+- text: "Crée une opportunité Test Demo"
+  kind: proc
+  procedure: odoo_crm_create_opportunity
+- text: "Montre-moi comment planifier une relance sur Acme Demo pour vendredi"
+  kind: proc
+  procedure: odoo_crm_followup_activity
+- text: "Qualifie Acme Demo pour Acme Corp avec quinze mille euros"
+  kind: proc
+  procedure: odoo_crm_qualify_opportunity
+- text: "J'aimerais run un agent H dans une session cloud"
+  kind: proc
+  procedure: hcompany_platform_run_cloud_session
+- text: "Explique-moi comment lancer une session cloud"
+  kind: proc
+  procedure: hcompany_platform_run_cloud_session
+- text: "Montre-moi comment créer une clé API sur la plateforme H"
+  kind: proc
+  procedure: hcompany_platform_create_api_key
+- text: "Comment entrer le code promo du hackathon ?"
+  kind: proc
+  procedure: hcompany_platform_redeem_credits
+- text: "Explique-moi ce que l'agent a fait dans la dernière session"
+  kind: proc
+  procedure: hcompany_platform_review_session
+- text: "Show me how to find the macOS permissions page in the H docs"
+  kind: proc
+  procedure: hcompany_hub_find_documentation
+- text: "Comment créer un skill sur H ?"
+  kind: task
+- text: "Comment je configure un webhook ?"
+  kind: task
+- text: "Montre-moi comment partager ma dernière session"
+  kind: task
+- text: "Comment je change le modèle de mon agent ?"
+  kind: task
+- text: "Montre-moi comment voir ma consommation de crédits"
+  kind: proc
+  procedure: hcompany_platform_check_credits
+- text: "Comment supprimer un agent que j'ai créé ?"
+  kind: task
+- text: "Aide-moi à planifier une session tous les matins"
+  kind: task
+- text: "How do I pause a running session?"
+  kind: task
+- text: "Montre-moi comment archiver une opportunité dans Odoo"
+  kind: task
+- text: "Comment je mets un rappel sur une opportunité perdue ?"
+  kind: task
+  accept: [odoo_crm_followup_activity]
+- text: "C'est quoi un skill ?"
+  kind: ask
+- text: "Combien de sessions je peux lancer en même temps ?"
+  kind: ask
+- text: "Est-ce que le plan gratuit inclut les webhooks ?"
+  kind: ask
+- text: "What is the difference between the web and browser environments?"
+  kind: ask
+- text: "Quel modèle est utilisé par défaut par les agents ?"
+  kind: ask
+- text: "Combien coûte une session ?"
+  kind: ask
+- text: "Pourquoi mon agent ne peut pas cliquer sur mon Mac ?"
+  kind: ask
+- text: "Il est où le bouton pour se connecter ?"
+  kind: point
+- text: "C'est quoi le champ pour le montant ?"
+  kind: point
+- text: "Where is the Build an agent button?"
+  kind: point
+- text: "Il est où le menu Billing ?"
+  kind: point
+- text: "Montre-moi comment créer une opportunité Acme Démo"
+  kind: proc
+  procedure: odoo_crm_create_opportunity
+- text: "Fais une note interne sur Acme Demo : appel de découverte fait"
+  kind: proc
+  procedure: odoo_crm_log_note
+- text: "Comment lancer une session H dans le cloud ?"
+  kind: proc
+  procedure: hcompany_platform_run_cloud_session
+- text: "Montre-moi où je vois mes sessions passées"
+  kind: proc
+  procedure: hcompany_platform_review_session
+- text: "Comment je récupère ma clé API ?"
+  kind: proc
+  procedure: hcompany_platform_create_api_key
+- text: "Explique-moi comment utiliser un code promo"
+  kind: proc
+  procedure: hcompany_platform_redeem_credits
+- text: "Est-ce que je peux lancer un agent sur mon propre Chrome ?"
+  kind: ask
+- text: "Comment je lance un agent sur mon propre Chrome ?"
+  kind: task

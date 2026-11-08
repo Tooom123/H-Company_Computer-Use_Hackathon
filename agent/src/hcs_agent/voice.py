@@ -351,8 +351,12 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         "Known procedures:\n" + "\n".join(cat) + "\n\n" + site + convo +
         f"User just said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
         "Choose a procedure ONLY if completing it accomplishes what the user asked (creating an agent is not "
-        "running a session; reviewing a session is not sharing it; logging a note is not scheduling an activity); "
-        "otherwise use task.\n"
+        "running a session; reviewing a session is not sharing it; redeeming a promo code is not checking credit "
+        "usage; logging a note is not scheduling an activity); otherwise use task.\n"
+        "Never answer with a question when the sentence is a clear information question (price, limits, what is, "
+        "can I): put it in ask and let the documentation answer. 'Where is the X button / menu / field' is point_at, "
+        "even if X is not visible right now. Environments differ: the cloud-session procedure is only for the cloud "
+        "browser; 'my own Chrome', 'my Mac', 'my desktop' are other environments -> task or ask, never that procedure.\n"
         "Return ONLY a JSON object with keys: procedure_id (string or null), mode ('act' if the user wants it done "
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say), "
@@ -402,6 +406,17 @@ class IntentRouter:
         # Holo may spend the budget in `reasoning` and leave `content` empty; the JSON can be in either.
         content = msg.get("content") or msg.get("reasoning") or ""
         intent = Intent.model_validate(_extract_json(content))
+        if _is_where_question(transcript):
+            # "il est où le bouton X" / "which field is the amount": point at it (or navigate to it if not visible);
+            # a where-question is never a procedure to run nor a definition to read
+            intent.point_at = intent.point_at or _where_target(transcript, intent)
+            intent.procedure_id, intent.task, intent.ask, intent.question = None, None, None, None
+        if _is_information_question(transcript) and (not _names_an_action(transcript) or _CAPABILITY.search(transcript)) \
+                and not intent.point_at:
+            # A fact / capability / price / why question is answered from the documentation, never turned into a
+            # task or a procedure ("can I run an agent on my own Chrome?", "how much does a session cost?").
+            intent.ask = intent.ask or (intent.goal or transcript).strip()
+            intent.task, intent.procedure_id, intent.question = None, None, None
         if intent.ask and not intent.procedure_id and _names_an_action(transcript) \
                 and not _is_information_question(transcript):
             # "how do I create a skill" is a task to show on screen, not a definition to read out
@@ -434,6 +449,31 @@ _INFO_QUESTION = re.compile(
     r"^\W*(combien|how many|how much|c'est quoi|c est quoi|qu'est[- ]ce|what is|what's|what are|est[- ]ce que|does|do i|"
     r"is it|is there|are there|pourquoi|why|quelle? (?:est|sont)|which plan|quel plan|ai[- ]je|do we|can i|puis[- ]je|"
     r"est[- ]il possible)\b", re.I)
+
+
+_WHERE_QUESTION = re.compile(
+    r"^\W*(il est o[uù]|elle est o[uù]|ils sont o[uù]|o[uù] est|o[uù] se trouve|o[uù] sont|c'est o[uù]|where is|where are|"
+    r"where's|where do i find|where can i find|c'est quoi (?:le|la|l')|c'est lequel|c'est laquelle|which (?:button|field|"
+    r"menu|tab|link|icon|option)|quel (?:bouton|champ|menu|onglet|lien)|quelle (?:case|option|ic[oô]ne|liste))\b", re.I)
+_CONTROL_WORDS = re.compile(r"\b(bouton|button|menu|champ|field|onglet|tab|lien|link|ic[oô]ne|icon|case|checkbox|"
+                            r"option|liste|list|barre|bar|section|page|param[èe]tres?|settings?)\b", re.I)
+
+
+def _is_where_question(text: str) -> bool:
+    return bool(_WHERE_QUESTION.search(text or "")) and bool(_CONTROL_WORDS.search(text or ""))
+
+
+def _where_target(transcript: str, intent) -> str:
+    """An English description of the control asked about, from the model's restatement when it has one."""
+    goal = (intent.goal or "").strip()
+    m = re.search(r"\b(?:the|le|la|les|l')\s+(.+?)(?:\s+(?:is|are|located|situé|se trouve)\b|[?.]|$)", goal, re.I)
+    if m and len(m.group(1)) > 3:
+        return f"the {m.group(1).strip()}"
+    return f"the control the user asks about: {transcript.strip().rstrip('?. ')}"
+
+
+_CAPABILITY = re.compile(r"^\W*(est[- ]ce que je peux|puis[- ]je|can i|could i|is it possible|est[- ]il possible|"
+                         r"combien co[uû]te|how much|pourquoi|why|est[- ]ce que (?:le|la|les|mon|ma|mes)\b)", re.I)
 
 
 def _is_information_question(text: str) -> bool:

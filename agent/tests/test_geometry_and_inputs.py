@@ -141,3 +141,13 @@ def test_action_questions_are_tasks_not_doc_answers():
     for t in ["Combien de sessions je peux lancer en même temps ?", "C'est quoi un skill ?",
               "Est-ce que le plan gratuit inclut les webhooks ?", "What is a skill?", "How many agents can I create?"]:
         assert _is_information_question(t)
+
+
+def test_where_questions_are_recognised_in_both_languages():
+    from hcs_agent.voice import _is_where_question
+
+    for t in ["Il est où le bouton pour se connecter ?", "C'est quoi le champ pour le montant ?", "Il est où le menu Billing ?",
+              "Where is the Build an agent button?", "Which button creates an agent?"]:
+        assert _is_where_question(t), t
+    for t in ["C'est quoi un skill ?", "Comment créer un skill ?", "Où en est ma session ?"]:
+        assert not _is_where_question(t), t
