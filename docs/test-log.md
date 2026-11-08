@@ -916,3 +916,69 @@ remplacent pas la recette humaine des scénarios Devin/Odoo.
 L'historique est conservé par fusion, sans squash : certains lanceurs extraient
 des révisions épinglées. Le lanceur macOS reste dépendant du checkout et de son
 environnement local. Les secrets et épisodes privés ne sont pas inclus.
+
+## 2026-11-08 — Sortie de calibration Vision et permission caméra
+
+Après un blocage signalé par Edouard, la calibration native n'utilise plus le
+niveau de fenêtre « screen-saver ». La demande caméra précède l'ouverture de la
+calibration ; le tracker doit recevoir des images avant d'afficher les cibles.
+La fenêtre laisse la barre de menus et le Dock accessibles. Échap, Cmd/Ctrl+W
+et le bouton « Cancel calibration » arrêtent la caméra et ramènent au panneau
+Vision. Les réponses asynchrones arrivées après annulation sont ignorées.
+
+Vérification réelle sur le Mac : deux démarrages de calibration native, puis
+annulation au premier point, par Échap et par le bouton. Dans les deux cas, le
+panneau Vision revient à « Ready » et le listener du tracker sur 8769 disparaît.
+La permission caméra était déjà accordée : le premier dialogue macOS n'a pas
+été reproduit. Les chemins permission refusée/en attente, absence d'images,
+annulation pendant le chargement et validation tardive sont couverts par les
+tests simulés. **33 tests desktop/calibration passent**, dont 12 nouveaux tests
+de cycle de vie. Aucun appel Holo, aucune mesure de précision, aucune cible
+de calibration remplie par l'agent. Le panneau est laissé prêt pour l'essai
+humain ; le moteur de coaching n'est pas lancé pendant cette vérification.
+
+### Vérification caméra avant les cibles
+
+Edouard signale ensuite qu'il ne peut toujours pas valider la caméra avant les
+cibles. Contrôle des réglages macOS : le lanceur actuel « ChatGPT » est autorisé
+pour la caméra ; deux appareils sont présents (FaceTime HD et iPhone). Un démarrage
+du tracker produit environ 30 images/s mais aucun visage au moment du contrôle.
+Cela ne permet pas de conclure que la caméra sélectionnée est la bonne, ni de
+reproduire le dialogue signalé par l'utilisateur.
+
+Le parcours natif sépare maintenant la préparation caméra et la calibration :
+prévisualisation locale dans Vision, choix Camera 1/2, détection du visage, puis
+confirmation explicite avant l'ouverture des cibles. Un contrôle côté processus
+principal refuse aussi l'ouverture si le visage disparaît. Aucune image caméra
+n'est envoyée à Holo. **36 tests desktop/calibration passent**. Dans l'app réelle,
+le panneau « Check your camera » et la prévisualisation sont disponibles ; le
+bouton de calibration reste désactivé tant que le visage n'est pas détecté.
+La précision du nouveau tracker natif n'est pas validée par ce contrôle.
+
+L'essai suivant expose un défaut de récupération : si la deuxième caméra ne
+s'ouvre pas, le choix de caméra disparaissait avec la prévisualisation. Le choix
+et l'erreur restent maintenant visibles même après cet échec. La caméra intégrée
+est identifiée comme index 0 (Camera 1) ; après relance, le tracker renvoie une
+prévisualisation, un visage détecté et environ 23 images/s. L'état du panneau
+confirme « Check your camera » avec la préparation ouverte. **37 tests passent**,
+dont la régression de récupération après caméra indisponible. Les cibles n'ont
+pas été remplies par l'agent ; la suite reste un essai humain.
+
+### 2026-11-08 — Raccourci Finder et environnement Vision persistant
+
+Le raccourci `/Applications/H Companion.app` pointait encore vers le checkout
+expérimental H Platform V2 et un Python temporaire disparu après redémarrage.
+La calibration n'était pas en cause. Le lanceur commun propose maintenant le
+profil `hcompany-vision` : checkout courant, `.venv` persistante, tracker natif,
+ports 8794/8795 et Option droite. Un ancien chemin Python absent laisse essayer
+la `.venv` du checkout. Les chemins locaux (Electron et fichier de clés) restent
+dans la configuration privée ; aucune clé n'est intégrée au bundle.
+
+**31 tests de lanceur passent**, dont la récupération du Python disparu, le
+profil H Company, le démarrage avec fichier privé et la réutilisation du moteur.
+Bundle Swift compilé, signature locale vérifiée, ancien raccourci sauvegardé.
+Deux ouvertures via Applications ouvrent Vision dans le bon checkout et conservent
+le même PID Electron ainsi que le même moteur H réel, sans deuxième écouteur vocal.
+Le panneau affiche « Open camera preview », Camera 1, et le moteur rapporte
+Vision activée. Le tracker est arrêté : aucune nouvelle calibration ni mesure de
+précision n'a été réalisée pendant ce contrôle. Aucun appel Holo de scénario.
