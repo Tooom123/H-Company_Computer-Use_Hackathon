@@ -427,3 +427,19 @@ def test_tracker_sees_a_field_filled_wherever_the_user_clicked(monkeypatch):
     assert t.field_filled()
     t.value_changed_at = __import__("time").time()
     assert not t.field_filled()  # still typing
+
+
+def test_tracker_page_change_is_a_safety_net_for_missed_clicks():
+    import time as _t
+    t = next(v for v in vars(cli).values() if isinstance(v, type) and hasattr(v, "page_changed"))()
+    t.follow(1, "Agents", (100, 360, 40, 30))
+    home = ("https://platform.hcompany.ai/", frozenset({("AXLink", "Agents"), ("AXLink", "Sessions")}))
+    t.page_initial = t.page_now = home
+    t.page_changed_at = 0.0
+    assert not t.page_changed()  # nothing moved
+    t.page_now = (home[0], home[1] | {("AXButton", "Mark as read")})
+    assert not t.page_changed()  # one control appearing (a toast) is not progress
+    t.page_now, t.page_changed_at = ("https://platform.hcompany.ai/agents", home[1]), _t.time()
+    assert not t.page_changed()  # not settled yet
+    t.page_changed_at -= 2
+    assert t.page_changed()

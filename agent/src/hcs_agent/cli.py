@@ -993,6 +993,9 @@ class _TargetTracker:
         self.value: str | None = None  # content of the followed field (browser), None = not a readable field
         self.initial: str | None = None
         self.value_changed_at = 0.0
+        self.page_initial = None  # (url, control names) when the step was shown
+        self.page_now = None
+        self.page_changed_at = 0.0
         self._fresh = True
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -1000,6 +1003,7 @@ class _TargetTracker:
     def follow(self, step: int, description: str | None, box) -> None:
         self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
         self.value = self.initial = None
+        self.page_initial = self.page_now = None
         self._fresh = True
         if self._thread is None and description and sys.platform == "darwin":
             self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
@@ -1029,11 +1033,25 @@ class _TargetTracker:
             self.measured_at = time.time()
             field = next((c for c in [best, *ties] if c is not None and getattr(c, "value", None) is not None), None)
             value = field.value if field is not None else None
+            page = (info.url, frozenset((e.role, e.name) for e in info.elements if e.role != "AXStaticText")) \
+                if info.is_front else None
             if self._fresh:
                 self.initial, self.value, self._fresh = value, value, False
-                self.value_changed_at = time.time()
-            elif value != self.value:
+                self.page_initial = self.page_now = page
+                self.value_changed_at = self.page_changed_at = time.time()
+                continue
+            if value != self.value:
                 self.value, self.value_changed_at = value, time.time()
+            if page is not None and page != self.page_now:
+                self.page_now, self.page_changed_at = page, time.time()
+
+    def page_changed(self, settle_s: float = 1.0, min_diff: int = 3) -> bool:
+        """The page moved on since the step was shown (navigation, a dialog opened or closed) and has settled:
+        a safety net when the user's click was not seen. Controls only: typed text and timers do not count."""
+        a, b = self.page_initial, self.page_now
+        if a is None or b is None or time.time() - self.page_changed_at < settle_s:
+            return False
+        return a[0] != b[0] or len(a[1] ^ b[1]) >= min_diff
 
     def field_filled(self, idle_s: float = 1.5) -> bool:
         """The followed field now holds text it did not hold when the step was shown, and has been stable for
@@ -1373,6 +1391,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if inputs.acted(g.kind):
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
+                return
+            if g.kind == "click" and tracker.step == g.index and tracker.page_changed():
+                print("\n  the page changed; next step…", flush=True)
+                advance(note="Observed: the page changed while this step was shown (read from the page); the "
+                             "user's click itself was not seen. Result not verified; inspect the current screen.")
                 return
             if g.kind == "type" and tracker.step == g.index and tracker.field_filled():
                 print("\n  the field now contains text; next step…", flush=True)
