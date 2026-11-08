@@ -71,8 +71,7 @@ body.mac .buddy { right: 34px; } /* no window buttons on macOS */
   box-shadow: inset 0 1px 0 #3a3a46, 0 2px 0 #000, 0 0 0 1px #2a2a34;
   color: var(--white); font-weight: 700; font-size: 14px;
 }
-.word { font-weight: 700; font-size: 15px; color: var(--grey-100); letter-spacing: -0.025em; }
-.ion { color: var(--red); }
+.head { width: 28px; height: 28px; display: block; } /* the website's favicon: the companion's red head */
 .tabs { display: flex; align-items: flex-end; gap: 4px; height: 100%; -webkit-app-region: no-drag; }
 .tab {
   position: relative;
