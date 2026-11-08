@@ -897,3 +897,22 @@ simulées, sans micro ni appel payant : la qualité réelle de transcription et 
 guidage reste à mesurer après relance. Les anciens épisodes et leurs labels
 ne sont pas réécrits. Le corpus de scénarios contient maintenant six demandes
 spécifiques à Desktop et distingue le coupon comme test de limite du pilote.
+
+## 2026-11-08 — Intégration pour reprise par Tom
+
+À la demande d'Edouard, intégration de la branche de travail avec les trois
+derniers commits de `main` (jusqu'à `76519cd`). Les conflits du routeur, du moteur
+de guidage et des tests AX ont été résolus en conservant les deux contributions :
+réponses documentaires et parcours dynamiques de Matteo, coaching natif, feedback,
+dictée bilingue et diagnostics de progression. L'intégration a été réalisée dans
+un worktree séparé ; aucun pilote en cours n'a été redémarré pour cette fusion.
+
+Validation de l'ensemble intégré : **1 250 tests Python passent, 3 sont ignorés,
+14 sous-tests passent** ; **19 tests desktop**, **109 tests Vision Lab** et **5
+tests landing** passent. Le typecheck TypeScript passe. La régénération des dix
+contrats ne produit aucun changement. Ces contrôles sont hors ligne et ne
+remplacent pas la recette humaine des scénarios Devin/Odoo.
+
+L'historique est conservé par fusion, sans squash : certains lanceurs extraient
+des révisions épinglées. Le lanceur macOS reste dépendant du checkout et de son
+environnement local. Les secrets et épisodes privés ne sont pas inclus.

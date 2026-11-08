@@ -57,6 +57,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+PLAN_FIRST = {x.strip().lower() for x in os.environ.get("HCS_PLAN_FIRST", "hcompany").split(",") if x.strip()}
+"""Software guided from the live page for every task (scripts are hints), instead of script-first.
+Script-first stays for software whose scripts were validated live step by step (Odoo)."""
+
+
+def _plan_first(software: str | None) -> bool:
+    return (software or "").lower() in PLAN_FIRST
+
+
 def _screen_check(check, expected: str, software: str) -> tuple[bool, str]:
     """Call a backend screen check, passing the software name when the backend accepts it."""
     try:
@@ -260,7 +269,25 @@ class Intervention:
             self._emit("attempt_started", f"Attempt {attempt}/{max_attempts}", attempt=attempt)
             task = bound.task_message(self.scope_note, previous_failure)
             on_lookup = lambda ans: self._note("agent_lookup", ans)  # noqa: E731
-            if guide and bound.guide_script() and self.autonomy < 2:
+            if guide and bound.guide_script() and self.autonomy < 2 and _plan_first(bound.request.software):
+                # Every task on this software is guided from the live page; the script's steps are hints.
+                hints = [f"{st.instruction} (control: {st.element})" if st.element else st.instruction
+                         for st in bound.guide_script()]
+                if not self._ensure_screen(bound):
+                    last_attempt = AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+                else:
+                    last_attempt = self._dynamic_guide(bound, hints=hints)
+                if last_attempt is None and self.autonomy == 0:
+                    last_attempt = AttemptResult(None, "completed", DeclaredResult(
+                        outcome="unclear", summary="Guided from the page without takeover; outcome to verify."))
+                if last_attempt is None:
+                    self.takeover = True
+                    with self._lock:
+                        if not self.state.terminal:
+                            self.state = State.running
+                    self._emit("state_changed", "Taking over to finish the task.", takeover=True)
+                    last_attempt = self.backend.run_attempt(bound, task, attempt, self._on_step, self._stop, on_lookup)
+            elif guide and bound.guide_script() and self.autonomy < 2:
                 last_attempt = self._scripted_guide(bound)
                 if last_attempt is None and self.autonomy == 0:
                     # Show-only: never take over; stay with the user until they manage or stop.
@@ -491,10 +518,21 @@ class Intervention:
 
         self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction="Done, checking the result",
                                        why="", pointer=None, kind="info", last=True))
+        if bound.procedure.dynamic_tail and not self._stop.is_set():
+            # The script covered the known screens; the rest of the flow is planned from each page.
+            self._trace("scripted steps done; continuing from the page until the objective is reached")
+            tail = self._dynamic_guide(bound, history=list(done_steps))
+            if tail is not None:
+                return tail
+            if self.autonomy == 0:
+                return AttemptResult(None, "completed", DeclaredResult(
+                    outcome="unclear", summary="Guided as far as the page allowed; outcome to verify.", steps_taken=done_steps))
+            return None  # lost: the caller takes over (agent) per the autonomy level
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
 
-    def _dynamic_guide(self, bound: BoundProcedure, max_steps: int = 14) -> AttemptResult | None:
+    def _dynamic_guide(self, bound: BoundProcedure, max_steps: int = 14, history: list[str] | None = None,
+                       hints: list[str] | None = None) -> AttemptResult | None:
         """Guide without a script: each step is planned from the controls actually on the page (accessibility
         tree) and the local site knowledge, in one text-only model call; the box is exact. None = could not
         read the page or got lost -> the caller falls back to the H agent."""
@@ -555,7 +593,10 @@ class Intervention:
                     self._note("agent_lookup", answer)
             except Exception:
                 pass  # docs are optional; do not claim a lookup succeeded without a usable result
-        history: list[str] = []
+        if hints:
+            context += ("\n\nSuggested steps for this task (written in advance; the real page wins when they differ):\n"
+                        + "\n".join(f"{i + 1}. {h}" for i, h in enumerate(hints)))
+        history = list(history or [])
         repeats = 0
         last_instruction = ""
         last_plan_observation = None
@@ -611,7 +652,8 @@ class Intervention:
             page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
             page_description = (f"Native application: Devin Desktop; bundle_id={info.bundle_id}; focused window: {info.title[:80]}"
                                 if native else f"{info.title[:80]} — {page_url[:100]}")
-            plan = planner(bound.request.goal, context, page_description, cands, history)
+            goal = bound.objective if bound.procedure.id != "generic" else bound.request.goal
+            plan = planner(goal, context, page_description, cands, history)
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             if native:

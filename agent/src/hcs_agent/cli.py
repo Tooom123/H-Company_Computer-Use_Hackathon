@@ -506,8 +506,48 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
         print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
-def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
-    """'Where is X?': locate it on the current screen and circle it, no procedure involved."""
+def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
+    """Information question: answer from the documentation map (hub pages), aloud and on screen, with the source.
+    False when the documentation does not contain it (the caller then looks for it in the software)."""
+    from . import sitemap
+
+    if ov is not None:
+        ov.badge("Reading the documentation…", pulsing=True)
+    pages = sitemap.find_doc_pages(question, k=3)
+    excerpts = [(p["title"], sitemap.fetch_doc(p, max_chars=2500)) for p in pages]
+    excerpts = [(t, b) for t, b in excerpts if b]
+    if not excerpts:
+        print("  [docs] no matching documentation page")
+        return False
+    try:
+        res = backend._grounding().answer(question, excerpts)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [docs] answer unavailable: {exc}")
+        return False
+    if not res.get("found") or not res.get("answer"):
+        print(f"  [docs] not answered by: {', '.join(t for t, _ in excerpts)}")
+        return False
+    answer, source = res["answer"].strip(), (res.get("source") or excerpts[0][0]).strip()
+    print(f"  [docs] {answer}  (source: {source})")
+    _say(answer)
+    if ov is None:
+        return True
+    from .overlay import Scene
+
+    ov.badge(None)
+    ov.show_scene(Scene(text=_short(answer, 110), why=f"Source: {source}"[:120]))
+    t0 = time.time()
+    try:
+        ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
+    except KeyboardInterrupt:
+        ov.hide()
+    ov.badge(f"{_key_label(getattr(_VOICE.get('ptt'), 'key_name', None))}: new request")
+    return True
+
+
+def _point_at(ov, backend, element: str, seconds: float = 6.0) -> bool:
+    """'Where is X?': locate it on the current screen and circle it, no procedure involved. False when it is
+    not on this screen (the caller may then navigate to it)."""
     from .overlay import Scene
 
     if ov is not None:
@@ -515,15 +555,13 @@ def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
     loc = backend.locate(element, "Point at what the user asks about on the screen in front of them.") \
         if hasattr(backend, "locate") else None
     if loc is None or not loc.found:
-        print(f"  could not find: {element}")
-        _say(f"I can't see {element} on this screen.")
-        _flash(ov, f"I can't see {element} here", "question", why=(loc.visible[:80] if loc else ""))
-        return
+        print(f"  not on this screen: {element}")
+        return False
     text = f"Here: {element}"
     print(f"  -> pointing at {element} {loc.screen_xy}")
     _say(text)
     if ov is None:
-        return
+        return True
     ov.badge(None)
     ov.show_scene(Scene(text=text, target=loc.screen_xy, target_box=loc.box))
     t0 = time.time()
@@ -531,7 +569,8 @@ def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
         ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
     except KeyboardInterrupt:
         ov.hide()
-    ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+    ov.badge(f"{_key_label(getattr(_VOICE.get('ptt'), 'key_name', None))}: new request")
+    return True
 
 
 def _inside(point, box, margin: float = 0) -> bool:
@@ -760,10 +799,17 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     print(f"  could not understand the request ({exc}); try again.")
                     _flash(ov, "I did not get that, please rephrase", "question")
                     continue
-                if intent.point_at and not intent.procedure_id:
-                    _point_at(ov, backend, intent.point_at)
-                    history.clear()
-                    continue
+                if intent.ask and not intent.procedure_id:
+                    if _answer_from_docs(ov, backend, intent.ask):
+                        history.clear()
+                        continue
+                    intent.task = f"Show where to see: {intent.ask}"  # not in the docs: look for it in the software
+                if intent.point_at and not intent.procedure_id and not intent.task:
+                    if not _point_at(ov, backend, intent.point_at):
+                        intent.task = f"Show where to find {intent.point_at}"  # not on this screen: navigate to it
+                    else:
+                        history.clear()
+                        continue
                 if intent.task and not intent.procedure_id:
                     # No script for this: the general agent works from the screen, with the vendor docs as context.
                     from .voice import generic_request

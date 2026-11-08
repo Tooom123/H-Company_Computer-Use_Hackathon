@@ -69,3 +69,10 @@ def test_ax_product_identity_without_expected_page_evidence_is_inconclusive():
     assert matched is None
     matched, _ = screen_check("expected result", "salesforce", info=info)
     assert matched is False
+
+
+def test_doc_lookup_prefers_guides_and_limits_pages():
+    from hcs_agent import sitemap
+
+    assert sitemap.find_doc_pages("How many concurrent sessions can I run at once?", k=1)[0]["title"] == "Plans and limits"
+    assert sitemap.find_doc_pages("What is a skill?", k=1)[0]["title"] == "Skills"

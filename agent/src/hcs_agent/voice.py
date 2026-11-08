@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import tempfile
 import threading
 import time
@@ -321,6 +322,9 @@ class Intent(BaseModel):
                                                            "screen, an English description of that element; else null.")
     task: str | None = Field(default=None, description="When the user clearly asks for a task that no known procedure "
                                                        "covers, that task as one imperative English sentence; else null.")
+    ask: str | None = Field(default=None, description="When the user asks an information question (how many, what is, "
+                                                      "can I, how does it work) that the documentation can answer, the "
+                                                      "question in English; else null.")
     software: str | None = Field(default=None, description="Software the request is about: 'odoo', 'hcompany' or null.")
     mode: str | None = Field(default="act", description="'guide' if the user wants to be shown/explained how, else 'act'.")
     parameters: dict[str, str | int | float | None] | None = Field(default_factory=dict)
@@ -333,6 +337,7 @@ class Intent(BaseModel):
         self.question = self.question or None
         self.point_at = (self.point_at or None) and str(self.point_at)
         self.task = (self.task or None) and str(self.task)
+        self.ask = (self.ask or None) and str(self.ask)
         self.software = (self.software or None) and str(self.software).lower()
         self.role = self.role or None
         self.mode = self.mode if self.mode in ("act", "guide") else "act"
@@ -367,6 +372,9 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         f"Today is {date.today().isoformat()}.\n"
         "Known procedures:\n" + "\n".join(cat) + "\n\n" + site + convo +
         f"User just said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
+        "Choose a procedure ONLY if completing it accomplishes what the user asked (creating an agent is not "
+        "running a session; reviewing a session is not sharing it; logging a note is not scheduling an activity); "
+        "otherwise use task.\n"
         "Return ONLY a JSON object with keys: procedure_id (string or null), mode ('act' if the user wants it done "
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say), "
@@ -377,9 +385,13 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         "agent will work them out on screen), "
         "software ('odoo', 'hcompany' when the request concerns the H Company platform, documentation, agents, "
         "sessions, API keys, credits; else null), "
-        "point_at (string or null: when the user asks WHERE something is on the screen in front of them — 'where is the "
-        "login button?', 'which field is the amount?' — give an English visual description of that element, e.g. 'the "
-        "Log in button', and set procedure_id null and question null), "
+        "ask (string or null: ONLY a pure information question with no action to show — 'how many sessions can I run "
+        "at once?', 'what is a skill?', 'does the free plan include X?' — restated in English. 'How do I create / "
+        "configure / run / share X' and 'show me how to X' are NEVER ask: they are a task (or a procedure), because the "
+        "user wants to be shown the steps on screen), "
+        "point_at (string or null: ONLY when the user asks WHERE a specific control is on the screen in front of them — "
+        "'where is the login button?', 'which field is the amount?' — give an English visual description of that "
+        "element, e.g. 'the Log in button'; never for 'how can I see / find out' questions, those are ask or task), "
         "missing (required parameters the user did not give), question (string or null: when the request could "
         "match several procedures, or a required value is missing, or the sentence is too garbled, ONE short "
         "friendly English question that gets exactly the missing piece; null when everything is clear). No prose."
@@ -412,6 +424,12 @@ class IntentRouter:
         # Holo may spend the budget in `reasoning` and leave `content` empty; the JSON can be in either.
         content = msg.get("content") or msg.get("reasoning") or ""
         intent = Intent.model_validate(_extract_json(content))
+        if intent.ask and not intent.procedure_id and _names_an_action(transcript) \
+                and not _is_information_question(transcript):
+            # "how do I create a skill" is a task to show on screen, not a definition to read out
+            goal = (intent.goal or "").strip().rstrip("?.")
+            intent.task = intent.task or (goal if goal and _names_an_action(goal) else f"Show how to: {transcript.strip().rstrip('?. ')}")
+            intent.ask = None
         if intent.procedure_id and intent.procedure_id not in {p.id for p in self.registry.all()}:
             intent.procedure_id = None
         if intent.procedure_id:
@@ -421,9 +439,33 @@ class IntentRouter:
             if intent.missing and not intent.question:
                 descs = [next(p.description for p in proc.parameters if p.name == n) for n in intent.missing]
                 intent.question = "Which " + " and which ".join(d.split(",")[0].lower() for d in descs) + "?"
-        elif not intent.question and not intent.point_at and not intent.task:
+        elif not intent.question and not intent.point_at and not intent.task and not intent.ask:
             intent.question = "I did not catch what you want to do. Which task should I help with?"
         return intent
+
+
+_ACTION_WORDS = re.compile(
+    r"\b(cr[ée]+r?|cr[ée]e|create|build|construire|faire|run|lancer|launch|configurer|configure|param[ée]trer|"
+    r"ajouter|add|supprimer|delete|remove|partager|share|modifier|changer|change|edit|mettre|r[ée]gler|set ?up|"
+    r"installer|install|d[ée]marrer|start|utiliser|use|activer|enable|d[ée]sactiver|disable|planifier|schedule|"
+    r"envoyer|send|exporter|export|importer|import|connecter|connect|g[ée]n[ée]rer|generate|ouvrir|open|"
+    r"montre|montrer|show|guide|explique[- ]moi comment|apprends)\w*", re.I)
+
+
+_INFO_QUESTION = re.compile(
+    r"^\W*(combien|how many|how much|c'est quoi|c est quoi|qu'est[- ]ce|what is|what's|what are|est[- ]ce que|does|do i|"
+    r"is it|is there|are there|pourquoi|why|quelle? (?:est|sont)|which plan|quel plan|ai[- ]je|do we|can i|puis[- ]je|"
+    r"est[- ]il possible)\b", re.I)
+
+
+def _is_information_question(text: str) -> bool:
+    """A question asking for a fact (how many / what is / does it…), not for steps to be shown."""
+    return bool(_INFO_QUESTION.search(text or ""))
+
+
+def _names_an_action(text: str) -> bool:
+    """Does the sentence ask for something to be done or shown (create, run, configure, show me…)?"""
+    return bool(_ACTION_WORDS.search(text or ""))
 
 
 def _extract_json(text: str) -> dict:
