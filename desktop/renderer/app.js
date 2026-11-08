@@ -1,7 +1,7 @@
-// H Companion app — renderer. Polls the agent once a second (that poll is also the app's heartbeat:
+// H Companion app — renderer. Polls the assistant once a second (that poll is also the app's heartbeat:
 // while it lasts, the on-screen Magnet stays hidden and the setting lives here).
-import { drawMagnet } from "./magnet.js";
-import { STATUS_LABEL, duration, headline, isBusy, keyLabel, procedureName, when } from "./view.js";
+import { paintBadge } from "./sketch.js";
+import { STATUS_LABEL, duration, isBusy, keyLabel, procedureName, readyBadge, taskLine, when } from "./view.js";
 
 const $ = (id) => document.getElementById(id);
 const api = window.hcs;
@@ -24,11 +24,10 @@ const KEYS = [
   { key: "f9", label: "F9" },
 ];
 
-let status = null; // last /status, null = agent not running
+let status = null; // last /status, null = assistant not running
 let lastSessionKey = "";
 let view = "home";
 let pendingAutonomy = null; // optimistic value while the POST is in flight
-let drawnLevel; // what the Magnet shows now (redraw only on change, with the pencil animation)
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -37,7 +36,19 @@ function el(tag, cls, text) {
   return e;
 }
 
-// Preferences the user chose in the app; pushed again to the assistant when it (re)starts.
+/** Repaint a paper badge's background to its current size (after layout, and on resize). */
+function paint(btn, opts) {
+  const svg = btn.querySelector("svg");
+  const w = btn.offsetWidth;
+  const h = btn.offsetHeight;
+  if (!w || !h) return;
+  const key = `${w}x${h}:${opts.dot}:${opts.seed}`;
+  if (svg.dataset.key === key) return;
+  svg.dataset.key = key;
+  paintBadge(svg, w, h, opts);
+}
+
+// Preferences chosen in the app; pushed again when the assistant (re)starts.
 function pref(key, value) {
   try {
     if (value === undefined) return localStorage.getItem(`hcs.${key}`);
@@ -66,26 +77,31 @@ async function syncPrefs() {
   }
 }
 
-// navigation ------------------------------------------------------------------------------------
+// tabs ------------------------------------------------------------------------------------------
 function go(name) {
   view = name;
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== `view-${name}`));
-  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.go === name));
+  document.querySelectorAll(".tab").forEach((b) => {
+    b.classList.toggle("on", b.dataset.go === name);
+    b.setAttribute("aria-selected", String(b.dataset.go === name));
+  });
+  if (name === "home") requestAnimationFrame(renderHome);
   if (name === "activity") loadSessions();
   if (name === "voice") renderVoice();
   if (name === "vision") loadVision();
 }
-document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
+document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
+if (api.platform === "darwin") document.body.classList.add("mac");
 
-// home: autonomy (the Magnet) ----------------------------------------------------------------------
-function buildMagnetHits() {
-  const hit = $("magnetHit");
+// home: autonomy as three paper badges -------------------------------------------------------------
+function buildLevels() {
+  const box = $("levels");
   LABELS.forEach((label, i) => {
-    const b = el("button", "hit");
+    const b = el("button", "badge-paper level");
     b.setAttribute("role", "radio");
-    b.setAttribute("aria-label", label);
+    b.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"), el("span", "hand", label));
     b.addEventListener("click", () => setAutonomy(i));
-    hit.append(b);
+    box.append(b);
   });
 }
 
@@ -101,33 +117,34 @@ async function setAutonomy(level) {
 
 function renderAutonomy() {
   const level = pendingAutonomy ?? (status ? status.autonomy : null);
-  if (level !== drawnLevel) {
-    const xs = drawMagnet($("magnetSvg"), level, LABELS, { animate: drawnLevel !== undefined });
-    drawnLevel = level;
-    $("magnetHit").querySelectorAll(".hit").forEach((b, i) => {
-      b.style.left = `${xs[i] * 100}%`;
-      b.setAttribute("aria-checked", String(i === level));
-    });
-  }
-  $("magnetHit").querySelectorAll(".hit").forEach((b) => (b.disabled = !status));
-  $("magnet").classList.toggle("off", !status);
+  $("levels").querySelectorAll(".level").forEach((b, i) => {
+    const on = i === level;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", String(on));
+    b.disabled = !status;
+    paint(b, { seed: 21 + i, dot: on ? "on" : "off" });
+  });
   $("autHint").textContent = level === null ? "Start the assistant to choose." : HINTS[level];
 }
 
-// home: status, task, numbers ----------------------------------------------------------------------
+// home: ready badge, running task, numbers -------------------------------------------------------
 function renderHome() {
-  const h = headline(status);
-  $("pill").className = `pill ${h.tone}${h.pulse ? " pulse" : ""}`;
-  $("pillText").textContent = h.text;
-  $("pillSub").textContent = h.sub;
-  $("offline").hidden = Boolean(status);
-
+  if (view !== "home") return;
   const busy = isBusy(status);
+  $("offline").hidden = Boolean(status);
+  $("hero").hidden = !status || busy;
+  if (status && !busy) {
+    const b = readyBadge(status);
+    $("readyText").textContent = b.text;
+    $("readyBadge").classList.toggle("pulse", b.pulse);
+    paint($("readyBadge"), { seed: 11, dot: "on" });
+  }
   $("now").hidden = !busy;
   if (busy) {
     const c = status.current;
-    $("nowProc").textContent = `${procedureName(c.procedure_id)} · ${c.takeover || c.mode === "act" ? "I'm doing it" : "guiding you"}`;
+    $("nowProc").textContent = `${procedureName(c.procedure_id) || "Task"} · ${c.takeover || c.mode === "act" ? "I'm doing it" : "you do it, I guide"}`;
     $("nowGoal").textContent = c.goal || "";
+    $("nowStep").textContent = taskLine(c);
     $("stopBtn").disabled = c.state === "stopping";
     const steps = $("nowSteps");
     steps.replaceChildren();
@@ -164,7 +181,23 @@ async function loadStats() {
   $("stTime").textContent = m ? duration(m.median_duration_s) : "—";
 }
 
-// activity --------------------------------------------------------------------------------------
+// activity: tasks + the user's ✓ / ✗ -------------------------------------------------------------
+async function rate(s, value, row) {
+  const next = s.useful === value ? null : value; // clicking the same mark again clears it
+  const r = await api.agent("POST", "/rate", { id: s.id, useful: next });
+  if (r.ok) {
+    s.useful = next;
+    paintRating(row, s);
+  }
+}
+
+function paintRating(row, s) {
+  row.querySelector(".yes").classList.toggle("on", s.useful === true);
+  row.querySelector(".no").classList.toggle("on", s.useful === false);
+  row.querySelector(".yes").setAttribute("aria-pressed", String(s.useful === true));
+  row.querySelector(".no").setAttribute("aria-pressed", String(s.useful === false));
+}
+
 async function loadSessions() {
   const box = $("sessions");
   const r = status ? await api.agent("GET", "/sessions") : null;
@@ -175,7 +208,7 @@ async function loadSessions() {
   for (const s of list) {
     const row = el("div", "item");
     row.append(el("span", `chip ${s.status || ""}`, s.status === "resolved" && !s.verified ? "Done" : STATUS_LABEL[s.status] || s.status || "—"));
-    const mid = el("div");
+    const mid = el("div", "mid");
     const goal = el("div", "goal", s.goal || procedureName(s.procedure_id));
     if (s.simulated) goal.append(el("span", "sim", "SIM"));
     mid.append(goal);
@@ -183,6 +216,16 @@ async function loadSessions() {
     if (s.blocked_on) bits.push(`blocked: ${s.blocked_on}`);
     mid.append(el("div", "meta", bits.filter(Boolean).join(" · ")));
     row.append(mid);
+    const marks = el("div", "rating");
+    const yes = el("button", "mark yes", "✓");
+    const no = el("button", "mark no", "✗");
+    yes.title = "It helped";
+    no.title = "It did not help";
+    yes.addEventListener("click", () => rate(s, true, row));
+    no.addEventListener("click", () => rate(s, false, row));
+    marks.append(yes, no);
+    row.append(marks);
+    paintRating(row, s);
     box.append(row);
   }
 }
@@ -276,12 +319,12 @@ $("testVoice").addEventListener("click", () => api.agent("POST", "/voice/test"))
 // vision ----------------------------------------------------------------------------------------
 async function loadVision(s) {
   const v = s || (await api.vision.status());
-  $("visionState").textContent = v.running ? "Lab open" : v.available ? "Not running" : "Not installed";
+  $("visionState").textContent = v.running ? "Calibrating" : v.available ? "Ready" : "Not installed";
   $("visionState").className = `badge${v.running ? " on" : ""}`;
-  $("visionBtn").textContent = v.running ? "Close the lab" : "Recalibrate";
+  $("visionBtn").textContent = v.running ? "Close" : "Recalibrate";
   $("visionBtn").disabled = !v.available;
   $("visionNote").textContent =
-    v.reason || (v.running ? "Follow the targets on screen; the lab closes with this app." : "Opens Édouard's Vision Lab on the calibration screen.");
+    v.reason || (v.running ? "Follow the targets on screen; it closes with this app." : "Opens the calibration screen.");
   $("visionBtn").onclick = async () => loadVision(v.running ? await api.vision.stop() : await api.vision.start());
 }
 
@@ -302,7 +345,8 @@ async function poll() {
   }
 }
 
-buildMagnetHits();
+buildLevels();
+window.addEventListener("resize", () => renderHome());
 go(["home", "activity", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
 poll();
 setInterval(poll, 1000);

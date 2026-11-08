@@ -55,6 +55,8 @@ but not in `contracts/*.schema.json`; run `scripts/export_contracts.py` and comm
 - Clicks inside the app window never count as the user doing a step (`_InputWatcher` asks
   `ctl.app_contains(x, y)`; the app sends its bounds in `X-HCS-App-Bounds`). The app window is excluded from
   screen capture (`setContentProtection`), so H and `_ScreenWatcher` never see it.
+- `POST /rate {id, useful}` (Activity ✓/✗) writes `feedback.useful` in `runs/<id>/report.json` (user-declared,
+  the observed result is never touched) and re-sends the report through the uplink; the backend updates the case.
 - `POST /ptt {key}` changes the push-to-talk key live (`PushToTalk.set_key`, `voice.py`); badges use
   `_key_label()` instead of a hard-coded ⌘H.
 - `Speaker.muted` and live voice switching (`_control_voice` replaces the speaker; `hold_reveal` reads

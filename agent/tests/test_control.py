@@ -184,3 +184,17 @@ def test_key_labels():
     from hcs_agent.cli import _key_label
 
     assert [_key_label(k) for k in ("cmd+h", "cmd+j", "alt_r", "f9", None)] == ["⌘H", "⌘J", "Right ⌥", "F9", "⌘H"]
+
+
+def test_rate_a_task(rig, tmp_path):
+    _report(tmp_path, "s1")
+    code, r = rig.call("POST", "/rate", {"id": "s1", "useful": False})
+    assert code == 200 and r["useful"] is False
+    saved = json.loads((tmp_path / "s1" / "report.json").read_text())
+    assert saved["feedback"] == {"useful": False, "comment": None, "allow_screenshots_to_support": False}
+    assert saved["status"] == "resolved"  # only the user's verdict changes, never what was observed
+    assert rig.call("GET", "/sessions")[1]["sessions"][0]["useful"] is False
+    assert rig.call("POST", "/rate", {"id": "s1", "useful": None})[1]["useful"] is None
+    assert rig.call("POST", "/rate", {"id": "../etc", "useful": True})[0] == 400
+    assert rig.call("POST", "/rate", {"id": "nope", "useful": True})[0] == 404
+    assert rig.call("POST", "/rate", {"id": "s1", "useful": "yes"})[0] == 400

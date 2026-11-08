@@ -1,5 +1,5 @@
 /* H Companion app. Palette: the landing (near-black, greys, white, red pen) and Matteo's overlay
-   (red pencil on white paper scraps, dark status pill with a red dot). Plain, straight to the point. */
+   (red pencil, handwriting on white paper scraps). Tabs on top like a browser. */
 :root {
   --black: #040405;
   --grey-800: #0d0d12;
@@ -15,6 +15,7 @@
   --white: #fff;
   --red: #e3242b; /* landing pen */
   --pencil: #db2b1f; /* overlay pencil */
+  --ink: rgba(219, 43, 31, 0.92); /* overlay GRAPHITE */
   --sans: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", "Fira Code", monospace;
   --hand: "Bradley Hand", "Noteworthy", "Marker Felt", "Segoe Print", "Comic Neue", cursive; /* overlay fonts */
@@ -25,6 +26,7 @@ html, body { height: 100%; }
 body {
   margin: 0;
   display: flex;
+  flex-direction: column;
   background: var(--grey-100);
   color: var(--grey-750);
   font: 14px/1.5 var(--sans);
@@ -38,52 +40,67 @@ p { margin: 6px 0; }
 .muted { color: var(--grey-600); }
 .small { font-size: 12.5px; }
 code { font-family: var(--mono); }
+.hand { font-family: var(--hand); }
 
-/* red pencil line around the window, like the overlay's marks on the screen */
+/* red pencil line around the window */
 .frame {
   position: fixed; inset: 0; pointer-events: none; z-index: 10;
   border: 2px solid var(--pencil); border-radius: 10px; opacity: 0.85;
 }
 
-/* sidebar: the landing's black hero ------------------------------------------------------------- */
-.side {
-  width: 190px;
+/* top bar with browser-like tabs ------------------------------------------------------------------ */
+.bar {
   flex: none;
-  background: var(--black);
-  color: var(--grey-300);
+  height: 48px;
   display: flex;
-  flex-direction: column;
-  padding: 0 12px 14px;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 0 14px;
+  background: var(--black);
+  -webkit-app-region: drag;
 }
-.drag { height: 38px; -webkit-app-region: drag; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 24px; }
+body.mac .bar { padding-left: 84px; } /* room for the traffic lights */
+.brand { display: flex; align-items: center; gap: 9px; align-self: center; }
 .key {
-  width: 30px; height: 30px; flex: none;
+  width: 26px; height: 26px; flex: none;
   display: grid; place-items: center;
-  border-radius: 7px;
+  border-radius: 6px;
   background: linear-gradient(#26262f, #121218);
-  box-shadow: inset 0 1px 0 #3a3a46, 0 3px 0 #000, 0 0 0 1px #2a2a34;
-  color: var(--white); font-weight: 700; font-size: 16px;
+  box-shadow: inset 0 1px 0 #3a3a46, 0 2px 0 #000, 0 0 0 1px #2a2a34;
+  color: var(--white); font-weight: 700; font-size: 14px;
 }
-.word { font-weight: 700; font-size: 17px; color: var(--grey-100); letter-spacing: -0.025em; }
+.word { font-weight: 700; font-size: 15px; color: var(--grey-100); letter-spacing: -0.025em; }
 .ion { color: var(--red); }
-nav { display: flex; flex-direction: column; gap: 2px; }
-nav button {
-  position: relative; text-align: left; background: none; border: 0; border-radius: 8px;
-  padding: 7px 12px; color: var(--grey-400);
+.tabs { display: flex; align-items: flex-end; height: 100%; -webkit-app-region: no-drag; }
+.tab {
+  position: relative;
+  height: 38px;
+  min-width: 116px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  background: none;
+  color: var(--grey-400);
+  font-weight: 500;
+  text-align: left;
 }
-nav button:hover { background: var(--grey-800); color: var(--grey-200); }
-nav button.on { background: var(--grey-750); color: var(--white); }
-nav button.on::before {
-  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--red);
+.tab + .tab::after { /* separator between inactive tabs, like a browser */
+  content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 1px; background: var(--grey-700);
 }
+.tab:hover:not(.on) { color: var(--grey-200); background: var(--grey-800); }
+.tab.on { background: var(--grey-100); color: var(--black); font-weight: 600; }
+.tab.on::after, .tab.on + .tab::after { display: none; }
+.tab.on::before { /* the browser's curved feet, plus a red pencil line on top */
+  content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 2px; border-radius: 2px; background: var(--red);
+}
+.tab.on > .foot { display: none; }
 
 /* content --------------------------------------------------------------------------------------- */
-main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 34px 34px 28px; }
-.view { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
+.view { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
 .view-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .card { background: var(--white); border: 1px solid var(--grey-250); border-radius: 12px; padding: 16px 18px; }
-.card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.section-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .eyebrow { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--grey-500); margin: 0 0 2px; }
 .row { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
 
@@ -98,49 +115,47 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 34px 34px 28px; }
 .btn.stop { background: var(--red); border-color: var(--red); padding: 8px 22px; font-size: 14px; }
 .btn.stop:hover { background: #c81e24; }
 
-/* status pill: Matteo's on-screen badge ------------------------------------------------------- */
-.pill {
-  align-self: flex-start;
-  display: inline-flex; align-items: center; gap: 10px;
-  background: rgba(20, 20, 20, 0.92); color: var(--white);
-  border-radius: 999px; padding: 9px 18px 9px 14px; font-size: 15px; font-weight: 600;
+/* paper badges: Matteo's on-screen "⌘H: new request" badge (sketch.js paints the paper) -------- */
+.badge-paper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: none;
+  padding: 10px 22px 10px 40px;
+  color: var(--ink);
+  text-align: left;
 }
-.pill i { width: 12px; height: 12px; border-radius: 50%; background: var(--pencil); flex: none; }
-.pill.pulse i { animation: pulse 1s ease-in-out infinite; }
-.pill.off i { background: var(--grey-500); }
-.pill.done i { background: #3fb950; }
-.pill.warn i { background: #e8a33a; }
-@keyframes pulse { 50% { opacity: 0.35; } }
-.pill-sub { margin: -4px 0 4px 4px; color: var(--grey-600); min-height: 21px; font-size: 14px; }
+.badge-paper svg { position: absolute; left: -6px; top: -6px; overflow: visible; pointer-events: none; }
+.badge-paper svg .paper { filter: drop-shadow(2px 3px 3px rgba(0, 0, 0, 0.28)); }
+.badge-paper svg .ring.faint { opacity: 0.3; }
+.badge-paper span { position: relative; font-size: 21px; line-height: 1.2; }
+.badge-paper.pulse svg .dot { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
 
-.now { border-color: rgba(219, 43, 31, 0.35); }
+.hero { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 0 6px; text-align: center; }
+.badge-paper.big { padding: 13px 28px 13px 44px; cursor: default; }
+.badge-paper.big span { font-size: 27px; }
+
+.levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.level { width: 100%; min-height: 56px; }
+.level span { color: var(--grey-600); font-size: 20px; }
+.level.on span { color: var(--ink); }
+.level:hover:not(.on):not(:disabled) svg .paper { filter: drop-shadow(3px 5px 5px rgba(0, 0, 0, 0.3)); }
+.level:disabled { cursor: default; opacity: 0.6; }
+.level:focus-visible { outline: 2px dashed var(--pencil); outline-offset: 4px; }
+.hint { margin: 10px 4px 0; min-height: 20px; }
+
+.now { border-color: rgba(219, 43, 31, 0.4); }
 .now-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .now h2 { font-size: 17px; }
+.now-step { margin: 6px 0 0; color: var(--grey-700); }
 .steps { display: flex; gap: 6px; margin-top: 14px; }
 .steps span { height: 4px; flex: 1; border-radius: 2px; background: var(--grey-250); }
 .steps span.done { background: var(--black); }
 .steps span.cur { background: var(--pencil); }
 .offline .cmd { display: flex; align-items: center; gap: 10px; margin: 10px 0; background: var(--grey-200); border-radius: 8px; padding: 8px 8px 8px 12px; }
 .offline code { flex: 1; user-select: text; }
-
-/* autonomy: the Magnet, drawn like the overlay (magnet.js) ------------------------------------- */
-.magnet-block { padding: 4px 2px 0; }
-.magnet { position: relative; }
-.magnet svg { display: block; width: 100%; height: auto; }
-.magnet.off { opacity: 0.55; }
-.magnet-label { font-family: var(--hand); font-size: 19px; fill: rgba(219, 43, 31, 0.92); }
-.notch-label { font-family: var(--hand); font-size: 17px; fill: var(--grey-600); }
-.notch-label.on { fill: rgba(219, 43, 31, 0.92); }
-.magnet path.draw { stroke-dasharray: 160; stroke-dashoffset: 160; animation: draw 0.5s ease-out forwards; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-.magnet-hit { position: absolute; inset: 0; }
-.hit {
-  position: absolute; top: 36%; width: 30%; height: 56%; transform: translateX(-50%);
-  background: none; border: 0; border-radius: 12px;
-}
-.hit:disabled { cursor: default; }
-.hit:focus-visible { outline: 2px dashed var(--pencil); outline-offset: -4px; }
-.hint { margin: 2px 6px 0; min-height: 20px; }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stat { background: var(--white); border: 1px solid var(--grey-250); border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; }
@@ -150,8 +165,9 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 34px 34px 28px; }
 
 /* activity --------------------------------------------------------------------------------------- */
 .list { display: flex; flex-direction: column; background: var(--white); border: 1px solid var(--grey-250); border-radius: 12px; }
-.item { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--grey-250); }
+.item { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--grey-250); }
 .item:first-child { border-top: 0; }
+.item .mid { min-width: 0; }
 .item .goal { color: var(--black); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .meta { font-size: 12.5px; color: var(--grey-600); }
 .chip { font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; justify-self: start; border: 1px solid var(--grey-300); color: var(--grey-600); }
@@ -159,6 +175,15 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 34px 34px 28px; }
 .chip.escalated { border-color: var(--pencil); color: var(--pencil); }
 .sim { font-family: var(--mono); font-size: 10.5px; color: var(--grey-500); border: 1px dashed var(--grey-400); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 .empty { padding: 26px 16px; text-align: center; color: var(--grey-600); }
+.rating { display: flex; gap: 6px; }
+.mark {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--grey-300); background: var(--white);
+  font-size: 16px; line-height: 1; color: var(--grey-500);
+}
+.mark:hover { border-color: var(--grey-500); color: var(--black); }
+.mark.yes.on { background: var(--black); border-color: var(--black); color: var(--white); }
+.mark.no.on { background: var(--red); border-color: var(--red); color: var(--white); }
 
 /* voice ------------------------------------------------------------------------------------------- */
 .switch { width: 42px; height: 24px; border-radius: 12px; border: 0; background: var(--grey-300); position: relative; flex: none; padding: 0; }
@@ -184,9 +209,9 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 34px 34px 28px; }
 .keycap:disabled { opacity: 0.5; cursor: default; }
 .badge { font-size: 12.5px; border: 1px solid var(--grey-300); border-radius: 999px; padding: 3px 10px; color: var(--grey-600); }
 .badge.on { border-color: #3fb950; color: #1f7a33; }
-.badge.test { border-color: var(--pencil); color: var(--pencil); }
 
 @media (max-width: 860px) {
-  main { padding: 26px 20px; }
+  main { padding: 24px 20px; }
+  .tab { min-width: 0; }
   .voices { grid-template-columns: 1fr; }
 }

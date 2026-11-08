@@ -1,37 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { duration, headline, isBusy, keyLabel, procedureName } from "../renderer/view.js";
-import { circlePoints, rng, wobble } from "../renderer/magnet.js";
+import { duration, isBusy, keyLabel, procedureName, readyBadge, taskLine } from "../renderer/view.js";
+import { circlePoints, paperPoints, rng, wobble } from "../renderer/sketch.js";
 
-const base = { voice: { state: null, ptt_key: "cmd+h" }, current: null };
-const task = (over) => ({ ...base, current: { session_id: "s", terminal: false, takeover: false, mode: "guide", goal: "g", ...over } });
-
-test("offline and idle", () => {
-  assert.equal(headline(null).tone, "off");
-  assert.deepEqual(headline(base), { text: "Ready", sub: "Hold ⌘H and say what you need", tone: "idle", pulse: false });
-  assert.equal(headline({ ...base, voice: { ptt_key: "alt_r" } }).sub, "Hold Right ⌥ and say what you need");
+test("ready badge: the on-screen words, Listening only while the key is held", () => {
+  assert.deepEqual(readyBadge({ voice: { ptt_key: "cmd+h" } }), { text: "⌘H: new request", pulse: false });
+  assert.equal(readyBadge({ voice: { ptt_key: "alt_r" } }).text, "Right ⌥: new request");
+  assert.deepEqual(readyBadge({ voice: { state: "recording" } }), { text: "Listening…", pulse: true });
+  assert.equal(readyBadge({ voice: { state: "transcribed" } }).text, "⌘H: new request");
+  assert.equal(readyBadge(null).text, "⌘H: new request");
 });
 
-test("voice states win", () => {
-  assert.equal(headline({ ...task({ state: "awaiting_user" }), voice: { state: "recording" } }).text, "Listening…");
-});
-
-test("guide step, takeover, verification, stopping", () => {
-  const step = { index: 2, total: 3, instruction: "Click New" };
-  assert.deepEqual(headline(task({ state: "awaiting_user", step })), { text: "Your turn · step 2 of 3", sub: "Click New", tone: "live", pulse: false });
-  assert.equal(headline(task({ state: "running", takeover: true, last_action: "Typing" })).sub, "Typing");
-  assert.equal(headline(task({ state: "verifying" })).text, "Checking it worked…");
-  assert.equal(headline(task({ state: "stopping" })).tone, "warn");
-  assert.ok(isBusy(task({ state: "running" })));
-});
-
-test("end of a task says what happened, and only claims checked when observed", () => {
-  const done = (o) => headline({ ...base, current: { terminal: true, goal: "Log a note", ...o } });
-  assert.deepEqual(done({ status: "resolved", verified: true }), { text: "Done ✓", sub: "“Log a note” is done: I checked it in the software", tone: "done", pulse: false });
-  assert.equal(done({ status: "resolved", verified: false }).tone, "warn");
-  assert.equal(done({ status: "escalated", blocked_on: "Won refused" }).sub, "I could not finish: Won refused");
-  assert.equal(done({ status: "abandoned", state: "stopped" }).text, "Stopped");
-  assert.ok(!isBusy({ ...base, current: { terminal: true } }));
+test("task line says plainly who does what", () => {
+  const step = { index: 2, total: 4, instruction: "Click New" };
+  assert.equal(taskLine({ state: "awaiting_user", step }), "Now you: Click New");
+  assert.equal(taskLine({ state: "running", takeover: true, last_action: "Typing the name" }), "I'm doing it: Typing the name");
+  assert.equal(taskLine({ state: "running" }), "Looking at your screen…");
+  assert.equal(taskLine({ state: "verifying" }), "Checking in the software that it worked…");
+  assert.equal(taskLine(null), "");
+  assert.ok(isBusy({ current: { terminal: false } }));
+  assert.ok(!isBusy({ current: { terminal: true } }));
 });
 
 test("formatting", () => {
@@ -43,13 +31,13 @@ test("formatting", () => {
   assert.equal(duration(125), "2 min 05");
 });
 
-test("magnet strokes: deterministic pencil, two passes, overshooting loop", () => {
-  const a = wobble([[0, 0], [10, 0]], rng(7), 1);
-  const b = wobble([[0, 0], [10, 0]], rng(7), 1);
-  assert.deepEqual(a, b);
-  assert.equal(a.length, 2);
-  assert.notEqual(a[0], a[1]);
-  const pts = circlePoints(0, 0, 10, 10);
+test("pencil like the overlay: deterministic, two passes, overshooting loop, rough paper", () => {
+  assert.deepEqual(wobble([[0, 0], [10, 0]], rng(7), 1), wobble([[0, 0], [10, 0]], rng(7), 1));
+  const [a, b] = wobble([[0, 0], [10, 0]], rng(7), 1);
+  assert.notEqual(a, b);
+  const pts = circlePoints(0, 0, 8, 7);
   assert.equal(pts.length, 40);
-  assert.ok(Math.abs(pts[0][0] - pts[39][0]) > 0.1 || Math.abs(pts[0][1] - pts[39][1]) > 0.1);
+  const paper = paperPoints(0, 0, 200, 40, rng(11));
+  assert.equal(paper.length, 16);
+  for (const [x, y] of paper) assert.ok(x > -10 && x < 210 && y > -10 && y < 50);
 });

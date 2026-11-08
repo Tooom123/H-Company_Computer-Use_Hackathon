@@ -12,31 +12,37 @@
   </head>
   <body>
     <div class="frame" aria-hidden="true"></div>
-    <aside class="side">
-      <div class="drag"></div>
+
+    <!-- Browser-like tabs on top -->
+    <header class="bar">
       <div class="brand">
         <span class="key">H</span>
         <span class="word">Compan<span class="ion">ion</span></span>
       </div>
-      <nav>
-        <button data-go="home">Home</button>
-        <button data-go="activity">Activity</button>
-        <button data-go="voice">Voice</button>
-        <button data-go="vision">Vision</button>
+      <nav class="tabs" role="tablist">
+        <button class="tab" data-go="home" role="tab">Home</button>
+        <button class="tab" data-go="activity" role="tab">Activity</button>
+        <button class="tab" data-go="voice" role="tab">Voice</button>
+        <button class="tab" data-go="vision" role="tab">Vision</button>
       </nav>
-    </aside>
+    </header>
 
     <main>
-      <!-- Home: what is happening now, and how much I do for you -->
+      <!-- Home: ready for ⌘H; the task when one runs; how much I do for you -->
       <section class="view" id="view-home">
-        <div class="pill" id="pill"><i></i><span id="pillText">…</span></div>
-        <p class="pill-sub" id="pillSub"></p>
+        <div class="hero" id="hero">
+          <button class="badge-paper big" id="readyBadge" tabindex="-1">
+            <svg aria-hidden="true"></svg><span class="hand" id="readyText">⌘H: new request</span>
+          </button>
+          <p class="muted" id="readySub">Hold the key and say what you need. I show you how, on your screen.</p>
+        </div>
 
         <div class="card now" id="now" hidden>
           <div class="now-top">
             <div>
               <p class="eyebrow" id="nowProc"></p>
               <h2 id="nowGoal"></h2>
+              <p class="now-step" id="nowStep"></p>
             </div>
             <button class="btn stop" id="stopBtn">Stop</button>
           </div>
@@ -45,20 +51,17 @@
 
         <div class="card offline" id="offline" hidden>
           <h2>Start the assistant</h2>
-          <p class="muted">The app shows and steers the assistant running on this Mac. Start it from the repo root:</p>
+          <p class="muted">The app steers the assistant running on this Mac. Start it from the repo root:</p>
           <div class="cmd"><code id="cmdText">uv run hcs-agent talk</code><button class="btn ghost" id="copyCmd">Copy</button></div>
-          <p class="muted small">The app connects by itself as soon as it runs. While the app is open, the Magnet leaves the screen and lives here.</p>
+          <p class="muted small">The app connects by itself as soon as it runs.</p>
         </div>
 
-        <div class="magnet-block">
-          <div class="card-h">
+        <div class="section">
+          <div class="section-h">
             <h2>Autonomy</h2>
-            <span class="muted small">How much I do for you · applies right away, even mid-task</span>
+            <span class="muted small">How much I do for you · applies right away</span>
           </div>
-          <div class="magnet" id="magnet">
-            <svg id="magnetSvg" role="img" aria-label="Autonomy"></svg>
-            <div class="magnet-hit" id="magnetHit" role="radiogroup" aria-label="Autonomy"></div>
-          </div>
+          <div class="levels" id="levels" role="radiogroup" aria-label="Autonomy"></div>
           <p class="muted small hint" id="autHint"></p>
         </div>
 
@@ -70,12 +73,10 @@
         <p class="said muted small" id="said"></p>
       </section>
 
-      <!-- Activity: the last sessions, from the agent's reports -->
+      <!-- Activity: the tasks you asked for, and your verdict on each -->
       <section class="view" id="view-activity" hidden>
-        <div class="view-h">
-          <h1>Activity</h1>
-        </div>
-        <p class="muted">Every task ends with a check in the software itself: "Checked" means the change was really seen there, not just claimed.</p>
+        <div class="view-h"><h1>Activity</h1></div>
+        <p class="muted">The tasks you asked for. Tell me if each one helped: ✓ or ✗. It goes to the team with the task, to fix what went wrong and learn what works.</p>
         <div class="list" id="sessions"></div>
       </section>
 
@@ -107,9 +108,9 @@
         </div>
       </section>
 
-      <!-- Vision: Édouard's lab, still in testing -->
+      <!-- Vision: gaze calibration (Édouard's lab) -->
       <section class="view" id="view-vision" hidden>
-        <div class="view-h"><h1>Vision</h1><span class="badge test">In testing</span></div>
+        <div class="view-h"><h1>Vision</h1></div>
         <div class="card">
           <h2>Gaze calibration</h2>
           <p class="muted">The camera follows your gaze to frame the part of the screen you are looking at, so I see where you are stuck.

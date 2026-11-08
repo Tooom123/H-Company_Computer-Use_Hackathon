@@ -3,12 +3,14 @@
 The assistant's home window, like a dictation app: you work in your software, the app sits next to it.
 Plain Electron, no build step. It steers the agent that runs on this Mac (`hcs-agent talk`).
 
-| Page | What it does |
+Four tabs on top, like a browser:
+
+| Tab | What it does |
 | --- | --- |
-| Home | Live status (your turn · step N of M, I'm doing it, checking it worked, done ✓), the current task with a **Stop** button, the **Magnet** (autonomy) drawn like the overlay, this month's tasks / checked / typical task time. |
-| Activity | Last tasks from the agent's reports: checked / to support / stopped, guided or done by the assistant, duration, simulated flag. |
+| Home | Idle: Matteo's paper badge "⌘H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy as three paper badges (dot + pencil ring on the chosen one). This month: tasks, checked, typical time. |
+| Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ / ✗**: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
 | Voice | Spoken notes on/off, voice (Sarah, Jessica, Bella, Matilda: plain American), speed, test; **push-to-talk key** (⌘H, ⌘J, Right ⌥, F9), applied live. |
-| Vision | **Recalibrate**: opens Édouard's Vision Lab (in testing) on the calibration screen. |
+| Vision | **Recalibrate**: opens Édouard's Vision Lab on the calibration screen. |
 
 User side only: costs, H compute and the plan belong to the admin / IT side (support backend), not here.
 The window is excluded from screen capture (like the overlay): H never sees it and the guide's screen watcher

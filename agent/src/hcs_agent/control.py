@@ -11,6 +11,7 @@ usage and costs. This module is the only bridge: plain HTTP on 127.0.0.1, stdlib
     POST /stop       stop the current task (local gate first, as everywhere)
     POST /voice      {"enabled"?: bool, "voice"?: id, "speed"?: float}
     POST /voice/test say a sample sentence
+    POST /rate       {"id": run folder, "useful": true | false | null} the user's verdict on a finished task
     POST /ptt        {"key": "cmd+h" | "cmd+j" | "alt_r" | "f9"} push-to-talk key, live
 
 Safety: bound to 127.0.0.1; every request must carry `X-HCS-App: 1` (a web page cannot add that header to a
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -76,7 +78,10 @@ def read_reports(runs_dir: Path, limit: int | None = None) -> list[dict[str, Any
         a, b = _parse_ts(t.get("approved_at") or t.get("started_at")), _parse_ts(t.get("finished_at"))
         v = r.get("verification") or {}
         esc = r.get("escalation") or {}
+        fb = r.get("feedback") or {}
         out.append({
+            "id": f.parent.name,  # the folder: what /rate takes
+            "useful": fb.get("useful"),
             "session_id": r.get("session_id") or f.parent.name,
             "case_id": r.get("case_id"),
             "procedure_id": r.get("procedure_id"),
@@ -93,6 +98,38 @@ def read_reports(runs_dir: Path, limit: int | None = None) -> list[dict[str, Any
         if limit and len(out) >= limit:
             break
     return out
+
+
+def rate_session(runs_dir: Path, run_id: str, useful: bool | None) -> dict[str, Any]:
+    """The user's verdict on a finished task (✓ useful / ✗ not useful / None = cleared), written into the
+    report's `feedback` (user-declared, never inferred) and sent again to the support backend, which updates
+    the case: material for debugging and for learning which tasks went well."""
+    if not re.fullmatch(r"[\w-]{1,80}", run_id or ""):
+        raise ValueError("bad id")
+    f = runs_dir / run_id / "report.json"
+    if not f.is_file():
+        raise FileNotFoundError(run_id)
+    data = json.loads(f.read_text(encoding="utf-8"))
+    fb = dict(data.get("feedback") or {})
+    fb["useful"] = useful
+    fb.setdefault("comment", None)
+    fb.setdefault("allow_screenshots_to_support", False)
+    data["feedback"] = fb
+    tmp = f.with_suffix(".json.part")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(f)
+    sent = False
+    try:
+        from .contract import InterventionReport
+        from .support import shared_uplink
+
+        up = shared_uplink()
+        if up is not None:
+            up.send_report(InterventionReport.model_validate(data))
+            sent = True
+    except Exception:  # noqa: BLE001 - the verdict is saved locally either way
+        pass
+    return {"id": run_id, "useful": useful, "sent_to_support": sent}
 
 
 def month_usage(reports: list[dict[str, Any]], now: datetime | None = None) -> dict[str, Any]:
@@ -255,6 +292,16 @@ class Controller:
                 except (TypeError, ValueError):
                     return 400, {"error": "speed must be a number"}
             return 200, self._set_voice(allowed)
+        if method == "POST" and path == "/rate":
+            useful = body.get("useful")
+            if useful is not None and not isinstance(useful, bool):
+                return 400, {"error": "useful must be true, false or null"}
+            try:
+                return 200, rate_session(self.runs_dir, str(body.get("id") or ""), useful)
+            except ValueError:
+                return 400, {"error": "bad id"}
+            except FileNotFoundError:
+                return 404, {"error": "no such task"}
         if method == "POST" and path == "/ptt":
             key = body.get("key")
             if key not in {k["key"] for k in PTT_KEYS}:

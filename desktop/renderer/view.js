@@ -17,54 +17,33 @@ export function procedureName(id) {
   return name.charAt(0).toUpperCase() + name.slice(1) + (soft ? ` · ${soft}` : "");
 }
 
-/** One headline for the status pill: {text, sub, tone: off|idle|live|done|warn, pulse}. */
-export function headline(status) {
-  if (!status) {
-    return { text: "Assistant not running", sub: "The app connects as soon as it runs", tone: "off", pulse: false };
+/** The paper badge on Home: the same words as the on-screen badge. Only "Listening…" while the key is held. */
+export function readyBadge(status) {
+  const v = (status && status.voice) || {};
+  if (v.state === "recording") return { text: "Listening…", pulse: true };
+  if (v.state === "transcribing") return { text: "Transcribing…", pulse: true };
+  return { text: `${keyLabel(v.ptt_key)}: new request`, pulse: false };
+}
+
+/** One plain line about the running task, for the task card. */
+export function taskLine(c) {
+  if (!c) return "";
+  const step = c.step;
+  switch (c.state) {
+    case "created":
+    case "awaiting_approval":
+      return "Waiting for your go";
+    case "awaiting_user":
+      return step ? `Now you: ${step.instruction}` : "Now you: do the step shown on screen";
+    case "running":
+      return c.takeover ? `I'm doing it${c.last_action ? `: ${c.last_action}` : ""}` : "Looking at your screen…";
+    case "verifying":
+      return "Checking in the software that it worked…";
+    case "stopping":
+      return "Stopping: nothing else will be changed";
+    default:
+      return "";
   }
-  const v = status.voice || {};
-  if (v.state === "recording") return { text: "Listening…", sub: "Release the key when you are done", tone: "live", pulse: true };
-  if (v.state === "transcribing") return { text: "Transcribing…", sub: "", tone: "live", pulse: true };
-  const c = status.current;
-  if (c && !c.terminal) {
-    const step = c.step;
-    switch (c.state) {
-      case "created":
-      case "awaiting_approval":
-        return { text: "Waiting for your approval", sub: c.goal || "", tone: "live", pulse: true };
-      case "awaiting_user":
-        return {
-          text: step ? `Your turn · step ${step.index}${step.total ? ` of ${step.total}` : ""}` : "Your turn",
-          sub: step ? step.instruction : "",
-          tone: "live",
-          pulse: false,
-        };
-      case "running":
-        return c.takeover
-          ? { text: "I'm doing it", sub: c.last_action || "Watch: I show each action on screen", tone: "live", pulse: true }
-          : { text: "Looking at your screen…", sub: step ? `Next: ${step.instruction}` : c.goal || "", tone: "live", pulse: true };
-      case "verifying":
-        return { text: "Checking it worked…", sub: "I look in the software to see that the change is really there", tone: "live", pulse: true };
-      case "stopping":
-        return { text: "Stopping…", sub: "Nothing else will be changed", tone: "warn", pulse: true };
-      default:
-        return { text: c.state, sub: "", tone: "live", pulse: false };
-    }
-  }
-  const ready = { text: "Ready", sub: `Hold ${keyLabel(v.ptt_key)} and say what you need`, tone: "idle", pulse: false };
-  if (c && c.terminal) {
-    const goal = c.goal ? `“${c.goal}”` : "The task";
-    if (c.status === "resolved" && c.verified) {
-      return { text: "Done ✓", sub: `${goal} is done: I checked it in the software`, tone: "done", pulse: false };
-    }
-    if (c.status === "resolved") return { text: "Done", sub: `${goal}: I could not check it myself, have a look`, tone: "warn", pulse: false };
-    if (c.status === "escalated") {
-      return { text: "Sent to support", sub: c.blocked_on ? `I could not finish: ${c.blocked_on}` : "Support has the details", tone: "warn", pulse: false };
-    }
-    if (c.status === "abandoned" || c.state === "stopped") return { text: "Stopped", sub: "Nothing else will be changed", tone: "idle", pulse: false };
-    if (c.state === "failed" || c.status === "failed") return { text: "Something went wrong", sub: "Support has the details", tone: "warn", pulse: false };
-  }
-  return ready;
 }
 
 export function isBusy(status) {

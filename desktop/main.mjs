@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
 const BACKEND = process.env.HCS_BACKEND_URL || "http://127.0.0.1:8766";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test|ptt)$/;
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test|ptt|rate)$/;
 let mainWin = null;
 
 const smoke = process.argv.includes("--smoke");
