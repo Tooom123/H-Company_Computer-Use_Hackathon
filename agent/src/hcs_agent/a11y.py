@@ -60,6 +60,7 @@ class Candidate:
     frame: tuple[float, float, float, float]  # x, y, w, h — screen points, top-left origin
     score: float = 0.0
     why: str = ""
+    ref: object = None  # the AXUIElement, for hit-testing
 
     @property
     def center(self) -> tuple[int, int]:
@@ -198,8 +199,51 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
                 frame = (float(r.origin.x), float(r.origin.y), float(r.size.width), float(r.size.height))
         if frame is None or frame[2] < 2 or frame[3] < 2:
             continue
-        out.append(Candidate(role=role, name=name, frame=frame))
+        out.append(Candidate(role=role, name=name, frame=frame, ref=el))
     return out
+
+
+def visible_at_point(cand: Candidate, depth: int = 10) -> bool:
+    """Hit-test the candidate's centre: is it (or one of its descendants) what the user would actually click?
+    False when a menu, dialog or another window covers it. Unknown element -> True (do not over-filter)."""
+    import ApplicationServices as AS
+
+    if cand.ref is None:
+        return True
+    x, y = cand.center
+    system = AS.AXUIElementCreateSystemWide()
+    err, hit = AS.AXUIElementCopyElementAtPosition(system, float(x), float(y), None)
+    if err != 0 or hit is None:
+        return True
+    el = hit
+    for _ in range(depth):
+        if el is None:
+            break
+        try:
+            if AS.CFEqual(el, cand.ref):
+                return True
+        except Exception:  # noqa: BLE001
+            return True
+        el = _attr(el, "AXParent")
+    # Not the candidate: covered only if what we hit belongs to a menu, dialog, popover or another window.
+    # (Hit-testing has quirks on nested web content; without such evidence, trust the candidate.)
+    el = hit
+    covering = {"AXMenu", "AXMenuBar", "AXSheet", "AXPopover", "AXDialog", "AXMenuItem", "AXPopUpButton"}
+    for _ in range(8):
+        if el is None:
+            break
+        role = _attr(el, "AXRole") or ""
+        sub = _attr(el, "AXSubrole") or ""
+        if role in covering or sub in ("AXDialog", "AXSystemDialog", "AXApplicationDialog", "AXModal"):
+            return False
+        if role == "AXWindow":
+            try:
+                win = _attr(cand.ref, "AXWindow")
+                return win is not None and bool(AS.CFEqual(el, win))  # another window covers it
+            except Exception:  # noqa: BLE001
+                return True
+        el = _attr(el, "AXParent")
+    return True
 
 
 # --------------------------------------------------------------------------- public API
@@ -315,7 +359,7 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
         # a huge element (the whole page, a big container) is rarely the control
         if el.frame[2] * el.frame[3] > 400 * 300:
             score -= 4
-        ranked.append(Candidate(el.role, el.name, el.frame, score, why))
+        ranked.append(Candidate(el.role, el.name, el.frame, score, why, el.ref))
     ranked.sort(key=lambda c: (-c.score, c.frame[1], c.frame[0]))
     return ranked
 
@@ -328,8 +372,13 @@ def find(description: str, info: PageInfo | None = None) -> tuple[Candidate | No
     ranked = match(description, info.elements)
     if not ranked:
         return None, [], info
-    best = ranked[0]
-    ties = [c for c in ranked[1:] if c.score >= best.score - 1.0]
+    # Drop candidates hidden under a menu, a dialog or another window (hit-test, ~1 ms each; top 6 only).
+    top = ranked[:6]
+    visible = [c for c in top if visible_at_point(c)]
+    if not visible:
+        return None, [], info  # the control exists but something covers it: let Holo / the diagnosis speak
+    best = visible[0]
+    ties = [c for c in visible[1:] if c.score >= best.score - 1.0]
     return best, ties, info
 
 

@@ -141,6 +141,33 @@ class Grounder:
             return Located(bool(really), xy if really else None, args.get("seen", ""), latency, box if really else None)
         return Located(False, None, args.get("what_is_visible", ""), latency)
 
+    def choose(self, description: str, options: list[str]) -> int | None:
+        """Text-only pick among labelled candidates (no screenshot, ~0.6 s): which option is the control?
+        Returns the index, or None when the model declines."""
+        tool = {"type": "function", "function": {
+            "name": "pick", "description": "Pick the candidate that matches the description.",
+            "parameters": {"type": "object", "properties": {
+                "index": {"type": "integer", "description": "1-based index of the matching candidate, 0 if none"}},
+                "required": ["index"]}}}
+        listing = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(options))
+        body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": f"Control to find: {description}\nCandidates on screen "
+                                                     f"(role, label, position):\n{listing}\nPick the one that is "
+                                                     "this control; 0 if none fits."}],
+            "tools": [tool], "tool_choice": "required", "temperature": 0, "max_tokens": 40,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
+        r.raise_for_status()
+        calls = (r.json()["choices"][0]["message"].get("tool_calls") or [])
+        if not calls:
+            return None
+        import json as _json
+
+        idx = int(_json.loads(calls[0]["function"]["arguments"]).get("index", 0))
+        return idx - 1 if 1 <= idx <= len(options) else None
+
     def effect_visible(self, expected: str) -> tuple[bool, str]:
         """Lenient check for a step's effect: true if the described result is visible, even partially or with
         extra things around it. (The strict `screen_matches` is for "which application is in front".)"""

@@ -501,7 +501,17 @@ class HBackend:
             if best.score < 10:  # only word overlap, no label match: let Holo look
                 return None, []
             if ties:
-                return None, [best, *ties]
+                cands = [best, *ties][:8]
+                try:  # text-only pick (~0.6 s): role, label and where it sits on screen
+                    sw, sh = __import__("hcs_agent.overlay", fromlist=["screen_size_points"]).screen_size_points()
+                    opts = [f"{c.role.replace('AX', '')} '{c.name[:50]}' at {_where(c.center, sw, sh)}" for c in cands]
+                    idx = self._grounding().choose(description, opts)
+                except Exception:  # noqa: BLE001
+                    idx = None
+                if idx is None:
+                    return None, cands
+                pick = cands[idx]
+                return Located(True, pick.center, f"tree+pick: {pick.role} '{pick.name[:40]}'", time.time() - t0, pick.box), []
             return Located(True, best.center, f"tree: {best.role} '{best.name[:40]}'", time.time() - t0, best.box), []
         except Exception:  # noqa: BLE001 - the tree is an accelerator, never a blocker
             return None, []
@@ -651,6 +661,14 @@ def _agent_xy_to_screen(x, y) -> tuple[int, int] | None:
         return int(fx * sw), int(fy * sh)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _where(center: tuple[int, int], sw: float, sh: float) -> str:
+    """Coarse position words for a point: 'top left', 'centre', 'bottom right'..."""
+    x, y = center
+    col = "left" if x < sw / 3 else "right" if x > 2 * sw / 3 else "centre"
+    row = "top" if y < sh / 3 else "bottom" if y > 2 * sh / 3 else "middle"
+    return f"{row} {col}" if (row, col) != ("middle", "centre") else "centre"
 
 
 def _agent_name(raw: str) -> str:
