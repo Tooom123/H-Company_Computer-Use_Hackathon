@@ -94,6 +94,110 @@ def test_say_during_prefetch_does_not_synthesise_twice(tmp_path):
     assert r.calls == ["Click Save"]
 
 
+def test_dynamic_prefetch_replaces_stale_phrases_without_playing_them(tmp_path):
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def synth(text):
+        calls.append(text)
+        if text == "Old in flight":
+            started.set()
+            assert release.wait(3)
+        return b"\x00\x00" * 100
+
+    sp = Speaker(synth, lambda _: FakeProc(0), tmp_path)
+    try:
+        sp.prefetch(["Old in flight", "Old next"])
+        assert started.wait(2)
+        worker = sp._prefetcher
+        sp.prefetch(["New next", "New next"], replace=True)
+        assert sp._prefetcher is worker  # one speculative worker, no growing request fan-out
+        release.set()
+        worker.join(2)
+        assert calls == ["Old in flight", "New next"]
+        assert sp.spoken == []
+        sp.say("New next")
+        assert sp.wait_idle(2)
+        assert calls.count("New next") == 1 and sp.spoken == ["New next"]
+    finally:
+        release.set()
+        sp.close()
+
+
+def test_stop_cancels_queued_prefetch_and_never_plays_inflight_audio(tmp_path):
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def synth(text):
+        calls.append(text)
+        started.set()
+        assert release.wait(3)
+        return b"\x00\x00" * 100
+
+    sp = Speaker(synth, lambda _: FakeProc(0), tmp_path)
+    try:
+        sp.prefetch(["In flight", "Must not start"])
+        assert started.wait(2)
+        sp.stop()
+        release.set()
+        sp._prefetcher.join(2)
+        assert calls == ["In flight"] and sp.spoken == []
+    finally:
+        release.set()
+        sp.close()
+
+
+def test_slow_speculative_synthesis_does_not_block_current_instruction(tmp_path):
+    started, release, foreground = threading.Event(), threading.Event(), threading.Event()
+
+    def synth(text):
+        if text == "Possible next step":
+            started.set()
+            assert release.wait(3)
+        else:
+            foreground.set()
+        return b"\x00\x00" * 100
+
+    sp = Speaker(synth, lambda _: FakeProc(0), tmp_path)
+    try:
+        sp.prefetch(["Possible next step"])
+        assert started.wait(2)
+        sp.say("Current instruction")
+        assert foreground.wait(1) and sp.wait_idle(1)
+        assert sp.spoken == ["Current instruction"]
+    finally:
+        release.set()
+        sp.close()
+
+
+def test_prefetch_waits_for_current_instruction_to_start(tmp_path):
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def synth(text):
+        calls.append(text)
+        if text == "Current":
+            started.set()
+            assert release.wait(3)
+        return b"\x00\x00" * 100
+
+    sp = Speaker(synth, lambda _: FakeProc(0), tmp_path)
+    try:
+        sp.say("Current")
+        assert started.wait(2)
+        sp.prefetch(["Next"], replace=True)
+        # Background worker must remain queued while the first sound is being prepared.
+        time.sleep(0.05)
+        assert calls == ["Current"]
+        release.set()
+        sp._prefetcher.join(2)
+        assert sp.wait_idle(2)
+        assert calls == ["Current", "Next"] and sp.spoken == ["Current"]
+    finally:
+        release.set()
+        sp.close()
+
+
 def test_new_step_interrupts_the_previous_sentence(tmp_path):
     r = Rig(tmp_path, play_s=[5.0, 0.05])
     r.sp.say("Step one, a long sentence")

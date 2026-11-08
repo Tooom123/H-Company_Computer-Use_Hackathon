@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
 const BACKEND = process.env.HCS_BACKEND_URL || "http://127.0.0.1:8766";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test|feedback|feedback\/dictate)$/;
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|feedback|feedback\/dictate)$/;
 const PLANS = new Set(["pro", "fixpack"]);
 
 const smoke = process.argv.includes("--smoke");
@@ -34,11 +34,19 @@ async function call(base, method, p, body, headers = {}) {
   }
 }
 
-ipcMain.handle("agent", (_e, method, p, body) => {
+ipcMain.handle("agent", async (_e, method, p, body) => {
   if (!["GET", "POST"].includes(method) || typeof p !== "string" || !AGENT_PATHS.test(p)) {
     return { ok: false, status: 400, data: { error: "not allowed" } };
   }
-  return call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, { "X-HCS-App": "1" });
+  // Return to the software before H observes it, instead of capturing our confirmation panel.
+  const win = method === "POST" && p === "/next" ? BrowserWindow.fromWebContents(_e.sender) : null;
+  if (win) {
+    win.hide();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  const result = await call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, { "X-HCS-App": "1" });
+  if (win && !result.ok && !win.isDestroyed()) win.show();
+  return result;
 });
 
 ipcMain.handle("plans", () => call(BACKEND, "GET", "/billing/plans"));
@@ -139,6 +147,15 @@ function createWindow() {
 }
 
 app.whenReady().then(createWindow);
+app.on("activate", () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) createWindow();
+  else {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+});
 app.on("window-all-closed", () => app.quit()); // closing the window gives the Magnet back to the screen
 app.on("before-quit", () => {
   if (vision && vision.exitCode === null) vision.kill();

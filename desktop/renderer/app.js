@@ -12,6 +12,7 @@ const HINTS = [
 ];
 
 let status = null; // last /status, null = agent not running
+let stepReplyPending = false;
 let lastSessionKey = "";
 let view = "home";
 let pendingAutonomy = null; // optimistic value while the POST is in flight
@@ -104,6 +105,9 @@ function renderHome() {
 
   const busy = isBusy(status);
   $("now").hidden = !busy;
+  $("stepReply").hidden = !busy || status.current.state !== "awaiting_user" || !status.current.step;
+  $("stepDone").disabled = stepReplyPending;
+  $("stepStuck").disabled = stepReplyPending;
   if (busy) {
     const c = status.current;
     $("nowProc").textContent = `${procedureName(c.procedure_id)} · ${c.takeover ? "agent acting" : c.mode === "act" ? "agent acting" : "guiding you"}`;
@@ -128,6 +132,25 @@ $("stopBtn").addEventListener("click", async () => {
   await api.agent("POST", "/stop");
   poll();
 });
+async function reportStep(done) {
+  const c = status?.current;
+  if (stepReplyPending || !c || c.terminal || c.state !== "awaiting_user" || !c.step) return;
+  const body = { session_id: c.session_id, step_index: c.step.index, done };
+  stepReplyPending = true;
+  $("stepReplyMessage").textContent = "";
+  renderHome();
+  try {
+    const r = await api.agent("POST", "/next", body);
+    if (!r.ok) $("stepReplyMessage").textContent = r.status === 409
+      ? "L’étape a changé. Vérifie la consigne actuelle."
+      : "Réponse non transmise. Réessaie dans un instant.";
+  } finally {
+    stepReplyPending = false;
+    await poll();
+  }
+}
+$("stepDone").addEventListener("click", () => reportStep(true));
+$("stepStuck").addEventListener("click", () => reportStep(false));
 $("copyCmd").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("cmdText").textContent);

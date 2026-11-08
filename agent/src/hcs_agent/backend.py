@@ -101,6 +101,10 @@ class GuideSubStep(GuideTarget):
     instruction: str = Field(default="", description="One short imperative line, max 12 words.")
     where: str | None = ""
     why: str | None = ""
+    kind: Literal["click", "type", "key", "info", "wait"] = Field(default="click",
+        description="Expected human interaction: click, type, key, info (read only), or wait (observe a pending result).")
+    done_when: str | None = Field(default=None,
+        description="Concrete visible state to verify after this interaction. A click alone is not completion.")
 
 
 class GuideAnswer(GuideTarget):
@@ -109,10 +113,15 @@ class GuideAnswer(GuideTarget):
     steps: list[GuideSubStep] | None = Field(
         default=None,
         description="Up to 3 consecutive steps whose controls are ALL visible on the current screen, in order. "
-                    "The first one must also be repeated in the top-level fields.")
+                    "The first one must also be repeated in the top-level fields. Only the first is shown; the "
+                    "others prepare audio and must be revalidated on a fresh screen before use.")
     instruction: str = Field(default="", description="What the user should do now. One short line, max 12 words.")
     where: str | None = Field(default="", description="Where the control is on screen, in words.")
     why: str | None = Field(default="", description="One or two sentences: what this step achieves for the user.")
+    kind: Literal["click", "type", "key", "info", "wait"] = Field(default="click",
+        description="Expected human interaction: click, type, key, info (read only), or wait (observe a pending result).")
+    done_when: str | None = Field(default=None,
+        description="Concrete visible state to verify after this interaction. A click alone is not completion.")
     coordinate_system: Literal["normalized_1000"] | None = Field(default=None,
         description="Set normalized_1000 explicitly whenever returning a target, including targets in steps. Applies to both axes and every step. Never pixels or viewport coordinates.")
     last: bool | None = Field(default=False, description="True when the goal is visibly achieved or the user is blocked.")
@@ -128,6 +137,34 @@ class GuideAnswer(GuideTarget):
         self.where, self.why = self.where or "", self.why or ""
         self.last, self.blocked = bool(self.last), bool(self.blocked)
         self.steps = [x for x in (self.steps or []) if x.instruction]
+
+
+_GUIDANCE_PROGRESSION = """\
+Progression protocol: only the first proposed step is shown. Following steps are tentative audio
+preparation, never permission to advance without observing the screen again. Give the current step's
+kind and, where possible, done_when: a visible postcondition, not just an input event.
+An 'Observed interaction:' message is an automatic input or screen-change signal, NOT human feedback
+or proof of success. A 'User reported' message is a declaration, also not verified success. After either,
+take a fresh screenshot, check the previous expected result, then adapt the next instruction and target
+to the actual current screen. Never reuse the previous batch or declare completion just because an
+input occurred. Stay within the reference procedure and observation-only tool permissions.
+"""
+
+
+def _guidance_reply_message(done: bool, note: str | None, expected: str | None) -> str:
+    """Preserve automatic signals versus human declarations; neither proves a postcondition."""
+    note = (note or "").strip()
+    if note.startswith("Observed interaction:"):
+        signal = note
+    else:
+        signal = ("User reported completing the interaction." if done
+                  else "User reported difficulty completing the interaction.")
+        if note:
+            signal += f" User note: {note}"
+    expected_result = f" Expected visible result to verify: {expected}." if expected else ""
+    return (signal + " This is not a verified outcome." + expected_result
+            + " Take a fresh screenshot and verify the result before choosing the next instruction."
+              " Adapt to the current screen; discard any stale remaining steps from the previous answer.")
 
 
 class VerificationAnswer(BaseModel):
@@ -432,7 +469,8 @@ class HBackend:
         if stop_event.is_set():
             return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
         tools = [make_lookup_tool(self.knowledge, bound.request.software, on_lookup)]
-        agent = self._agent_spec(f"hcs-guide-{proc.id}", bound.guide_instructions, fast=True)
+        agent = self._agent_spec(f"hcs-guide-{proc.id}",
+                                 bound.guide_instructions + "\n\n" + _GUIDANCE_PROGRESSION, fast=True)
         done = threading.Event()
         guidance: list[GuidanceStep] = []
         sid = None
@@ -464,28 +502,22 @@ class HBackend:
                     declared = DeclaredResult(outcome="unclear", summary=str(result.answer or ""))
                     break
                 subs = ans.steps or [GuideSubStep(instruction=ans.instruction, where=ans.where, why=ans.why,
-                                                  target_x=ans.target_x, target_y=ans.target_y)]
+                                                  target_x=ans.target_x, target_y=ans.target_y,
+                                                  kind=ans.kind, done_when=ans.done_when)]
                 subs = [x for x in subs if x.instruction] or [GuideSubStep(instruction=ans.instruction or "…")]
                 if ans.blocked or ans.last:
                     subs = subs[:1]
-                replies: list[str] = []
-                aborted = False
-                for k, sub in enumerate(subs[:3]):
-                    gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where or "",
-                                      why=sub.why or "", pointer=_guide_target_to_screen(
-                                          sub.target_x, sub.target_y, ans.coordinate_system),
-                                      last=(ans.last or ans.blocked))
-                    guidance.append(gs)
-                    reply = on_guidance(gs)  # blocks until the user did it (or stop); None on last steps
-                    if gs.last:
-                        break
-                    if reply is None or stop_event.is_set():
-                        aborted = True
-                        break
-                    did, note = reply
-                    replies.append(("I did it." if did else "I could not do it.") + (f" {note}" if note else ""))
-                    if not did:
-                        break  # the user is stuck: let the agent look again now
+                # Later instructions are audio candidates only. A click or page transition can
+                # invalidate every remaining target, even if all were visible in the last frame.
+                sub = subs[0]
+                gs = GuidanceStep(index=len(guidance) + 1, instruction=sub.instruction, where=sub.where or "",
+                                  why=sub.why or "", pointer=_guide_target_to_screen(
+                                      sub.target_x, sub.target_y, ans.coordinate_system),
+                                  kind=sub.kind, done_when=sub.done_when,
+                                  prepared_speech=[candidate.instruction for candidate in subs[1:3]],
+                                  last=(ans.last or ans.blocked))
+                guidance.append(gs)
+                reply = on_guidance(gs)  # blocks for an interaction/report, not proof of success
                 if ans.blocked:
                     declared = DeclaredResult(outcome="blocked", summary=ans.instruction, blocker=ans.blocker,
                                               steps_taken=[g.instruction for g in guidance])
@@ -494,9 +526,10 @@ class HBackend:
                     declared = DeclaredResult(outcome="done", summary=ans.instruction,
                                               steps_taken=[g.instruction for g in guidance])
                     break
-                if aborted:
+                if reply is None or stop_event.is_set():
                     break
-                handle.send_message(" ".join(replies) + " Look at the screen and give me the next step(s).")
+                did, note = reply
+                handle.send_message(_guidance_reply_message(did, note, gs.done_when))
             else:
                 declared = DeclaredResult(outcome="unclear", summary="Too many guidance steps.")
             if stop_event.is_set():

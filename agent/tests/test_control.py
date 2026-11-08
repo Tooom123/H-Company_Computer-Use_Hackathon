@@ -108,6 +108,33 @@ def test_stop_and_voice(rig):
     assert rig.call("GET", "/nope")[0] == 404
 
 
+def test_next_is_explicit_bound_to_step_and_never_claims_verification(rig):
+    calls = []
+
+    def next_step(sid, index, done):
+        calls.append((sid, index, done))
+        return (sid, index) == ("session-a", 2)
+
+    rig.ctl._next_step = next_step
+    for done in (True, False):
+        assert rig.call("POST", "/next", {
+            "session_id": "session-a", "step_index": 2, "done": done,
+        }) == (200, {"accepted": True, "verified": False})
+    assert calls == [("session-a", 2, True), ("session-a", 2, False)]
+    assert rig.call("POST", "/next", {
+        "session_id": "old-session", "step_index": 1, "done": True,
+    })[0] == 409
+    before = len(calls)
+    for body in ({}, {"session_id": "session-a", "step_index": True, "done": True},
+                 {"session_id": "session-a", "step_index": 0, "done": True},
+                 {"session_id": "session-a", "step_index": 2, "done": "yes"}):
+        assert rig.call("POST", "/next", body)[0] == 400
+    assert len(calls) == before
+    assert rig.call("POST", "/next", {
+        "session_id": "session-a", "step_index": 2, "done": True,
+    }, headers={"Content-Type": "application/json"})[0] == 403
+
+
 def test_app_presence_hides_then_brings_back_the_magnet(rig, monkeypatch):
     rig.call("GET", "/status")
     assert rig.presence == [True]

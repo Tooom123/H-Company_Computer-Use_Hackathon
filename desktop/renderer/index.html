@@ -43,6 +43,12 @@
             <button class="btn stop" id="stopBtn">Stop</button>
           </div>
           <div class="steps" id="nowSteps"></div>
+          <div id="stepReply" hidden>
+            <p class="muted small">Si l’action n’est pas détectée, indique où tu en es. H vérifiera le résultat à l’écran.</p>
+            <button class="btn" id="stepDone">J’ai fait l’étape</button>
+            <button class="btn ghost" id="stepStuck">Je suis bloqué</button>
+            <p class="small" id="stepReplyMessage" role="status" aria-live="polite"></p>
+          </div>
         </div>
 
         <div class="card offline" id="offline" hidden>

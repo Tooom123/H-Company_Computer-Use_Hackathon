@@ -665,3 +665,42 @@ consigne finale avec sa cible et son verdict, même si aucune attente utilisateu
 n'a précédé cette étape. Les cas non vérifiés restent présentés comme tels ; un
 abandon ne réutilise pas une ancienne cible. Tests ciblés de clôture, voix et
 coordonnées exécutés hors réseau ; précision perçue à retester sur une page H.
+
+## 2026-11-08 — Clic ciblé et préparation des phrases GUIDE
+
+Audit : le watcher desktop acceptait un clic quelconque ou un changement global
+de l’écran et le backend le traduisait en « I did it ». Une réponse groupée pouvait
+alors afficher une cible devenue périmée. Ces signaux n’étaient pas une preuve
+de réussite.
+
+Correction : le signal automatique est limité à la cible géométrique proposée,
+avec garde sur l’application active ; la saisie nécessite un champ ciblé, de la
+saisie puis Enter/Tab. Le changement d’écran seul ne valide plus l’étape. Les
+coordonnées deviennent invalides après défilement ou interaction susceptible de
+changer le contexte. Un repère absent ou imprécis permet toujours une déclaration
+explicite dans Home : « J’ai fait l’étape » / « Je suis bloqué ». Ces boutons sont
+liés à la session et au numéro d’étape ; une commande périmée est refusée.
+
+Le backend conserve la différence entre interaction observée et déclaration
+humaine. Après chaque réponse, il demande à H une nouvelle observation et le
+contrôle de l’état attendu. Une seule étape est affichée par tour. Il ne certifie
+pas indépendamment la fraîcheur du screenshot ni la bonne identité DOM du bouton :
+l’extension devra apporter cette preuve supplémentaire.
+
+Deux instructions suivantes au maximum sont préparées pour la synthèse vocale.
+Elles ne déclenchent ni lecture ni affichage ; leur texte devra être confirmé par
+le nouveau tour. La phrase en cours a priorité, les préparations en attente sont
+remplacées si le plan change et annulées à Stop. Une synthèse déjà partie peut
+finir silencieusement dans le cache. Aucun appel H spéculatif supplémentaire.
+
+Tests techniques hors modèle : mauvais clic, point périmé, app/scroll, saisie,
+arrêt, confirmation explicite, lot de consignes invalidé, cache vocal, priorité
+audio, annulation et compatibilité des schémas. Aucun score humain ni gain de
+latence réelle n’est déduit de ces tests. Un parcours humain H reste nécessaire.
+
+Validation finale : **1 038 tests Python passent** (agent, backend, pilote et
+import/minimisation de profils), ainsi que les sept tests desktop existants.
+La recette renderer en Chrome headless couvre sept groupes de vérifications
+avec un serveur simulé local : confirmations exactes, double clic, conflit 409,
+états masqués, voix et feedback ; zéro erreur JavaScript. Elle ne mesure pas
+l’audio réel, H, ni le masquage natif Electron.

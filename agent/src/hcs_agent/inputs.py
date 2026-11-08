@@ -22,7 +22,7 @@ _CHAR_KEYCODES = {c: k for c, k in zip("asdfhgzxcv", range(0, 10))} | {
 
 class InputHub:
     """Singleton: `InputHub.get()`. Subscribers get (event, payload) with event in
-    click | key_down | key_up | combo_down | combo_up."""
+    click | scroll | key_down | key_up | combo_down | combo_up."""
 
     _instance: "InputHub | None" = None
     _lock = threading.Lock()
@@ -57,7 +57,10 @@ class InputHub:
         def on_release(key):
             self._emit("key_up", key)
 
-        self._mouse = mouse.Listener(on_click=on_click)
+        def on_scroll(x, y, dx, dy):
+            self._emit("scroll", (x, y, dx, dy))
+
+        self._mouse = mouse.Listener(on_click=on_click, on_scroll=on_scroll)
         self._keys = keyboard.Listener(on_press=on_press, on_release=on_release, darwin_intercept=self._intercept)
         self._mouse.start()
         self._keys.start()

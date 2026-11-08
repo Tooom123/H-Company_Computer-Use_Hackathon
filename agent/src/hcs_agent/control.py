@@ -9,6 +9,7 @@ usage and costs. This module is the only bridge: plain HTTP on 127.0.0.1, stdlib
     GET  /usage      sessions this month, H spend and concurrency, ElevenLabs characters, keys configured
     POST /autonomy   {"level": 0|1|2}
     POST /stop       stop the current task (local gate first, as everywhere)
+    POST /next       {"session_id": ..., "step_index": ..., "done": bool} explicit user report, not verification
     POST /voice      {"enabled"?: bool, "voice"?: id, "speed"?: float}
     POST /voice/test say a sample sentence
     GET  /feedback   current completed-session feedback draft
@@ -166,12 +167,15 @@ class Controller:
                  set_voice: Callable[[dict[str, Any]], dict[str, Any]], test_voice: Callable[[], bool],
                  on_app_presence: Callable[[bool], None] | None = None,
                  feedback: DesktopFeedback | None = None,
+                 next_step: Callable[[str, int, bool], bool] | None = None,
                  quota: Callable[[], Any] = h_quota, tts_usage: Callable[[], Any] = elevenlabs_usage) -> None:
         self.runs_dir = runs_dir
         self._status, self._set_autonomy, self._stop = status, set_autonomy, stop
         self._set_voice, self._test_voice = set_voice, test_voice
         self._on_presence = on_app_presence
         self._feedback = feedback or DesktopFeedback()
+        self._next_step = next_step
+        self._next_lock = threading.Lock()
         self._quota, self._tts = _Cached(quota), _Cached(tts_usage)
         self.app_seen = 0.0
         self.app_present = False
@@ -241,6 +245,15 @@ class Controller:
             return 200, self.status()
         if method == "POST" and path == "/stop":
             return 200, {"stopped": self._stop()}
+        if method == "POST" and path == "/next":
+            sid, index, done = body.get("session_id"), body.get("step_index"), body.get("done")
+            if (not isinstance(sid, str) or not sid or len(sid) > 128
+                    or type(index) is not int or index < 1 or type(done) is not bool):
+                return 400, {"error": "session_id, positive step_index and boolean done are required"}
+            with self._next_lock:
+                if self._next_step is None or not self._next_step(sid, index, done):
+                    return 409, {"error": "This step is no longer awaiting your response"}
+            return 200, {"accepted": True, "verified": False}
         if method == "POST" and path == "/voice":
             allowed = {k: body[k] for k in ("enabled", "voice", "speed") if k in body}
             if "enabled" in allowed and not isinstance(allowed["enabled"], bool):

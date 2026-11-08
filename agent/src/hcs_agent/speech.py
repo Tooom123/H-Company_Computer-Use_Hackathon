@@ -143,6 +143,8 @@ class Speaker:
         self._worker = threading.Thread(target=self._run, name="tts", daemon=True)
         self._worker.start()
         self._prefetcher: threading.Thread | None = None
+        self._prefetch_pending: list[str] = []
+        self._prefetch_running = False
 
     # ------------------------------------------------------------------ API (any thread)
 
@@ -166,6 +168,7 @@ class Speaker:
             self._kill()
             self._drain()
             self._pending_since = None
+            self._prefetch_pending.clear()
 
     def holding(self) -> bool:
         """True while a requested sentence is not audible yet (bounded): the overlay waits to start drawing."""
@@ -177,20 +180,39 @@ class Speaker:
         p = self._proc
         return self._busy or self._pending_since is not None or (p is not None and p.poll() is None)
 
-    def prefetch(self, texts: list[str]) -> None:
-        """Synthesise upcoming sentences in the background so they play without delay."""
+    def prefetch(self, texts: list[str], *, replace: bool = False) -> None:
+        """Warm the audio cache, never play it. Replace discards a stale speculative plan.
+
+        One bounded background queue avoids parallel requests for every update. Foreground speech
+        starts first and has its own worker: a slow speculative request cannot hold up another text.
+        An already-running synthesis may finish into the cache after Stop; it is never played here.
+        """
         todo = [t for t in dict.fromkeys(clean(x) for x in texts) if t and not self._path(t).exists()]
-        if not todo or self._closed:
-            return
+        with self._lock:
+            if self._closed:
+                return
+            if replace:
+                self._prefetch_pending.clear()
+            self._prefetch_pending = list(dict.fromkeys([*self._prefetch_pending, *todo]))[:32]
+            if self._prefetch_running or not self._prefetch_pending:
+                return
+            self._prefetch_running = True
+            self._prefetcher = threading.Thread(target=self._prefetch, name="tts-prefetch", daemon=True)
+            self._prefetcher.start()
 
-        def run() -> None:
-            for t in todo:
-                if self._closed:
+    def _prefetch(self) -> None:
+        while True:
+            with self._lock:
+                if self._closed or not self._prefetch_pending:
+                    self._prefetch_running = False
                     return
-                self._clip(t)
-
-        self._prefetcher = threading.Thread(target=run, name="tts-prefetch", daemon=True)
-        self._prefetcher.start()
+                # Give the current instruction its first audio before spending capacity on later ones.
+                text = (None if self._pending_since is not None or not self._jobs.empty()
+                        else self._prefetch_pending.pop(0))
+            if text is None:
+                time.sleep(0.02)
+            else:
+                self._clip(text)
 
     def wait_idle(self, timeout: float = 10.0) -> bool:
         deadline = time.time() + timeout

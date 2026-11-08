@@ -180,6 +180,11 @@ class GuidanceStep(BaseModel):
     kind: Literal["click", "type", "key", "info", "wait"] = Field(
         default="click",
         description="click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.")
+    done_when: str | None = Field(default=None,
+        description="Expected visible result to check after an interaction; not an observed or verified outcome.")
+    prepared_speech: list[str] = Field(default_factory=list, max_length=2,
+        description="At most two tentative next instructions for audio preparation only. Never display or advance "
+                    "to these without a fresh observation and guidance response.")
     annotations: list[Annotation] = Field(default_factory=list)
     last: bool = False
     shown_at: datetime | None = None

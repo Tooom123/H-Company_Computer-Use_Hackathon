@@ -90,6 +90,7 @@ def _prefetch_voice(request: InterventionRequest) -> None:
 _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
 _FEEDBACK = DesktopFeedback()
 _RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
+_GUIDE_REPLY_LOCK = threading.Lock()
 _TEST_SENTENCE = "Bonjour, je suis H Companion. Je peux maintenant lire les indications à voix haute."
 
 
@@ -158,6 +159,32 @@ def _control_stop() -> bool:
     return True
 
 
+def _submit_guidance(it, step_index: int, *, done: bool, note: str) -> bool:
+    """Accept one observation/confirmation for this exact step; never label it successful."""
+    with _GUIDE_REPLY_LOCK:
+        if (it is None or it.state is not State.awaiting_user or not it.guidance
+                or it.guidance[-1].index != step_index
+                or getattr(it, "_user_event", None) is not None and it._user_event.is_set()):
+            return False
+        _hush()
+        try:
+            it.next(NextCommand(done=done, note=note))
+        except RuntimeError:  # Stop or a worker state change won the race.
+            return False
+        return True
+
+
+def _control_next(session_id: str, step_index: int, done: bool) -> bool:
+    """Explicit desktop response, bound to the currently shown intervention and step."""
+    it = _MAGNET.get("current")
+    if (it is None or it.request.session_id != session_id or type(step_index) is not int
+            or type(done) is not bool):
+        return False
+    report = "the step was attempted" if done else "being blocked on the step"
+    return _submit_guidance(it, step_index, done=done,
+                           note=f"User explicitly reported {report} in desktop app; result not verified.")
+
+
 def _control_voice(opts: dict) -> dict:
     sp = _SPEECH["speaker"]
     if "voice" in opts or "speed" in opts:
@@ -213,7 +240,7 @@ def _start_control(runs_dir: Path, command: str, backend) -> None:
     _speaker()  # the app's Voice page can set and test the voice even before the first note is shown
     ctl = Controller(runs_dir, status=_control_status, set_autonomy=_set_autonomy, stop=_control_stop,
                      set_voice=_control_voice, test_voice=_control_test_voice, on_app_presence=_app_presence,
-                     feedback=_FEEDBACK)
+                     feedback=_FEEDBACK, next_step=_control_next)
     try:
         port = int(os.environ.get("HCS_CONTROL_PORT", DEFAULT_PORT))
         _CONTROL["server"] = ControlServer(ctl, port).start()
@@ -784,60 +811,154 @@ class _ScreenWatcher:
 
 
 class _InputWatcher:
-    """Knows what the user actually did since the step was shown: clicks, typed keys, Enter/Tab, Escape.
-    Reads the process-wide InputHub (one event tap for the whole program)."""
+    """Observe interactions with the suggested target; never infer a completed task from a click.
 
-    def __init__(self) -> None:
+    Positions are logical screen points, like GuidanceStep.box/pointer. Keyboard contents are not retained.
+    The foreground application check is local and optional; it does not request Accessibility permission.
+    """
+
+    POINTER_TOLERANCE = 28.0
+    BOX_TOLERANCE = 8.0
+
+    def __init__(self, *, hub=None, keyboard=None, clock=None, focus_probe=None) -> None:
+        self._clock = clock or time.monotonic
+        self._focus_probe = focus_probe or self._frontmost_app
         self.armed_at = 0.0
         self.last_click = 0.0
+        self.last_click_xy = None
         self.typed = 0
-        self.last_submit = 0.0  # Enter or Tab
-        self.last_key = 0.0  # Escape
-        self._hub = None
+        self.last_submit = 0.0
+        self._kind = "click"
+        self._target = None
+        self._target_click = False
+        self._field_focused = False
+        self._expected_app = None
+        self._hub, self._kb = None, keyboard
         try:
-            from pynput import keyboard
-
-            from .inputs import InputHub
-
-            self._kb = keyboard
-            self._hub = InputHub.get()
+            if self._kb is None:
+                from pynput import keyboard as native_keyboard
+                self._kb = native_keyboard
+            if hub is None:
+                from .inputs import InputHub
+                hub = InputHub.get()
+            self._hub = hub
             self._hub.subscribe(self._on_event)
-        except Exception as exc:  # noqa: BLE001 - no input monitoring: screen watcher only
-            print(f"(input watcher unavailable: {exc})")
+        except Exception as exc:  # input unavailable: require explicit confirmation, never a screen-only shortcut
+            print(f"(input watcher unavailable: {exc}; explicit confirmation required)")
+
+    @staticmethod
+    def _frontmost_app():
+        if sys.platform != "darwin":
+            return None
+        try:
+            import AppKit
+            app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+            pid = int(app.processIdentifier()) if app is not None else None
+            return pid if pid != os.getpid() else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _finite(values, count):
+        import math
+        return (isinstance(values, (tuple, list)) and len(values) == count
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in values))
+
+    def _inside_target(self, point) -> bool:
+        if self._target is None or not self._finite(point, 2):
+            return False
+        kind, values = self._target
+        px, py = point
+        if kind == "box":
+            x, y, w, h = values
+            margin = self.BOX_TOLERANCE
+            return x - margin <= px <= x + w + margin and y - margin <= py <= y + h + margin
+        x, y = values
+        return (px - x) ** 2 + (py - y) ** 2 <= self.POINTER_TOLERANCE ** 2
+
+    def _invalidate(self) -> None:
+        # A coordinate from a previous page/focus is no longer evidence. Only a new step re-arms it.
+        self._target = None
+        self._target_click = self._field_focused = False
+        self.typed, self.last_submit = 0, 0.0
+
+    def _same_app(self) -> bool:
+        if self._expected_app is not None and self._focus_probe() != self._expected_app:
+            self._invalidate()
+            return False
+        return True
 
     def _on_event(self, event: str, payload) -> None:
-        now = time.time()
+        now = self._clock()
+        if event in ("scroll", "combo_down"):
+            self._invalidate()
+            return
+        if not self._same_app():
+            return
         if event == "click":
+            if not self._finite(payload, 2):
+                return
             magnet = _MAGNET.get("widget")
-            if magnet is not None and payload and magnet.contains(*payload):
-                return  # changing the Magnet level is not the user doing the step
-            self.last_click = now
-        elif event == "key_down":
+            if magnet is not None and magnet.contains(*payload):
+                return
+            self.last_click, self.last_click_xy = now, tuple(payload)
+            if now <= self.armed_at + 0.3:
+                return  # ignore the click that may have opened/revealed the step
+            relevant = self._inside_target(payload)
+            if not relevant:
+                self._invalidate()
+                return
+            self._target_click = True
+            self._field_focused = self._kind == "type"
+            self.typed, self.last_submit = 0, 0.0
+        elif event == "key_down" and self._kb is not None:
+            navigation_keys = ("cmd", "cmd_l", "cmd_r", "ctrl", "ctrl_l", "ctrl_r",
+                               "alt", "alt_l", "alt_r", "page_up", "page_down", "home", "end", "esc",
+                               "up", "down", "left", "right")
+            if any(payload == getattr(self._kb.Key, name, None) for name in navigation_keys):
+                self._invalidate()
+                return
+            if not self._field_focused and (getattr(payload, "char", None)
+                    or payload in (self._kb.Key.enter, self._kb.Key.tab, self._kb.Key.space, self._kb.Key.backspace)):
+                self._invalidate()
+                return
             if payload in (self._kb.Key.enter, self._kb.Key.tab):
-                self.last_submit = now
-            elif payload == self._kb.Key.esc:
-                self.last_key = now
-            elif getattr(payload, "char", None) or payload in (self._kb.Key.space, self._kb.Key.backspace):
+                if self._field_focused and self.typed:
+                    self.last_submit = now
+            elif self._field_focused and (getattr(payload, "char", None)
+                    or payload in (self._kb.Key.space, self._kb.Key.backspace)):
                 self.typed += 1
 
-    def arm(self) -> None:
-        self.armed_at = time.time()
-        self.typed = 0
+    def arm(self, guidance) -> None:
+        self.armed_at = self._clock()
+        self._kind = getattr(guidance, "kind", "click")
+        self.typed, self.last_submit = 0, 0.0
+        self._target_click = self._field_focused = False
+        self._expected_app = self._focus_probe()
+        self._target = None
+        box, pointer = getattr(guidance, "box", None), getattr(guidance, "pointer", None)
+        if self._finite(box, 4) and box[2] > 0 and box[3] > 0:
+            self._target = ("box", tuple(box))
+        elif self._finite(pointer, 2):
+            self._target = ("point", tuple(pointer))
 
     def acted(self, kind: str, settle_s: float = 0.5) -> bool:
-        now = time.time()
-        if kind == "wait":  # the agent itself decides when to move on (screen polling)
+        if self._target is None or kind not in ("click", "type"):
+            return False  # no target, informational text or unspecified key: explicit confirmation only
+        if not self._same_app():
             return False
-        if kind == "key":  # Escape (or a click outside, which also closes menus)
-            return (self.last_key > self.armed_at or self.last_click > self.armed_at + 0.3) and \
-                now - max(self.last_key, self.last_click) >= settle_s
-        if kind == "info":  # read it; any click or Enter moves on, or 9 s pass
-            return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or now - self.armed_at > 9
+        now = self._clock()
         if kind == "type":
-            if self.last_submit > self.armed_at and now - self.last_submit >= settle_s:
-                return True
-            return self.typed > 0 and self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
-        return self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
+            return bool(self._field_focused and self.typed and self.last_submit > self.armed_at
+                        and now - self.last_submit >= settle_s)
+        return self._target_click and now - self.last_click >= settle_s
+
+    def observation_note(self, kind: str) -> str:
+        if kind == "type":
+            detail = "typing and Enter/Tab after a click inside the suggested field"
+        else:
+            detail = f"click inside the suggested target at screen point {self.last_click_xy}"
+        return f"Observed interaction: {detail}. Result not verified; inspect the current screen."
 
     def stop(self) -> None:
         if self._hub is not None:
@@ -860,19 +981,14 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         _prefetch_voice(it.request)
     shown_step = 0
     prompted = False
-    watcher = _ScreenWatcher()
+    guidance_scene_shown = False
     inputs = _InputWatcher()
 
-    def advance(done: bool = True, note: str | None = None) -> None:
-        _hush()  # the user did the step: the sentence about it is over
-        if ov:
+    def advance(done: bool = True, note: str = "") -> None:
+        nonlocal guidance_scene_shown
+        if _submit_guidance(it, shown_step, done=done, note=note) and ov:
             ov.hide()
-        if it.state is not State.awaiting_user:
-            return  # stopped or moved on in the meantime: nothing to answer
-        try:
-            it.next(NextCommand(done=done, note=note))
-        except RuntimeError:
-            pass
+            guidance_scene_shown = False
 
     def status_badge() -> None:
         if ov is None:
@@ -916,7 +1032,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     interrupted = {"done": False}
 
     def tick() -> None:
-        nonlocal shown_step, prompted
+        nonlocal shown_step, prompted, guidance_scene_shown
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
             print("\n>> new voice request: stopping the current task", flush=True)
@@ -926,16 +1042,23 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 ov.badge("New request…", pulsing=True)
             it.stop(StopCommand(reason="replaced by a new voice request"))
             return
+        if guidance_scene_shown and it.state is not State.awaiting_user:
+            ov.hide()  # desktop Next runs on another thread; clear its old marker on the UI thread
+            guidance_scene_shown = False
         status_badge()
         if getattr(it, "takeover", False) and it.state in (State.running, State.verifying):
             narrate()
         if it.state is State.awaiting_user and it.guidance:
             g = it.guidance[-1]
+            if getattr(it, "_user_event", None) is not None and it._user_event.is_set():
+                if ov and guidance_scene_shown:
+                    ov.hide()
+                    guidance_scene_shown = False
+                return  # desktop confirmation already consumed this step; do not replay it
             if g.index != shown_step:
                 shown_step = g.index
                 prompted = False
-                watcher.arm()
-                inputs.arm()
+                inputs.arm(g)
                 if ov:
                     from .overlay import Mark, Scene
 
@@ -948,29 +1071,36 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
                                     None, a.box)
                                for a in g.annotations if a.pointer]))
+                    guidance_scene_shown = True
+                speaker = _SPEECH.get("speaker")
+                if speaker is not None:
+                    speaker.prefetch(list(getattr(g, "prepared_speech", [])), replace=True)
             if auto:
                 time.sleep(0.3)
-                advance()
+                advance(note="Observed interaction: automated test advance; no human action observed. Result not verified.")
                 return
             if not prompted:
-                print(f"\n  step {g.index}: {g.instruction}  [{g.kind}] (I continue when you act; q = stop) ",
+                print(f"\n  step {g.index}: {g.instruction}  [{g.kind}] (target interaction or Enter to continue; q = stop) ",
                       end="", flush=True)
                 prompted = True
             g = it.guidance[-1]
-            if g.kind != "wait" and (inputs.acted(g.kind) or (g.kind == "click" and watcher.changed_and_settled())):
-                print(f"\n  {'input' if inputs.acted(g.kind) else 'screen'} detected, next…", flush=True)
-                advance()
+            if inputs.acted(g.kind):
+                print("\n  target interaction observed; asking H to check the result…", flush=True)
+                advance(note=inputs.observation_note(g.kind))
                 return
             ready, _, _ = select.select([sys.stdin], [], [], 0)
             if ready:
-                ans = sys.stdin.readline().strip()
+                line = sys.stdin.readline()
+                if not line:
+                    return  # EOF (normal in the desktop launcher) is not a human pressing Enter
+                ans = line.strip()
                 if ans.lower() == "q":
                     _hush()
                     if ov:
                         ov.hide()
                     it.stop(StopCommand(reason="user quit"))
                 else:
-                    advance(done=ans == "", note=ans or None)
+                    advance(done=ans == "", note=ans or "User explicitly requested to continue; verify the outcome on screen.")
         # Final guidance is drawn by _show_outcome after the report is available.
         # It must not reuse the previous step's annotation here.
 
