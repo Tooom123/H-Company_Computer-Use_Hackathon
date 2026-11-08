@@ -213,3 +213,109 @@ def test_dynamic_ax_accepts_only_versioned_local_corpus_for_exact_tenant_and_sof
         assert dynamic.it.knowledge[-1].sources[0].url == uri
     else:
         assert dynamic.it.knowledge == []
+
+
+@pytest.mark.parametrize('software,url,bundle,front,allowed', [
+    ('cognition', '', 'com.exafunction.windsurf', True, True),
+    ('cognition', 'vscode-file://vscode-app/local/private/path', 'com.exafunction.windsurf', True, True),
+    ('cognition', 'https://app.devin.ai/sessions/demo', 'com.exafunction.windsurf', True, True),
+    ('cognition', 'https://app.devin.ai/login', 'com.exafunction.windsurf', True, False),
+    ('cognition', 'https://attacker.test/', 'com.exafunction.windsurf', True, False),
+    ('cognition', '', 'com.exafunction.windsurf.spoof', True, False),
+    ('cognition', '', 'com.exafunction.windsurf', False, False),
+    ('h-company', '', 'com.exafunction.windsurf', True, False),
+])
+def test_native_coaching_scope_uses_explicit_bundle_without_inventing_a_url(software, url, bundle, front, allowed):
+    assert coaching_page_allowed(software, url, native=True, bundle_id=bundle, is_front=front) is allowed
+
+
+def _make_native(dynamic, monkeypatch):
+    monkeypatch.setenv('HCS_AX_NATIVE_BUNDLE_ID', 'com.exafunction.windsurf')
+    dynamic.info.native = True
+    dynamic.info.bundle_id = 'com.exafunction.windsurf'
+    dynamic.info.url = 'vscode-file://vscode-app/local/private/resource'
+    dynamic.info.viewport = (0, 0, 1000, 700)
+
+
+def test_native_planner_receives_native_identity_not_internal_resource_path(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert 'Native application: Devin Desktop' in dynamic.calls[0][2]
+    assert 'com.exafunction.windsurf' in dynamic.calls[0][2]
+    assert 'vscode-file' not in dynamic.calls[0][2]
+    assert '/private/resource' not in dynamic.calls[0][2]
+    assert dynamic.shown[0].box == (80, 80, 40, 40)
+
+
+def test_native_empty_tree_explains_blocker_without_planner(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [])
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert dynamic.calls == []
+    assert 'accessibility controls are unavailable' in dynamic.shown[0].instruction
+
+
+def test_native_focus_switch_while_planning_discards_arrow_and_answer(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    control = SimpleNamespace(role='AXButton', name='Review', center=(100, 100), box=(80, 80, 40, 40))
+    background = SimpleNamespace(**vars(dynamic.info))
+    background.is_front = False
+    views = iter([(dynamic.info, [control]), (background, [])])
+    dynamic.backend.page_catalogue = lambda _: next(views)
+    result = dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    assert result.declared.outcome == 'unclear'
+    assert dynamic.shown == []  # Neither a stale arrow nor an answer is presented.
+
+
+def test_native_backend_never_captures_desktop_or_uses_agents_fallback(monkeypatch, tmp_path):
+    import threading
+    from hcs_agent import a11y
+    monkeypatch.setenv('HCS_AX_NATIVE_BUNDLE_ID', 'com.exafunction.windsurf')
+    backend = object.__new__(HBackend)
+    backend.observe_only = True
+    monkeypatch.setattr(backend, '_tree_locate', lambda _: (None, []))
+    monkeypatch.setattr(backend, '_grounding', lambda: pytest.fail('Native AX mode must not capture the desktop'))
+    assert backend.locate('Missing button').found is False
+    assert backend.effect_visible('Success') == (False, '')
+    assert backend.screenshot(tmp_path / 'capture.png') is None
+    req = cli._coaching_request('Explain the visible window', 'cognition')
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    result = backend.run_guidance(bound, 'Explain', lambda _: None, lambda _: None, threading.Event())
+    assert result.declared.outcome == 'blocked' and result.h_session_id is None
+    assert not (tmp_path / 'capture.png').exists()
+
+
+def test_native_unavailable_catalogue_is_not_reclassified_as_browser_fallback(monkeypatch):
+    from hcs_agent import a11y
+    backend = object.__new__(HBackend)
+    backend.observe_only, backend.use_a11y = True, True
+    unavailable = a11y.PageInfo('Devin Desktop', '', '', native=True,
+                               bundle_id='com.exafunction.windsurf', is_front=False)
+    monkeypatch.setattr(a11y, 'page', lambda: unavailable)
+    monkeypatch.setattr(a11y, 'visible_at_point', lambda _: pytest.fail('No foreign app hit test'))
+    assert backend.page_catalogue() == (unavailable, [])
+
+
+def test_native_runner_missing_ax_finishes_blocked_without_any_h_agent(tmp_path, monkeypatch):
+    from hcs_agent.contract import ApproveCommand, CaseStatus
+    monkeypatch.setenv('HCS_AX_NATIVE_BUNDLE_ID', 'com.exafunction.windsurf')
+    monkeypatch.setenv('HCS_GUIDE_OBSERVE_ONLY', '1')
+    backend = MockBackend(step_delay_s=0)
+    backend.page_catalogue = lambda *args: None
+    backend.run_guidance = lambda *args: pytest.fail('Native missing AX fell back to an Agents session')
+    backend.run_attempt = lambda *args: pytest.fail('Native missing AX started an actor')
+    backend.verify = lambda *args: pytest.fail('Native missing AX started a verifier')
+    backend.screenshot = lambda *args: None
+    request = cli._coaching_request('Explain the native Review panel', 'cognition')
+    events = []
+    runner = Intervention(request, backend, ProcedureRegistry(), events.append, tmp_path, uplink=False)
+    runner.start()
+    runner.approve(ApproveCommand())
+    runner.wait(3)
+    assert runner.report is not None and runner.report.status is CaseStatus.escalated
+    assert runner.report.declared.outcome == 'blocked'
+    assert not runner.takeover
+    assert any(e.type == 'guidance' and 'Native accessibility guidance is unavailable' in (e.message or '') for e in events)

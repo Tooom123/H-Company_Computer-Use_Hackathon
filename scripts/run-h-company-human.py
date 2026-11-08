@@ -24,6 +24,8 @@ def atomic(path, value):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--software', choices=('hcompany', 'cognition'), default='hcompany')
+    parser.add_argument('--native-devin', action='store_true',
+                        help='Read the focused Devin Desktop accessibility tree instead of a browser tab.')
     parser.add_argument('--private-root', type=Path)
     parser.add_argument('--control-port', type=int, default=8780)
     parser.add_argument('--backend-port', type=int, default=8781)
@@ -31,6 +33,8 @@ def main():
     parser.add_argument('--input-language', choices=('en', 'fr'), default='fr',
                         help='Language spoken by the human; companion responses stay in English.')
     args = parser.parse_args()
+    if args.native_devin and args.software != 'cognition':
+        parser.error('--native-devin requires --software cognition.')
     if args.control_port == args.backend_port or not all(1024 <= p <= 65535 for p in (args.control_port, args.backend_port)):
         parser.error('Choose two distinct local ports.')
     for port in (args.control_port, args.backend_port):
@@ -77,6 +81,10 @@ def main():
         HCS_BACKEND_URL=f'http://127.0.0.1:{args.backend_port}', HCS_INGEST_TOKEN=credentials['ingest_token'],
         HCS_SUPPORT_USER=private_name, HCS_SUPPORT_EVENTS='1', HCS_PTT_KEY=args.key,
         HCS_RUNS_DIR=str(runs), HCS_VOICE_LANGUAGE=args.input_language)
+    if args.native_devin:
+        os.environ['HCS_AX_NATIVE_BUNDLE_ID'] = 'com.exafunction.windsurf'
+    else:
+        os.environ.pop('HCS_AX_NATIVE_BUNDLE_ID', None)
     # This Mac pilot can speak without an external TTS account. Keep an explicit
     # provider override (and HCS_TTS=0) available to the operator.
     os.environ.setdefault('HCS_TTS_PROVIDER', 'macos' if sys.platform == 'darwin' else 'auto')
@@ -145,7 +153,9 @@ def main():
         'mode':'guide', 'human_present':True, 'observe_only':True, 'control_port':args.control_port,
         'backend_port':args.backend_port, 'knowledge_documents':document_count, 'voice':'gladia',
         'raw_microphone_audio_retained':False, 'software':args.software, 'response_language':'en',
-        'input_language':args.input_language})
+        'input_language':args.input_language,
+        'surface':'devin-desktop' if args.native_devin else 'browser',
+        'native_bundle_id':os.environ.get('HCS_AX_NATIVE_BUNDLE_ID')})
     print(f'Human coaching control: http://127.0.0.1:{args.control_port}', flush=True)
     print(f'Support dashboard: http://127.0.0.1:{args.backend_port}/dashboard', flush=True)
     print(f'Private recordings: {private}; {args.software} documentation: {document_count} documents.', flush=True)

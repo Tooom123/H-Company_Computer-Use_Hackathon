@@ -33,8 +33,23 @@ COACHING_ORIGINS = {
 }
 
 
-def coaching_page_allowed(software: str, url: str) -> bool:
+def coaching_page_allowed(software: str, url: str, *, native: bool = False,
+                          bundle_id: str | None = None, is_front: bool = True) -> bool:
     """Fail closed before sending AX labels from sponsor pilots to the model."""
+    if native:
+        from .a11y import NATIVE_APPLICATIONS
+        if software != "cognition" or bundle_id not in NATIVE_APPLICATIONS or not is_front:
+            return False
+        # Native identity is explicit evidence of the app, not evidence of a web origin. Local Electron
+        # resource URLs may be observed but are never sent to the planner. Real web URLs keep origin rules.
+        if not url:
+            return True
+        try:
+            internal = urlsplit(url)
+            if internal.scheme in {"file", "vscode-file", "vscode-webview", "devin"}:
+                return not internal.username and not internal.password
+        except (TypeError, ValueError):
+            return False
     allowed = COACHING_ORIGINS.get(software)
     if allowed is None:
         return True

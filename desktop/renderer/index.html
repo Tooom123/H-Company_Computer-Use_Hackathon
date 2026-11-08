@@ -52,6 +52,11 @@
       </svg>
     </header>
 
+    <div class="stopbar" id="globalStopBar" hidden>
+      <div><b>Current task</b><p id="stopMessage" class="muted small" role="status" aria-live="polite"></p></div>
+      <button class="btn stop" id="globalStopBtn" aria-label="Stop the current task">Stop task</button>
+    </div>
+
     <main>
       <!-- Home: ready for ⌃⇧H; the task when one runs; how much I do for you -->
       <section class="view" id="view-home">

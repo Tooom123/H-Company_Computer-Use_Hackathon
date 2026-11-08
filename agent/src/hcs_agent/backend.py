@@ -465,6 +465,10 @@ class HBackend:
 
     def run_guidance(self, bound, task, on_step, on_guidance, stop_event, on_lookup=None) -> AttemptResult:
         """Interactive session: one guidance step per turn, the user performs it, then we continue."""
+        from .a11y import native_target
+        if native_target():
+            message = "Native coaching uses the authorized accessibility tree; whole-desktop agent fallback is disabled."
+            return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message, blocker=message))
         proc = bound.procedure
         if stop_event.is_set():
             return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -633,14 +637,16 @@ class HBackend:
             from . import a11y, sitemap
 
             info = a11y.page()
-            if info is None or len(info.elements) <= 1:
+            if info is None or (not getattr(info, "native", False) and len(info.elements) <= 1):
                 return None
+            if getattr(info, "native", False) and not info.is_front:
+                return info, []
             if not getattr(self, "observe_only", False):
                 sitemap.remember(info)
             seen: set[tuple[str, str]] = set()
             items = []
             for e in info.elements:
-                if e.role not in (*a11y.INTERACTIVE, "AXHeading"):
+                if e.role not in (*a11y.INTERACTIVE, "AXHeading", *(["AXStaticText"] if getattr(info, "native", False) else [])):
                     continue
                 key = (e.role, e.name.lower())
                 if key in seen or e.frame[2] * e.frame[3] > 500 * 400:
@@ -665,6 +671,9 @@ class HBackend:
         hit, ties = self._tree_locate(description)
         if hit is not None:
             return hit
+        from .a11y import native_target
+        if native_target():
+            return Located(False, None, "The requested control is not visible in the authorized native accessibility tree.")
         try:
             loc = self._grounding().locate(description, context)
         except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
@@ -693,6 +702,11 @@ class HBackend:
         return self._visual_check("screen_matches", expected)
 
     def _visual_check(self, method: str, expected: str) -> tuple[bool, str]:
+        from .a11y import native_target
+        if native_target():
+            self.last_visual_check = {"check": method, "status": "unavailable",
+                                      "message": "Native AX observation does not independently verify the outcome."}
+            return False, ""
         try:
             result = getattr(self._grounding(), method)(expected)
             if (not isinstance(result, tuple) or len(result) != 2 or type(result[0]) is not bool
@@ -708,6 +722,9 @@ class HBackend:
         return result
 
     def screenshot(self, path: Path) -> Path | None:
+        from .a11y import native_target
+        if native_target():
+            return None  # This native pilot shares AX labels only; never fall back to a whole-desktop image.
         try:
             from .grounding import grab_screen
 

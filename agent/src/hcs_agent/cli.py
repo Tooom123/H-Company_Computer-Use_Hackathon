@@ -16,6 +16,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from pathlib import Path
 
 from .backend import make_backend
@@ -150,13 +151,40 @@ def _control_status() -> dict:
     }
 
 
-def _control_stop() -> bool:
+def _control_stop(reason: str = "Stop pressed in the desktop app", *, intervention=None) -> bool:
     _hush()
-    it = _MAGNET["current"]
+    it = intervention if intervention is not None else _MAGNET["current"]
     if it is None or it.state.terminal:
         return False
-    print("\n>> stop requested from the desktop app", flush=True)
-    it.stop(StopCommand(reason="Stop pressed in the desktop app"))
+    if it.state is State.stopping:
+        return True  # already accepted; preserve the original stop timestamp
+    print("\n>> stop requested by the user", flush=True)
+    it.stop(StopCommand(reason=reason))
+    return True
+
+
+
+def _is_stop_utterance(text: str) -> bool:
+    """Exact local commands only; a question mentioning Stop remains an ordinary request."""
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    normalized = " ".join(folded.strip(" \t\r\n.!?…").split())
+    return normalized in {"stop", "stop task", "stop the task", "arrete", "arrete la tache"}
+
+
+def _consume_talk_control(text: str, ov=None) -> bool:
+    """An explicitly armed feedback dictation wins, including a comment consisting of 'stop'."""
+    if _FEEDBACK.consume_transcript(text):
+        _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
+        return True
+    if not _is_stop_utterance(text):
+        return False
+    accepted = _control_stop(reason="Exact spoken Stop command")
+    message = "Stop requested. No new task started." if accepted else "Stop received. No new task started."
+    print(f"  {message}", flush=True)
+    if ov is not None:
+        ov.hide()
+        ov.badge(message)
     return True
 
 
@@ -686,8 +714,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
             text = next_transcript()
             _VOICE["last_text"] = text
             print(f"\nYou said: \"{text}\"")
-            if _FEEDBACK.consume_transcript(text):
-                _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
+            if _consume_talk_control(text, ov):
+                history.clear()
                 continue
             if not coaching and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
@@ -1180,12 +1208,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         nonlocal shown_step, shown_key, prompted, guidance_scene_shown
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
-            print("\n>> new voice request: stopping the current task", flush=True)
-            _hush()
+            print("\n>> voice received: stopping the current task before routing", flush=True)
             if ov:
                 ov.hide()
-                ov.badge("New request…", pulsing=True)
-            it.stop(StopCommand(reason="replaced by a new voice request"))
+                ov.badge("Voice received…", pulsing=True)
+            _control_stop(reason="Voice input received; stopped before routing", intervention=it)
             return
         if interrupted["done"]:
             return

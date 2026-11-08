@@ -284,6 +284,14 @@ class Intervention:
                 # page cannot be read (no browser tree) or the planner gets lost.
                 last_attempt = self._dynamic_guide(bound)
                 if last_attempt is None:
+                    from .a11y import native_target
+                    if native_target():
+                        message = "Native accessibility guidance is unavailable. Keep Devin Desktop in front and retry."
+                        self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1,
+                                                             instruction=message, kind="info", last=True))
+                        last_attempt = AttemptResult(None, "completed", DeclaredResult(
+                            outcome="blocked", summary=message, blocker=message))
+                if last_attempt is None:
                     if self.autonomy >= 1 and self.guidance:
                         self.takeover = True
                         with self._lock:
@@ -551,26 +559,48 @@ class Intervention:
             if not getattr(info, "is_front", True):
                 waited_front += 1
                 if waited_front == 1:
-                    gs = GuidanceStep(index=len(self.guidance) + 1, instruction="Bring the browser to the front",
-                                      why="I read the page to guide you; it must be visible.", kind="wait", pointer=None)
+                    native = getattr(info, "native", False)
+                    gs = GuidanceStep(index=len(self.guidance) + 1,
+                                      instruction="Bring Devin Desktop to the front" if native else "Bring the browser to the front",
+                                      why="I read only the authorized visible window to guide you.", kind="wait", pointer=None)
                     self._on_guidance_nowait(gs)
                 time.sleep(1.0)
                 if waited_front > 40:
                     return None
                 continue
             waited_front = 0
-            if not coaching_page_allowed(bound.request.software, info.url):
+            native = getattr(info, "native", False)
+            if not coaching_page_allowed(bound.request.software, info.url, native=native,
+                                         bundle_id=getattr(info, "bundle_id", None), is_front=info.is_front):
                 message = "Open the authorized product page; prepare private account access separately."
                 self._on_guidance(GuidanceStep(index=len(self.guidance) + 1, instruction=message,
                                               kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                       blocker="The visible page is outside the authorized read-only coaching scope."))
+            if native and not items:
+                message = "Devin Desktop's accessibility controls are unavailable. I cannot identify a visible target yet."
+                self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1, instruction=message,
+                                                      kind="info", last=True))
+                return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
+                                                                        blocker=message))
             cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" for e in items]
             parts = urlsplit(info.url)
             page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
-            plan = planner(bound.request.goal, context, f"{info.title[:80]} — {page_url[:100]}", cands, history)
+            page_description = (f"Native application: Devin Desktop; bundle_id={info.bundle_id}; focused window: {info.title[:80]}"
+                                if native else f"{info.title[:80]} — {page_url[:100]}")
+            plan = planner(bound.request.goal, context, page_description, cands, history)
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
+            if native:
+                fresh = catalogue(bound)
+                if fresh is None:
+                    return None  # _run explicitly blocks native whole-desktop fallback.
+                current, current_items = fresh
+                signature = lambda p, es: (getattr(p, "bundle_id", None), p.is_front, p.title, p.url,
+                                          p.viewport, tuple((e.name, e.box) for e in es))
+                if signature(info, items) != signature(current, current_items):
+                    self._trace("Native window changed while planning; discard the stale instruction.")
+                    continue
             if not isinstance(plan, dict):
                 return None
             self._trace(f"planned step {n + 1} in {time.time() - t0:.1f}s: "

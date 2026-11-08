@@ -151,6 +151,8 @@ def test_new_voice_request_mid_task_stops_the_current_one(tmp_path, monkeypatch)
     from hcs_agent import cli
     from hcs_agent.contract import InterventionRequest
 
+    # This regression observes a transcript queue, not native keyboard/mouse devices.
+    monkeypatch.setattr(cli, "_InputWatcher", lambda: SimpleNamespace(stop=lambda: None))
     q: "queue.Queue[str]" = queue.Queue()
     q.put("en fait montre-moi autre chose")
     monkeypatch.setitem(cli._VOICE, "ptt", SimpleNamespace(transcripts=q))

@@ -759,3 +759,33 @@ par un humain. Aucun essai H actif n'a été arrêté pour ces vérifications.
 Préparation éditoriale : [dix scénarios Devin](scenarios/cognition-human-session.md),
 [conducteur 120 secondes](pitch-video-2min.md). Ce sont des plans de recette/tournage,
 pas des vidéos réalisées ni dix réussites acquises.
+
+## 2026-11-08 — Arrêt utilisateur et raccord natif Devin Desktop
+
+L'ancien essai H a été arrêté sur demande explicite de l'utilisateur. Son état
+terminal `stopped`, son rapport, son journal et l'archive complète de sa session H
+ont été vérifiés dans le stockage privé avant l'arrêt de l'ancien serveur.
+Aucun feedback humain ni label de réussite n'a été ajouté à cet essai.
+
+Le bouton **Stop task** est maintenant accessible pendant une tâche depuis tous
+les onglets du compagnon. Une erreur d'arrêt reste visible et permet une nouvelle
+tentative. Les commandes vocales exactes « Stop task » et « Arrête la tâche »
+sont reconnues après transcription, sans lancer de nouvelle tâche. Une dictée
+explicitement destinée au feedback reste un feedback.
+
+Le lanceur accepte `--software cognition --native-devin`. La collecte AX cible
+uniquement la fenêtre focalisée de Devin Desktop (`com.exafunction.windsurf`),
+revérifie le premier plan après la collecte et la planification, et exclut les
+valeurs et descendants des champs de saisie. Pas de repli navigateur ni de capture
+du bureau dans ce pilote natif. Si AX manque, le coach annonce le blocage ;
+l'identité de l'application ne constitue pas une preuve de réussite métier.
+
+Devin Desktop **3.12.28** est installé et son arbre natif expose notamment
+`Switch mode`, `Cloud` et `Local`. La lecture du pilote lorsque Codex était au
+premier plan a correctement renvoyé une cible indisponible. Cela ne valide pas
+encore le guidage vocal ni le placement des annotations dans un essai humain.
+
+Validation après intégration : **1 104 tests Python** et **13 tests desktop**
+passent. Les tests couvrent le changement de fenêtre, l'exclusion des champs et
+de leurs descendants, l'arrêt vocal, le bouton global et le refus d'une requête
+d'arrêt. La recette hors ligne ne produit pas de label humain ou de gain de latence.

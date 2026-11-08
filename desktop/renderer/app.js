@@ -21,6 +21,8 @@ const KEYS = [
 
 let status = null; // last /status, null = agent not running
 let stepReplyPending = false;
+let stopPending = false;
+let stopNotice = null;
 let lastSessionKey = "";
 let view = "home";
 let pendingAutonomy = null; // optimistic value while the POST is in flight
@@ -205,6 +207,7 @@ function renderAutonomy() {
 
 // home: ready badge, running task, numbers -------------------------------------------------------
 function renderHome() {
+  renderStopControls();
   if (view !== "home") return;
   const busy = isBusy(status);
   $("offline").hidden = Boolean(status);
@@ -226,7 +229,6 @@ function renderHome() {
     $("nowProc").textContent = `${procedureName(c.procedure_id) || "Task"} · ${c.takeover || c.mode === "act" ? "I'm doing it" : "you do it, I guide"}`;
     $("nowGoal").textContent = c.goal || "";
     $("nowStep").textContent = taskLine(c);
-    $("stopBtn").disabled = c.state === "stopping";
     const steps = $("nowSteps");
     steps.replaceChildren();
     const total = c.step && c.step.total;
@@ -237,11 +239,48 @@ function renderHome() {
   renderAutonomy();
 }
 
-$("stopBtn").addEventListener("click", async () => {
-  $("stopBtn").disabled = true;
-  await api.agent("POST", "/stop");
-  poll();
-});
+function renderStopControls() {
+  const current = status?.current;
+  const busy = isBusy(status);
+  if (stopNotice && current && current.session_id !== stopNotice.session) stopNotice = null;
+  const stopping = stopPending || (busy && current.state === "stopping");
+  $("globalStopBar").hidden = !busy && !stopPending && !stopNotice;
+  for (const id of ["stopBtn", "globalStopBtn"]) {
+    $(id).disabled = !busy || stopping;
+    $(id).textContent = stopping ? "Stopping…" : id === "stopBtn" ? "Stop" : "Stop task";
+  }
+  let message = stopNotice?.message || "Available from every tab. You remain in control.";
+  if (busy && current.state === "stopping") message = "Stop requested. Waiting for the task to finish.";
+  else if (stopNotice && current?.terminal && stopNotice.accepted) {
+    message = current.state === "stopped" || current.status === "abandoned"
+      ? "Task stopped." : "Task finished. Check its result in Activity.";
+  }
+  $("stopMessage").textContent = message;
+}
+
+async function stopTask() {
+  if (stopPending || !isBusy(status) || status.current.state === "stopping") return;
+  stopPending = true;
+  const session = status.current.session_id;
+  stopNotice = { session, message: "Sending Stop…", accepted: false };
+  renderStopControls();
+  try {
+    const r = await api.agent("POST", "/stop");
+    const accepted = r.ok && r.data?.stopped === true;
+    stopNotice = { session, accepted, message: accepted
+      ? "Stop requested. Waiting for the task to finish."
+      : r.ok ? "No active task accepted Stop. Check the current status."
+      : "Stop was not accepted. Check the connection and try again." };
+  } catch {
+    stopNotice = { session, accepted: false, message: "Stop could not be sent. Check the connection and try again." };
+  } finally {
+    stopPending = false;
+    renderStopControls();
+    await poll();
+  }
+}
+$("stopBtn").addEventListener("click", stopTask);
+$("globalStopBtn").addEventListener("click", stopTask);
 async function reportStep(done) {
   const c = status?.current;
   if (stepReplyPending || !c || c.terminal || c.state !== "awaiting_user" || !c.step) return;

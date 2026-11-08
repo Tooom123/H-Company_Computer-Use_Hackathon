@@ -96,6 +96,45 @@ Dans un second terminal :
 HCS_CONTROL_URL=http://127.0.0.1:8780 HCS_BACKEND_URL=http://127.0.0.1:8781 npm --prefix desktop start
 ```
 
+Pour **Devin Desktop sur macOS**, lancer plutôt le premier terminal ainsi :
+
+```sh
+uv run --all-packages python scripts/run-h-company-human.py --software cognition --native-devin --input-language en
+```
+
+L'application installée vérifiée est `/Applications/Devin.app` (3.12.28), bundle
+`com.exafunction.windsurf`. L'ancien nom technique vient de sa base Windsurf ;
+le ciblage repose sur cet identifiant, pas seulement le titre « Devin ».
+Le compagnon lit les contrôles de sa fenêtre au premier plan : rôle, libellé et
+rectangle. Il ne doit pas substituer Chrome en arrière-plan. Les valeurs saisies
+dans les champs et éditeurs ne font pas partie du catalogue envoyé au modèle.
+
+Première demande de répétition sur l'accueil natif :
+
+> “Show me where to switch from Agent to Ask. Explain what this changes, but do
+> not submit a prompt or start a session.”
+
+La version native peut utiliser un menu « Agent » au lieu des deux choix de la
+version web. Le coach doit lire le contrôle réellement présent, sans reprendre
+les coordonnées ou les boutons du navigateur. Voir aussi la présentation officielle
+de [Devin Desktop](https://devin.ai/desktop).
+
+### Arrêter soi-même
+
+- **Bouton Stop** : disponible dans le compagnon pendant une tâche, depuis tous
+  ses onglets. L'arrêt bloque localement la suite du parcours et conserve les traces.
+- **Commande vocale** : maintenir le raccourci de dictée, dire « Stop task » ou
+  « Arrête la tâche », puis relâcher. L'arrêt intervient après transcription ; aucun
+  nouvel objectif n'est envoyé au modèle. Une dictée de feedback reste un commentaire.
+- **Commande locale**, si le panneau est masqué :
+
+```sh
+curl -fsS -X POST -H 'X-HCS-App: 1' http://127.0.0.1:8780/stop
+```
+
+Stop termine l'essai, pas le logiciel Devin ni le serveur du compagnon. Pour changer
+de pilote, arrêter ensuite le processus de coaching dans son terminal avec Ctrl+C.
+
 Utiliser **Ctrl + Maj + H** pour parler. Pour dicter en français, remplacer
 `--input-language en` par `--input-language fr` : les réponses restent en anglais.
 Le lanceur charge le corpus public dédié, garde GUIDE/autonomie 0 et sépare les
@@ -110,8 +149,10 @@ les accès ou les enregistrements dans le dépôt. Une voix clonée nécessite l
 consentement explicite de son propriétaire et sa création réussie chez ElevenLabs.
 À défaut, le pilote utilise la voix de synthèse déjà configurée, sans prétendre être Zach.
 
-Le nouveau chemin AX utilise les contrôles visibles du navigateur macOS ; quand ils
-ne suffisent pas, le moteur garde son chemin visuel H. Les traces d'un parcours AX
+Le chemin AX utilise les contrôles visibles du navigateur macOS ou de Devin Desktop
+explicitement ciblé. Le chemin visuel H reste disponible selon le périmètre actif ;
+il ne faut jamais capturer une autre application parce que la cible est masquée.
+Les traces d'un parcours AX
 ne sont donc pas nécessairement une session Agents H exportable : conserver le
 journal local et vérifier les données réellement disponibles avant tout entraînement.
 

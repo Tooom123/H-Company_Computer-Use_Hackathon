@@ -21,7 +21,7 @@ class Element {
   setPointerCapture() {}
 }
 const settled = () => new Promise((r) => setImmediate(r));
-async function renderer({ current = null, observeOnly = true, preferences = {}, voice = "configured-custom-voice" } = {}) {
+async function renderer({ current = null, observeOnly = true, preferences = {}, voice = "configured-custom-voice", stopResponse } = {}) {
   const html = await readFile(new URL("../renderer/index.html", import.meta.url), "utf8");
   const ids = new Map([...html.matchAll(/id="([^"]+)"/g)].map((m) => [m[1], new Element()]));
   for (const [id, e] of ids) e.id = id;
@@ -31,6 +31,7 @@ async function renderer({ current = null, observeOnly = true, preferences = {}, 
   const feedback = { available: true, saved: false, session_id: "episode-7", comment: "", dictation_armed: false };
   const agent = async (method, path, body) => {
     calls.push({ method, path, body });
+    if (path === "/stop" && stopResponse) return await stopResponse(status);
     const data = path === "/status" ? status : path === "/feedback" ? feedback : path === "/sessions" ? { sessions: [] } : {};
     return { ok: true, status: 200, data };
   };
@@ -118,4 +119,39 @@ test("main process hides confirmation before next and restores it on backend rej
   }
   const denied = await handler({ sender: {} }, "POST", "/unexpected", {});
   assert.equal(denied.status, 400);
+});
+
+
+test("Stop is available on Voice and Feedback, shows stopping then actual terminal state", async () => {
+  const current = { session_id: "stop-test", terminal: false, state: "running", mode: "guide" };
+  let reply;
+  const r = await renderer({ current, stopResponse: () => new Promise((resolve) => { reply = resolve; }) });
+  for (const tab of ["voice", "feedback"]) {
+    vm.runInContext(`go("${tab}")`, r.context);
+    assert.equal(r.ids.get("globalStopBar").hidden, false);
+    assert.equal(r.ids.get("globalStopBtn").disabled, false);
+  }
+  const sent = r.ids.get("globalStopBtn").events.click();
+  assert.equal(r.ids.get("globalStopBtn").textContent, "Stopping…");
+  assert.equal(r.ids.get("stopBtn").disabled, true);
+  await r.ids.get("globalStopBtn").events.click();
+  assert.equal(r.calls.filter((c) => c.path === "/stop").length, 1);
+  r.status.current.state = "stopping";
+  reply({ ok: true, status: 200, data: { stopped: true } });
+  await sent;
+  assert.match(r.ids.get("stopMessage").textContent, /Waiting/);
+  assert.equal(r.ids.get("globalStopBtn").disabled, true);
+  Object.assign(r.status.current, { state: "stopped", terminal: true });
+  await vm.runInContext("poll()", r.context);
+  assert.equal(r.ids.get("stopMessage").textContent, "Task stopped.");
+});
+
+test("Stop rejection is visible and retryable without claiming the task stopped", async () => {
+  const current = { session_id: "reject-test", terminal: false, state: "running", mode: "guide" };
+  const r = await renderer({ current, stopResponse: async () => ({ ok: false, status: 503, data: {} }) });
+  vm.runInContext('go("voice")', r.context);
+  await r.ids.get("globalStopBtn").events.click();
+  assert.match(r.ids.get("stopMessage").textContent, /not accepted/);
+  assert.equal(r.ids.get("globalStopBtn").disabled, false);
+  assert.equal(r.status.current.state, "running");
 });

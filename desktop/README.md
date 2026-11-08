@@ -3,14 +3,15 @@
 The assistant's home window, like a dictation app: you work in your software, the app sits next to it.
 Plain Electron, no build step. It steers the agent that runs on this Mac (`hcs-agent talk`).
 
-Four tabs centred on top, like a browser (the active one with a red-tinted shadow), and the landing's stick
+Five tabs centred on top, like a browser (the active one with a red-tinted shadow), and the landing's stick
 figure sitting on the edge of the bar, legs swinging:
 
 | Tab | What it does |
 | --- | --- |
-| Home | Idle: Matteo's paper badge "⌘H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy: a wide pencil slider on a paper scrap, the three levels written out under the rail (Show me, Help if I'm stuck, Do it, I watch), the chosen one a red dot in scribbled loops (the overlay's strokes). This month: tasks, checked, typical time. |
+| Home | Idle: Matteo's paper badge "⌃⇧H: new request" (the same words as on screen; "Listening…" only while the key is held). During a task: the task, "Now you: <step>" / "I'm doing it", the steps, **Stop**. Autonomy: a wide pencil slider on a paper scrap, the three levels written out under the rail (Show me, Help if I'm stuck, Do it, I watch), the chosen one a red dot in scribbled loops (the overlay's strokes). This month: tasks, checked, typical time. |
 | Activity | The tasks you asked for, checked / to support / stopped, and your verdict **✓ / ✗**, the chosen one circled in red pencil like a graded paper: written in the report's `feedback.useful` and sent again to the support backend (debug, learning what works). |
-| Voice | Spoken notes on/off, voice (Sarah, Jessica, Bella, Matilda: plain American), speed, test; **push-to-talk key** (⌘H, ⌘J, Right ⌥, F9), applied live. |
+| Mon retour | Explicit spoken or written comment, separate task-success and usefulness labels. No label is preselected. |
+| Voice | Spoken notes on/off, voice (Sarah, Jessica, Bella, Matilda: plain American), speed, test; **push-to-talk key** (⌃⇧H, ⌘J, Right ⌥, F9), applied live. |
 | Vision | **Recalibrate**: opens Édouard's Vision Lab on the calibration screen. |
 
 User side only: costs, H compute and the plan belong to the admin / IT side (support backend), not here.
@@ -20,7 +21,14 @@ does not take its live updates for the user acting; clicks inside it never count
 
 **Autonomy moved into the app**: while the app is open, the Magnet slider leaves the screen; close the app and
 it comes back. Changing the level mid-task applies at once ("Do it, I watch" during a guide = takeover).
-Voice, speed and key chosen in the app are remembered and pushed again when the assistant restarts.
+Preset voice, speed and safe key choices are remembered. An explicitly configured custom voice wins over an old preset; observation-only sessions keep autonomy at zero.
+
+## Stop a task yourself
+
+- **Button:** while a task runs, **Stop task** stays in the bar just below the tabs, including Voice and Mon retour. The Home card also keeps its Stop button. Reopen H Companion from the Dock if its window is hidden.
+- **Voice:** hold the push-to-talk shortcut shown by the app (normally **Ctrl+Shift+H**), say **“Stop”**, **“Stop task”**, **“Arrête”** or **“Arrête la tâche”**, then release. Casing, accents and final punctuation are tolerated; longer sentences mentioning Stop remain normal requests. “Stop the task” is also accepted. Recognition occurs after transcription, not while the microphone is still held.
+- The button shows **Stopping…** while stopping. Acceptance means a stop was requested; **Task stopped** only appears once the runtime reports that terminal state. A failed request stays visible and can be retried.
+- If **Dicter mon retour** was armed, the next transcription is feedback, even when it is just “stop”. Use the button to stop in that case. Stopping never creates feedback labels or a new task.
 
 ## Run
 
