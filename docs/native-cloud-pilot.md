@@ -4,6 +4,48 @@ Version du 8 novembre 2026. Les exécutions sont des tests de capacité autonome
 (`mode=act`, `purpose=capability_test`). Elles ne prouvent pas encore qu'un
 utilisateur réalise mieux une tâche avec le guidage de H-Companion.
 
+## Comfy Cloud et CapCut : préparation du 8 novembre au matin
+
+Catalogue exécutable : `pilot/creative_catalog.py`. Suites séparées :
+`documentation` (deux cas Comfy, un CapCut), `comfy-public` (préflight sans compte)
+et `comfy-cloud` (trois cas dans un profil Comfy explicitement vérifié).
+Les critères du vérificateur ne sont pas envoyés à l'acteur. Résultats et limites
+dans `docs/test-log.md`. Le répertoire privé est celui de la tour de contrôle.
+
+```sh
+# Avec le Python de l'environnement du pilote : pas d'appel H par défaut.
+python scripts/run-creative-probes.py --suite documentation
+# Trois navigateurs isolés, crédits H consommés, aucune génération Comfy.
+python scripts/run-creative-probes.py --suite documentation --execute --parallel 3
+python scripts/run-creative-probes.py --suite documentation --case CC-DOC-01 --execute
+# Après création ET vérification d'un profil Comfy dédié hors Git :
+python scripts/run-creative-probes.py --suite comfy-cloud --account-file /private/path/comfy-account.json --execute
+```
+
+Le fichier privé contient `software: "comfyui"`, `browser_profile_id` et
+`authentication_verified: true` après contrôle réel. Une connexion dans le Chrome
+du Mac ne connecte pas le navigateur H. Ne jamais réutiliser le profil H. Les
+images authentifiées restent masquées par défaut, jusqu'à une politique
+d'affichage explicitement limitée. Le endpoint `/cloud/campaigns` reste dédié à H ;
+utiliser ce lanceur pour les cas créatifs. Revue IA et retour humain restent séparés.
+
+Dans le compagnon local, le contexte expérimental Comfy Cloud / CapCut Web est
+sélectionné selon l'origine du navigateur à chaque nouvelle demande. Cela ne
+constitue pas une prise en charge native de Comfy Desktop. Une lecture de cette
+fenêtre ne remontait que son enveloppe ; Chrome exposait les boutons de l'éditeur
+et certains nœuds, mais pas tous leurs champs nommés. Le compte observé affichait
+« Subscribe to Run » : aucun calcul lancé, aucun abonnement souscrit.
+
+Phrases à essayer dans **Chrome sur Comfy Cloud**, avec Option droite :
+
+- “Show me where to browse text-to-image workflow templates, without loading or running one.”
+- “Show me where to inspect this workflow's parameters and node help, without changing anything.”
+- “Explain the visible run controls. Do not start a generation or change the queue.”
+
+Pour CapCut Web, préparer une copie d'un projet avec sous-titres existants :
+“Show me where to correct one wrong word in this caption without regenerating it.”
+La synchronisation audio nécessite une écoute ; une capture seule ne la prouve pas.
+
 ## Ce qui fonctionne
 
 - Un navigateur H cloud distinct par essai, sans capture ni pilotage du Mac.

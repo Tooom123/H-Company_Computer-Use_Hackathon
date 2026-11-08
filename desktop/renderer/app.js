@@ -215,6 +215,10 @@ function renderHome() {
   const b = readyBadge(status);
   $("voiceStatus").hidden = !status || !b.sub;
   $("voiceStatus").textContent = b.sub ? `${b.text} ${b.sub}` : "";
+  const context = status?.context;
+  $("contextStatus").hidden = !context?.mode;
+  $("contextStatus").textContent = context?.mode === "automatic"
+    ? `Auto context · ${context.label}${context.software ? ` · ${context.sources || 0} documentation excerpts · selected at request start` : ""}` : "";
   if (status && !busy) {
     $("readyText").textContent = b.text;
     $("readyBadge").classList.toggle("pulse", b.pulse);

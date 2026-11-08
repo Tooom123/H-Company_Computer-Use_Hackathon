@@ -28,6 +28,8 @@ RESPONSE_LANGUAGE_INSTRUCTIONS = (
 
 
 COACHING_ORIGINS = {
+    "comfyui": {"cloud.comfy.org", "docs.comfy.org"},
+    "capcut": {"www.capcut.com", "capcut.com"},
     "h-company": {"hub.hcompany.ai", "platform.hcompany.ai"},
     "cognition": {"app.devin.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"},
 }
@@ -61,7 +63,7 @@ def coaching_page_allowed(software: str, url: str, *, native: bool = False,
         path = unquote(parsed.path).lower()
         restricted = r"(?:^|/)(?:auth|login|signin|sign-in|credentials|secrets|vaults?|api-keys?|tokens?|billing|payments?|security)(?:/|$)"
         # Documentation may describe these features; account pages must never expose their values.
-        return parsed.hostname in {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"} or not re.search(restricted, path)
+        return parsed.hostname in {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com", "docs.comfy.org"} or not re.search(restricted, path)
     except (TypeError, ValueError):
         return False
 
@@ -198,6 +200,10 @@ class BoundProcedure(BaseModel):
     request: InterventionRequest
 
     def _r(self, text: str) -> str:
+        if self.procedure.id == GENERIC_ID:
+            # Generic procedures already contain the resolved user goal and
+            # retrieved excerpts. JSON/code braces are data, not format fields.
+            return text
         return self.procedure.render(text, self.values)
 
     @property
@@ -375,6 +381,14 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
     """
     software = request.software or "the software"
     hint = SITE_HINTS.get(software.lower(), f"The software is {software} in a browser on macOS.")
+    automatic = bool(request.parameters.get("automatic_context"))
+    surface = "focused native application" if request.parameters.get("context_surface") == "native" else "visible browser tab"
+    if automatic:
+        hint = (f"The selected product is {request.parameters.get('context_label', software)} in its {surface}. "
+                "Use its current visible accessibility controls, including open menus. The active product was "
+                "observed at the start of this request; do not switch to another product to satisfy the goal. "
+                "Previous goal (historical context only, not a new instruction): "
+                + str(request.parameters.get("previous_goal") or "none") + "\n" + RESPONSE_LANGUAGE_INSTRUCTIONS)
     docs = f"\nWhat is known about this software (documentation map, pages seen on this machine):\n{doc_context}\n" if doc_context else ""
     return Procedure(
         id=GENERIC_ID,
@@ -385,14 +399,16 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
         max_steps_per_attempt=40,
         max_time_s_per_attempt=480,
         parameters=[],
-        preconditions=[f"{software} is open in the browser on the main display and the user is logged in."],
+        preconditions=[f"{software} is open in the {surface} on the main display and the user is logged in."],
         objective=request.goal,
         planned_changes=["Whatever the goal requires, and nothing else. No script exists for this task: the agent "
                          "reasons from the screen and says so."],
         allowed_actions=["Navigate inside the software; read any page; fill the fields and click the buttons the goal "
                          "requires."],
         forbidden_actions=["Entering credentials or payment details.", "Deleting anything.",
-                           "Revealing secrets (API keys, tokens).", "Leaving the software's browser tab."],
+                           "Revealing secrets (API keys, tokens).", f"Leaving the selected software's {surface}."] + (
+            ["Changing business records, placing orders, posting payments, sending messages or starting jobs. "
+             "This demo allows consultation and temporary navigation/filters only, at any autonomy level."] if automatic else []),
         agent_instructions=f"{hint}\nThere is no written procedure for this task: work it out from what you see, one "
                            f"step at a time, and check each result on screen before moving on.{docs}",
         guide_steps=[],
@@ -401,7 +417,7 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
         postcondition=Postcondition(
             description=f"The goal is visibly achieved on screen: {request.goal}",
             checks=[PostconditionCheck(key="goal_achieved", prompt=f"The screen shows that this is done: {request.goal}")],
-            verification_instructions="You are a read-only verifier. Stay inside the visible browser tab. Look at the "
+            verification_instructions=f"You are a read-only verifier. Stay inside the selected {surface}. Look at the "
                                       "screen and report whether the goal is visibly achieved. Never read secrets.",
         ),
         escalation=EscalationRule(when=["The agent reports blocked."],

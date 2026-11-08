@@ -916,3 +916,231 @@ remplacent pas la recette humaine des scénarios Devin/Odoo.
 L'historique est conservé par fusion, sans squash : certains lanceurs extraient
 des révisions épinglées. Le lanceur macOS reste dépendant du checkout et de son
 environnement local. Les secrets et épisodes privés ne sont pas inclus.
+
+## 2026-11-08 — Devin : clic sans effet sur « Current plan »
+
+Essai réel `sess_842b62fa7faa`, demande « What can I do here? ». Le coach a
+proposé de cliquer sur « Current plan ». Edouard rapporte dans le chat :
+« Rien ne change après le clic ». Le moteur était toujours en attente de la
+première étape et aucune interaction cible n'avait été enregistrée. L'essai
+a été arrêté proprement ; ses traces privées sont conservées. Son statut est
+interrompu/abandonné, sans réussite vérifiée. Ce constat humain porte sur cette
+étape ; aucun label d'utilité ni feedback saisi dans l'app n'a été inventé.
+La durée d'attente de cet essai ne mesure pas la latence du modèle.
+
+Deux défauts de code ont été identifiés : le catalogue AX ne transmettait pas
+l'état activé/sélectionné des contrôles, et une cible invalidée pendant l'attente
+ne pouvait plus déclencher de progression. Le nom « Current plan » ne prouve
+pas que ce contrôle ouvre un écran ; nous n'avons pas établi qu'il était désactivé.
+
+Le correctif conserve les états AX inconnus comme inconnus, refuse les clics sur
+du texte ou un contrôle explicitement désactivé, et transmet au planificateur
+l'absence de changement observé. Une reformulation ne suffit plus à recommander
+à nouveau le même clic inefficace. Les champs restent un cas distinct : leurs
+valeurs ne sont pas lues, donc un catalogue inchangé ne prouve pas l'échec d'une
+saisie. Après invalidation de cible, une seule reprise de planification est
+autorisée sur observation AX fraîche, sans confirmer l'action précédente.
+Ces contrôles logiciels restent à confirmer par un nouvel essai humain.
+
+Intégration des commits Matteo `fc8955a` et `1e36ce0` : nouvelles règles de
+routage FR/EN, consultation des crédits distincte de leur activation, et
+correspondance AX par mots entiers. Le pilote Devin utilise son propre chemin
+de coaching ; ce routage ne suffit donc pas à expliquer/corriger l'essai raté.
+Les snapshots de l'outil d'évaluation restent ignorés par Git, avec permissions
+restreintes, URL nettoyée et nom de fichier indépendant de cette URL.
+
+Validation intégrée après correction de compatibilité de l'affichage final :
+**1 299 tests Python passent, 3 ignorés, 14 sous-tests passent** (agent, backend,
+pilot et scripts). Pas de nouvelle mesure de qualité du modèle ni de validation
+humaine déduite de ces tests hors ligne. Le benchmark de routage payant de Matteo
+n'a pas été réexécuté pendant cette correction.
+
+## 2026-11-08 — Devin : catalogue vide au démarrage du guidage
+
+Essai humain `sess_9b610d04645f`, demande transcrite « Show me the available.
+Conversation modes. ». Le pilote reconnaît la fenêtre native au premier plan,
+mais ne retient aucun contrôle. Il termine bloqué avant la planification,
+en 66 ms après approbation. Edouard signale le message d'accessibilité ; aucune
+réussite ni utilité n'est déclarée. Les traces restent dans le dossier privé.
+
+La permission AX a ensuite été vérifiée comme accordée. Un diagnostic local,
+sans H ni lecture de valeurs de champs, retrouve 59 éléments, 53 éligibles et
+49 visibles dans Devin. Le menu des modes s'ouvre via inspection technique,
+sans sélectionner de mode ni démarrer de tâche. Cette vérification ne constitue
+pas une réussite du coaching vocal. Les anciens compteurs ne permettaient pas
+de distinguer une lecture transitoirement vide d'un filtrage de visibilité vide.
+
+Le pilote réessaie désormais jusqu'à trois lectures, avec 150 puis 300 ms
+d'attente interruptible, en revérifiant le focus et le périmètre à chaque fois.
+Le chemin normal n'attend pas. Le journal et `/status` conservent uniquement les
+compteurs et un motif technique (arbre vide, contrôles masqués, fenêtre non
+active, etc.), sans libellé, URL ni valeur saisie. Le message n'attribue plus
+automatiquement un catalogue vide à une permission manquante.
+
+**188 tests ciblés passent**, dont récupération après lectures vides, arrêt
+pendant l'attente, changement de périmètre, cause de filtrage et confidentialité
+des diagnostics. La recette vocale de la version corrigée reste à effectuer.
+
+## 2026-11-08 — Devin : menu ouvert mais consigne répétée
+
+Essai humain `sess_176b3e7bf762`, demande transcrite « Show me the available
+conversation mode. ». Deux interactions sur la cible sont bien enregistrées.
+Après le premier clic, les métadonnées AX changent et le menu est ouvert, mais
+le planificateur redemande « Click the 'Switch mode' popup button ». La garde
+contre la répétition termine l'essai bloqué après environ 27 secondes depuis
+l'approbation. Edouard signale le message et l'erreur ; aucun label de réussite
+ou d'utilité n'est ajouté à sa place.
+
+Diagnostic local : 65 éléments lus, 53 conservés, aucun rejet de visibilité.
+Les quatre `AXMenuItem` « Agent », « Ask », « Code » et « Data » sont présents
+dans le catalogue transmis. Le filtrage et la détection du clic ne sont donc
+pas la cause de cette répétition. L'observation est figée dans le dossier privé,
+sans valeur saisie ni image. Avec l'autorisation explicite d'Edouard, un rejeu
+texte auprès de Holo4 reproduit la demande de rouvrir ce menu.
+
+Le contexte distingue maintenant les options déjà visibles des boutons qui
+ouvrent les menus. Le planificateur doit d'abord vérifier si l'écran répond à
+une demande d'explication ou de liste ; il ne doit pas sélectionner une option
+ni rouvrir son menu pour simplement la montrer. La présence d'options ne valide
+jamais automatiquement une modification demandée. Les arrêts pour répétition
+conservent aussi l'historique des interactions dans `steps_taken`.
+
+Deux rejeux après correction, dont la formulation transcrite ci-dessus,
+produisent une réponse finale « Ask and Agent », sans cible ni nouveau clic.
+Latences de ces appels : 1,56 et 1,66 s, contre 3,64 s sur l'appel de reproduction
+avant correction. Ce petit contrôle ne constitue **pas** un benchmark de latence :
+réseau, cache et formulation peuvent intervenir. Les rejeux réutilisent une
+observation réelle avec un historique reconstruit ; ce ne sont pas de nouveaux
+essais humains. Leurs entrées et sorties restent privées, séparées des épisodes.
+
+**191 tests ciblés passent**, notamment la progression du menu fermé vers les
+options visibles, la réponse finale sans clic supplémentaire, la conservation
+de l'historique en cas de blocage et la séparation entre options visibles et
+réussite d'une modification. Le guidage vocal complet doit encore être retesté
+par Edouard ; la vérification indépendante et l'utilité ne sont pas déduites de
+ces rejeux.
+
+## 8 novembre 2026 — CD et préparation multi-produit
+
+CD : la PR #10 a été fusionnée sur main (`b751d80`). Le run Actions
+`42448143936` s'est terminé en succès : tests de la homepage, publication des
+sept fichiers autorisés, puis comparaison HTTPS octet par octet. La clé dédiée
+refuse une commande libre `id`. Neuf tests du récepteur et cinq tests de la
+homepage passent. Les autres blocs Caddy et les conteneurs sont préservés.
+
+Le dernier essai vocal Devin `sess_05b59d921064` reste **escalated**, avec une
+consigne demandant de remettre Devin au premier plan. Aucun feedback humain
+n'était enregistré ni en cours de dictée lors du contrôle avant mise à jour.
+Ce passage ne constitue pas une démonstration réussie du menu.
+
+Le nouveau profil `auto` sélectionne H/Odoo/SAP/Devin à chaque nouvelle demande,
+lie la tâche à ce produit et à sa surface, puis injecte les extraits du corpus
+correspondant. Tests locaux : refus des origines inconnues et des logins,
+isolation documentaire, changement de produit sans ancien historique, arrêt du
+guidage si l'app change, conservation littérale du JSON documentaire et du texte
+utilisateur. La recherche avec les quatre corpus réels retourne respectivement
+3/4/3/4 extraits pour les questions H/Devin/Odoo/SAP préparées, sans appel modèle.
+
+Le profil de démo active le slider en démarrant à 0 ; le pilote de recherche
+observation seule garde son verrouillage. Les tests du renderer vérifient le
+glisser et le clavier, le retour à 0, l'affichage du contexte et le maintien du
+verrouillage historique. **Ces tests simulés ne prouvent pas un parcours vocal
+réussi**. Les huit questions de `demo-eight-questions-2026-11-08.md` restent à
+évaluer en répétition humaine, avec réussite et utilité labellisées séparément.
+
+
+## Odoo auto-context — repeated CRM guidance, 2026-11-08
+
+Human trial `sess_ed829556ca29`, 07:38–07:39 Europe/Paris (about 50 seconds):
+Odoo and two local documentation excerpts were selected correctly. The transcript
+was `Help me. opportunity Maison d'eau.`; it did not retain the full intended
+Maison Aube question. The human reported **« Contexte Odoo, mais guidage incorrect »**.
+Six instructions targeted the CRM header while the pipeline was already open.
+Target clicks were observed, but changes in accessibility metadata kept allowing
+that instruction. The run ended escalated/unverified; no success/usefulness labels
+were fabricated. Original private events and report remain unchanged.
+
+Corrections: track attempted click targets by visible page state independently of
+geometry and AX traversal order; do not retry an earlier state when a menu cycles
+open/closed. Preserve input editing and real navigation. Require the text planner
+to state the current view and distinguish exact record names before choosing its
+next action. Current screen evidence takes precedence over documentation recipes.
+The Odoo knowledge page now explicitly starts at search when Pipeline is already
+open. Final verification stops if automatic context has changed to another product.
+
+Text-only Holo4 development replay, with a small manually transcribed list of
+controls observed in the fictitious demo (not a replay of the complete captured AX
+tree): an intermediate prompt still chose Comptoir Aube instead of Maison Aube.
+With the factual-observation field added, the same request selected Rechercher…
+and explicitly distinguished the names (1.91 s for that one model call). With the
+original imperfect transcript and a prior CRM click, it also selected search
+(1.21 s). These are **planner checks**, not a completed workflow, a speed benchmark,
+or a human usefulness label. Private diagnostic output stays outside Git.
+
+Offline validation: 154 targeted tests passed, including layout jitter, returning
+to an earlier menu state, genuine next-page navigation, continued typing, and
+rejecting verification on a different product. A new live voice/click trial is
+still required; the original incorrect trial must not be counted as a success.
+
+
+## Odoo search-target tracking — 2026-11-08, 07:48 Europe/Paris
+
+Trial `sess_941d33ee2f5c` correctly transcribed “Help me find Maison Aube.” and
+selected the Rechercher… field in the open CRM pipeline. A second voice input
+interrupted that trial; `sess_729e820585a6` recorded the incomplete “me find” and
+also selected search. The human reported the badge “Target changed. Confirm in
+H Companion or stop”, which was not understandable. No completed search or task
+success was verified. The second waiting trial was stopped through the local
+control API to load a fix; both private archives remain intact, without invented
+human success/usefulness labels.
+
+Code diagnosis: the tracker received the chosen exact rectangle, but subsequent
+name-only lookup discarded the target whenever another control shared its label.
+Odoo exposes both a search button and an input named Rechercher…. A separate gate
+allowed a fresh-observation retry only in native Devin, not automatic Odoo.
+
+Fix: disambiguate matching controls with the original rectangle and retain the
+observed role. Do not jump to a different same-named control; ambiguous or large
+movements still invalidate the target. Automatic guide mode can request one new
+plan after a fresh foreground read, even when the old target has disappeared.
+This is explicitly **not** confirmation that the user acted. Product scope is
+checked again by the runner. The fallback badge now states what to do without an
+ambiguous request to confirm completion.
+
+Validation: 178 targeted tests passed, then an added tracker-loop regression
+passed with all 73 input/tracker tests. Tests use fake controls, not the user's
+Mac. A live user retry of this version remains pending.
+
+
+## 2026-11-08 — Creative documentation probes and Comfy preflight
+
+Five real Holo4 cloud episodes; three initial probes ran concurrently in separate
+browsers. Full private H archives retained for all five, including failed trials.
+No authenticated Comfy/CapCut workflow or GPU job was run. No human success,
+usefulness or training-consent label was synthesized.
+
+| Scenario / local episode | Evidence review | Limitation |
+| --- | --- | --- |
+| CF-DOC-01 / `cloud_81ae6960fa694ff7` | Yes, documentation only | Managed packs / unsupported nodes answer supported by official page and frame 000004 |
+| CF-DOC-02 / `cloud_4150bbe299bd458f` | Partial, documentation only | Queue modes and node help supported; added claim about default Run mode not established |
+| CC-DOC-01 / `cloud_1555d6de9d55437c` | Unknown, infrastructure blocked | Repeated `scroll_web.scroll_element` schema errors; quarantined |
+| CC-DOC-01 retry / `cloud_48ea9cb346ca4c89` | Unknown, infrastructure blocked | Explicit valid scroll example did not prevent recurrence; original failure preserved |
+| CF-PUBLIC-01 / `cloud_b915062116ae4813` | Unknown, authentication pending | Actor reports login wall; retained frame only shows loading, so not independently verified from that frame |
+
+Provider state `interrupted` on answered documentation trials is due to the runner
+cancelling its owned idle session after receiving the answer and draining events;
+see `completion_reason`. It is not a success label. Separate `agent-review.json`
+files record the evidence-based judgments, with human guidance explicitly unvalidated.
+
+Local inspection found Comfy Desktop v1.1.3 showing Comfy Cloud and an unsaved
+Z-Image workflow. Chrome also opened the Cloud editor without a new login. Both
+showed “Subscribe to Run”; no subscription or generation initiated. Chrome's AX
+read exposed named workspace controls and some node labels, while the native
+window read exposed only the outer shell. This does not prove that every graph
+parameter is usable by the current AX coach.
+
+Implementation: separate Comfy/CapCut knowledge contexts, bounded read-only probe
+catalogue/launcher, product identity preserved in the shared tower, preparation
+stage timings, reuse of an unchanged unique target after unrelated layout jitter,
+and removal of the unused screen-difference watcher. 325 targeted offline tests
+passed. A human voice/click trial is still needed to validate the latency fix.

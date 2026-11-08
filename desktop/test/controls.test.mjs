@@ -31,6 +31,10 @@ async function renderer({ current = null, observeOnly = true, preferences = {}, 
   const feedback = { available: true, saved: false, session_id: "episode-7", comment: "", dictation_armed: false };
   const agent = async (method, path, body) => {
     calls.push({ method, path, body });
+    if (path === "/autonomy" && !observeOnly) {
+      status.autonomy = body.level;
+      return { ok: true, status: 200, data: status };
+    }
     if (path === "/stop" && stopResponse) return await stopResponse(status);
     const data = path === "/status" ? status : path === "/feedback" ? feedback : path === "/sessions" ? { sessions: [] } : {};
     return { ok: true, status: 200, data };
@@ -64,6 +68,24 @@ test("observe-only refuses slider keyboard and direct selection without posting 
   assert.ok(!r.calls.some((c) => c.path === "/autonomy"));
   assert.equal(r.ids.get("magnet").attrs["aria-valuenow"], "0");
   assert.equal(r.ids.get("magnet").attrs["aria-disabled"], "true");
+});
+
+test("demo slider accepts drag and keyboard, while automatic context stays visible", async () => {
+  const r = await renderer({ observeOnly: false });
+  const magnet = r.ids.get("magnet");
+  assert.equal(magnet.attrs["aria-disabled"], "false");
+  magnet.events.pointerdown({ button: 0, pointerId: 1, clientX: 420 });
+  magnet.events.pointerup();
+  await settled();
+  assert.equal(r.status.autonomy, 2);
+  magnet.events.keydown({ key: "Home", preventDefault() {} });
+  await settled();
+  assert.equal(r.status.autonomy, 0);
+  assert.deepEqual(r.calls.filter(c => c.path === "/autonomy").map(c => c.body.level), [2, 0]);
+  r.status.context = { mode: "automatic", software: "odoo", label: "Odoo", sources: 3 };
+  vm.runInContext("renderHome()", r.context);
+  assert.equal(r.ids.get("contextStatus").hidden, false);
+  assert.match(r.ids.get("contextStatus").textContent, /Odoo.*3 documentation excerpts/);
 });
 
 test("step fallback sends the exact displayed session, step and human answer", async () => {

@@ -255,7 +255,58 @@ def test_native_empty_tree_explains_blocker_without_planner(dynamic, monkeypatch
     result = dynamic.it._dynamic_guide(dynamic.bound)
     assert result.declared.outcome == 'blocked'
     assert dynamic.calls == []
-    assert 'accessibility controls are unavailable' in dynamic.shown[0].instruction
+    assert 'not exposed usable controls yet' in dynamic.shown[0].instruction
+    assert sum('native catalogue empty' in s.summary for s in dynamic.it.steps) == 3
+    assert 'permission' not in dynamic.shown[0].instruction.lower()
+
+
+def test_native_initial_empty_reads_recover_before_showing_a_blocker(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    info, items = dynamic.backend.page_catalogue(None)
+    reads = []
+
+    def catalogue(_):
+        reads.append(True)
+        return info, [] if len(reads) <= 2 else items
+
+    dynamic.backend.page_catalogue = catalogue
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert len(dynamic.calls) == 2  # Empty reads do not trigger extra model calls.
+    assert [step.instruction for step in dynamic.shown] == [
+        'Open Details', 'The session status is visible; code correctness remains unverified.']
+    assert sum('native catalogue empty' in s.summary for s in dynamic.it.steps) == 2
+
+
+def test_native_covered_controls_explain_occlusion_not_missing_permission(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [])
+    dynamic.backend.last_catalogue_diagnostic = {'status': 'controls_covered', 'covered': 12}
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked' and not dynamic.calls
+    assert 'covered' in dynamic.shown[0].instruction
+    assert 'permission' not in dynamic.shown[0].instruction.lower()
+
+
+def test_stop_during_empty_native_retry_prevents_planning(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [])
+    monkeypatch.setattr(dynamic.it._stop, 'wait', lambda _: dynamic.it._stop.set())
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.status == 'interrupted' and result.declared.outcome == 'not_run'
+    assert not dynamic.calls and not dynamic.shown
+
+
+def test_native_retry_rechecks_allowed_page_before_planning(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    restricted = SimpleNamespace(**vars(dynamic.info))
+    restricted.url = 'https://app.devin.ai/login'
+    views = iter([(dynamic.info, []), (restricted, [])])
+    dynamic.backend.page_catalogue = lambda _: next(views)
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked' and not dynamic.calls
+    assert 'outside the authorized' in result.declared.blocker
 
 
 def test_native_focus_switch_while_planning_discards_arrow_and_answer(dynamic, monkeypatch):
@@ -268,6 +319,47 @@ def test_native_focus_switch_while_planning_discards_arrow_and_answer(dynamic, m
     result = dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
     assert result.declared.outcome == 'unclear'
     assert dynamic.shown == []  # Neither a stale arrow nor an answer is presented.
+
+
+def test_timing_includes_model_and_both_reads_even_for_discarded_plan(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    control = SimpleNamespace(role='AXButton', name='Review', center=(100, 100), box=(80, 80, 40, 40))
+    background = SimpleNamespace(**vars(dynamic.info))
+    background.is_front = False
+    views = iter([(dynamic.info, [control]), (background, [])])
+    clock = [100.0]
+
+    def catalogue(_):
+        clock[0] += 0.2
+        return next(views)
+
+    def planner(*args):
+        clock[0] += 1.5
+        return {'instruction': 'Open Review', 'kind': 'click', 'target': 0}
+
+    monkeypatch.setattr('hcs_agent.runner.time.perf_counter', lambda: clock[0])
+    dynamic.backend.page_catalogue, dynamic.backend.plan_step = catalogue, planner
+    events = []
+    monkeypatch.setattr(dynamic.it, '_on_step', events.append)
+    dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    timing = next(s.detail for s in events if s.detail.get('phase') == 'guidance_preparation')
+    assert timing['disposition'] == 'discarded_stale'
+    assert timing['timing_ms'] == {'catalogue_ms': 200.0, 'planner_ms': 1500.0,
+                                  'fresh_catalogue_ms': 200.0, 'total_ms': 1900.0}
+    assert not dynamic.shown
+
+
+def test_unrelated_layout_change_keeps_one_model_call_and_the_correct_target(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    target = SimpleNamespace(role='AXButton', name='Details', center=(100, 100), box=(80, 80, 40, 40))
+    other = SimpleNamespace(role='AXButton', name='Help', center=(250, 100), box=(230, 80, 40, 40))
+    moved = SimpleNamespace(role='AXButton', name='Help', center=(252, 100), box=(232, 80, 40, 40))
+    views = iter([(dynamic.info, [target, other]), (dynamic.info, [moved, target])])
+    dynamic.backend.page_catalogue = lambda _: next(views)
+    monkeypatch.setattr(dynamic.it, '_on_guidance', lambda step: dynamic.shown.append(step))
+    dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    assert len(dynamic.calls) == 1 and len(dynamic.shown) == 1
+    assert dynamic.shown[0].where == 'Details' and dynamic.shown[0].box == target.box
 
 
 def test_native_backend_never_captures_desktop_or_uses_agents_fallback(monkeypatch, tmp_path):
@@ -328,12 +420,66 @@ def test_native_repeated_plan_reports_no_progress_not_accessibility_failure(dyna
     dynamic.backend.plan_step = lambda *args: calls.append(args) or {
         'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0}
     result = dynamic.it._dynamic_guide(dynamic.bound)
-    assert len(calls) == 3 and len(dynamic.shown) == 3
+    assert len(calls) == 3 and len(dynamic.shown) == 2
     assert result.declared.outcome == 'blocked'
     assert 'same step without confirming progress' in result.declared.blocker
     assert 'accessibility' not in result.declared.blocker.lower()
     assert dynamic.shown[-1].last and dynamic.shown[-1].pointer is None
     assert any('repeated_planner_instruction' in step.summary for step in dynamic.it.steps)
+    assert any('Observed interaction:' in note for note in result.declared.steps_taken)
+    assert any('Instruction NOT shown:' in note for note in result.declared.steps_taken)
+
+
+def test_opened_menu_choices_reach_next_plan_and_finish_without_an_extra_click(dynamic, monkeypatch):
+    """Regression for a detected click followed by another instruction to open the same menu."""
+    from hcs_agent.a11y import Candidate
+
+    _make_native(dynamic, monkeypatch)
+    trigger = Candidate('AXPopUpButton', 'Text style', (100, 100, 60, 25))
+    choices = [Candidate('AXMenuItem', 'Regular', (100, 130, 150, 25)),
+               Candidate('AXMenuItem', 'Bold', (100, 155, 150, 25))]
+    items = [trigger]
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, list(items))
+    pages = []
+
+    def plan(goal, context, page, candidates, history):
+        pages.append(page)
+        if len(pages) == 1:
+            assert 'Menu options visible now' not in page
+            return {'instruction': 'Open Text style', 'kind': 'click', 'target': 0}
+        assert 'Menu options visible now' in page
+        assert '2. Regular' in page and '3. Bold' in page
+        assert any('Observed interaction:' in entry for entry in history)
+        return {'done': True, 'kind': 'info', 'target': None,
+                'summary': 'The visible styles are Regular and Bold.'}
+
+    def human_click(step):
+        dynamic.shown.append(step)
+        if not step.last:
+            items.extend(choices)
+        return True, 'Observed interaction: click inside suggested target. Result not verified.'
+
+    dynamic.backend.plan_step = plan
+    dynamic.it._on_guidance = human_click
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert len(dynamic.shown) == 2
+    assert dynamic.shown[0].where == 'Text style'
+    assert dynamic.shown[1].kind == 'info' and dynamic.shown[1].last
+    assert dynamic.shown[1].pointer is None and dynamic.shown[1].box is None
+    assert len(result.declared.steps_taken) == 1  # Listing options is not a second human click.
+
+
+def test_visible_menu_is_context_not_automatic_task_success(dynamic):
+    from hcs_agent.a11y import Candidate
+
+    dynamic.backend.page_catalogue = lambda _: (
+        dynamic.info, [Candidate('AXMenuItem', 'Regular', (100, 130, 150, 25))])
+    dynamic.backend.plan_step = lambda *args: {'done': False, 'kind': 'info',
+        'instruction': 'The requested option is not visible.', 'target': None}
+    result = dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    assert result.declared.outcome == 'unclear'
+    assert not dynamic.shown[0].last
 
 
 def test_repeated_next_instruction_on_changed_pages_is_not_a_stall(dynamic, monkeypatch):
@@ -391,6 +537,208 @@ def test_native_human_stuck_does_not_claim_accessibility_was_lost(dynamic, monke
     assert "You're still stuck" in result.declared.blocker
     assert 'accessibility' not in result.declared.blocker.lower()
     assert len(dynamic.calls) == 1
+
+
+@pytest.mark.parametrize('role,enabled,kind,target', [
+    ('AXStaticText', None, 'click', 0),
+    ('AXButton', False, 'click', 0),
+    ('AXButton', True, 'type', 0),
+    ('AXButton', None, 'click', None),
+])
+def test_unusable_action_is_replanned_once_without_showing_an_arrow(dynamic, monkeypatch, role, enabled, kind, target):
+    _make_native(dynamic, monkeypatch)
+    _, items = dynamic.backend.page_catalogue(None)
+    items[0].role, items[0].enabled = role, enabled
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    dynamic.backend.plan_step = lambda *args: dynamic.calls.append(args) or {
+        'done': False, 'instruction': 'Use Details', 'kind': kind, 'target': target}
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert len(dynamic.calls) == 2
+    assert len(dynamic.shown) == 1 and dynamic.shown[0].last
+    assert dynamic.shown[0].pointer is None
+    assert 'Instruction NOT shown' in '\n'.join(result.declared.steps_taken)
+
+
+def test_unknown_enabled_and_selected_button_remain_usable_context(dynamic):
+    _, items = dynamic.backend.page_catalogue(None)
+    items[0].enabled, items[0].selected = None, True
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert dynamic.shown[0].box_exact
+    assert 'enabled=None' in dynamic.calls[0][3][0] and 'selected=True' in dynamic.calls[0][3][0]
+
+
+def test_no_change_prevents_reworded_click_on_same_target_and_is_traced(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    monkeypatch.setattr(dynamic.it, '_wait_page_change', lambda *args: 'unchanged')
+    plans = iter(['Click Details', 'Open Details', 'Press Details'])
+    histories = []
+
+    def plan(*args):
+        histories.append(list(args[4]))
+        return {'done': False, 'instruction': next(plans), 'kind': 'click', 'target': 0}
+
+    dynamic.backend.plan_step = plan
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert [s.instruction for s in dynamic.shown[:-1]] == ['Click Details']
+    assert 'No visible accessibility change' in '\n'.join(histories[1])
+    assert 'was already tried' in '\n'.join(histories[2])
+    assert any('No visible accessibility change' in step.summary for step in dynamic.it.steps)
+
+
+def test_no_change_can_recover_through_different_visible_target(dynamic, monkeypatch):
+    _, items = dynamic.backend.page_catalogue(None)
+    alternative = SimpleNamespace(role='AXPopUpButton', name='More', center=(200, 100), box=(180, 80, 40, 40))
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, [items[0], alternative])
+    plans = iter([
+        {'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0},
+        {'done': False, 'instruction': 'Open More', 'kind': 'click', 'target': 1},
+        {'done': True, 'summary': 'The menu is visible.'},
+    ])
+    changes = iter(['unchanged', 'changed'])
+    dynamic.backend.plan_step = lambda *args: next(plans)
+    monkeypatch.setattr(dynamic.it, '_wait_page_change', lambda *args: next(changes))
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert [s.instruction for s in dynamic.shown[:2]] == ['Open Details', 'Open More']
+    assert any('goal completion is not verified' in step.summary for step in dynamic.it.steps)
+
+
+def test_rewording_and_layout_jitter_cannot_repeat_a_clicked_target(dynamic):
+    """Odoo CRM stayed open while geometry/order changes unlocked the same click six times."""
+    from hcs_agent.a11y import Candidate
+    controls = [Candidate('AXMenuItem', 'CRM', (60, 170, 45, 26)),
+                Candidate('AXSearchField', 'Rechercher…', (400, 210, 300, 30))]
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, list(controls))
+    plans = iter([
+        {'instruction': 'Open CRM', 'kind': 'click', 'target': 0},
+        {'instruction': 'Click CRM again', 'kind': 'click', 'target': 1},
+        {'instruction': 'Search for the requested opportunity', 'kind': 'type', 'target': 0, 'text': 'Example'},
+        {'done': True, 'summary': 'The result is visible.'},
+    ])
+    dynamic.backend.plan_step = lambda *args: next(plans)
+
+    def interact(step):
+        dynamic.shown.append(step)
+        if step.where == 'CRM':
+            controls[0].frame = (61, 171, 45, 26)
+            controls.reverse()
+        return True, 'Observed interaction; result not verified.'
+
+    dynamic.it._on_guidance = interact
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert [s.where for s in dynamic.shown if not s.last] == ['CRM', 'Rechercher…']
+    assert any('already clicked in this same visible page state' in s.summary for s in dynamic.it.steps)
+
+
+def test_toggling_between_two_catalogues_does_not_reset_tried_target(dynamic):
+    from hcs_agent.a11y import Candidate
+    controls = [Candidate('AXPopUpButton', 'CRM', (60, 170, 45, 26))]
+    option = Candidate('AXMenuItem', 'Pipeline', (60, 200, 120, 30))
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, list(controls))
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    dynamic.backend.plan_step = lambda *a: {'instruction': f'Open CRM ({len(dynamic.shown)})',
+                                          'kind': 'click', 'target': 0}
+
+    def interact(step):
+        dynamic.shown.append(step)
+        if len(controls) == 1:
+            controls.append(option)
+        else:
+            controls.pop()
+        return True, 'Observed interaction; result not verified.'
+
+    dynamic.it._on_guidance = interact
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert len([s for s in dynamic.shown if s.kind == 'click']) == 2
+    assert dynamic.shown[-1].last
+
+
+def test_unchanged_input_focus_does_not_block_typing_in_the_same_field(dynamic, monkeypatch):
+    _, items = dynamic.backend.page_catalogue(None)
+    items[0].role = 'AXTextField'
+    plans = iter([
+        {'done': False, 'instruction': 'Click Search', 'kind': 'click', 'target': 0},
+        {'done': False, 'instruction': 'Type an example', 'kind': 'type', 'target': 0, 'text': 'example'},
+        {'done': True, 'summary': 'The result is visible.'},
+    ])
+    histories = []
+
+    def plan(*args):
+        histories.append(list(args[4]))
+        return next(plans)
+
+    dynamic.backend.plan_step = plan
+    monkeypatch.setattr(dynamic.it, '_wait_page_change', lambda *args: 'unchanged')
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert [s.kind for s in dynamic.shown[:2]] == ['click', 'type']
+    assert 'not proof that an edit failed' in '\n'.join(histories[1])
+    assert not any('action rejected' in step.summary for step in dynamic.it.steps)
+
+
+@pytest.mark.parametrize('change', ['selection', 'position', 'enabled', 'title'])
+def test_accessibility_change_detects_more_than_label_changes(dynamic, change):
+    from hcs_agent.runner import _page_state_signature
+    info, items = dynamic.backend.page_catalogue(None)
+    before = _page_state_signature(info, items)
+    if change == 'selection':
+        items[0].selected = True
+    elif change == 'position':
+        items[0].box = (80, 140, 40, 40)
+    elif change == 'enabled':
+        items[0].enabled = False
+    else:
+        info.title = 'A new view with the same labels'
+    expected = 'unchanged' if change == 'position' else 'changed'
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == expected
+
+
+@pytest.mark.parametrize('unavailable', ['missing', 'background', 'empty'])
+def test_lost_page_is_unknown_progress_not_a_change(dynamic, unavailable):
+    from hcs_agent.runner import _page_state_signature
+    info, items = dynamic.backend.page_catalogue(None)
+    before = _page_state_signature(info, items)
+    if unavailable == 'background':
+        info.is_front = False
+    catalogue = lambda _: None if unavailable == 'missing' else (info, [] if unavailable == 'empty' else items)
+    assert Intervention._wait_page_change(dynamic.it, catalogue, dynamic.bound, before) == 'unavailable'
+
+
+def test_unchanged_wait_is_bounded_and_stop_is_preserved(dynamic, monkeypatch):
+    from hcs_agent.runner import _page_state_signature
+    before = _page_state_signature(*dynamic.backend.page_catalogue(None))
+    clock = iter([0.0, 0.1, 1.7])
+    monkeypatch.setattr('hcs_agent.runner.time.monotonic', lambda: next(clock))
+    monkeypatch.setattr('hcs_agent.runner.time.sleep', lambda _: None)
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == 'unchanged'
+    monkeypatch.setattr('hcs_agent.runner.time.monotonic', lambda: 0.0)
+    dynamic.it._stop.set()
+    assert Intervention._wait_page_change(dynamic.it, dynamic.backend.page_catalogue, dynamic.bound, before) == 'stopped'
+
+
+def test_invalidated_target_can_be_reobserved_once_without_claiming_an_action(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    note = 'Observation only: target invalidated; reobserve requested. No target interaction confirmed.'
+    dynamic.it._on_guidance = lambda step: dynamic.shown.append(step) or (False, note)
+    histories = []
+
+    def plan(*args):
+        histories.append(list(args[4]))
+        return {'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0}
+
+    dynamic.backend.plan_step = plan
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert len(histories) == 2  # Repeated invalidations cannot create an unbounded paid planning loop.
+    assert histories[1] == [note]
+    assert result.declared.outcome == 'blocked'
+    assert not any('Instruction shown:' in entry for entry in histories[1])
 
 
 def test_native_front_window_timeout_has_specific_observation(dynamic, monkeypatch):

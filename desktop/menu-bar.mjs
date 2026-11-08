@@ -1,5 +1,5 @@
 // No timers or status polling here: a background tray must not count as an open assistant window.
-export function createMenuBar({ Tray, Menu, nativeImage, dialog, iconPath, showWindow, stopTask, startRuntime, quit }) {
+export function createMenuBar({ Tray, Menu, nativeImage, dialog, iconPath, showWindow, stopTask, startRuntime, quit, coachLabel = "Devin coach" }) {
   const icon = nativeImage.createFromPath(iconPath);
   if (icon.isEmpty()) throw new Error("The H Companion menu-bar icon could not be loaded.");
   icon.setTemplateImage(true); // macOS supplies the correct light/dark menu-bar colour.
@@ -15,7 +15,7 @@ export function createMenuBar({ Tray, Menu, nativeImage, dialog, iconPath, showW
       { label: "Open H Companion", click: showWindow },
       { label: "Stop task", enabled: !busy, click: stop },
     ];
-    if (startRuntime) items.push({ label: "Start Devin coach", enabled: !busy, click: start });
+    if (startRuntime) items.push({ label: `Start ${coachLabel}`, enabled: !busy, click: start });
     items.push({ type: "separator" }, { label: "Quit H Companion", click: quit });
     tray.setContextMenu(Menu.buildFromTemplate(items));
   }
@@ -44,12 +44,12 @@ export function createMenuBar({ Tray, Menu, nativeImage, dialog, iconPath, showW
   async function start() {
     if (busy || !startRuntime) return;
     busy = true;
-    message = "Starting Devin coach…";
+    message = `Starting ${coachLabel}…`;
     update();
     try {
       const result = await startRuntime();
       if (!result.ok) throw new Error(result.message || "The coach could not start. Try the launch shortcut again.");
-      message = "Devin coach ready";
+      message = `${coachLabel} ready`;
       if (!tray.isDestroyed()) showWindow();
     } catch (error) {
       message = "Coach could not start";

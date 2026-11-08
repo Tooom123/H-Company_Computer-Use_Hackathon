@@ -77,6 +77,29 @@ def test_valid_question_after_silence_uses_the_same_live_listener(talk):
     assert len(talk.flashes) == 2
 
 
+def test_automatic_talk_changes_product_without_reusing_old_goal_or_native_target(talk, monkeypatch):
+    from hcs_agent.a11y import PageInfo
+    from hcs_agent.knowledge import NoKnowledge
+    import os
+    talk.args.software = "auto"
+    talk.texts = ["Show modes", "Show this purchase order"]
+    pages = iter([
+        PageInfo(app="Devin", title="", url="", native=True, bundle_id="com.exafunction.windsurf"),
+        PageInfo(app="Chrome", title="Purchase", url="https://holo-demo.62.83.79.254.sslip.io/odoo/purchase"),
+    ])
+    monkeypatch.setenv("HCS_AUTO_CONTEXT", "0")
+    monkeypatch.setenv("HCS_AX_NATIVE_BUNDLE_ID", "old")
+    monkeypatch.setattr(cli, "_APP_CONTEXT", {})
+    monkeypatch.setattr(cli, "make_backend", lambda _: SimpleNamespace(knowledge=NoKnowledge()))
+    monkeypatch.setattr(a11y, "foreground_page", lambda: next(pages))
+    assert cli.cmd_talk(talk.args) == 0
+    assert [r.software for r in talk.requests] == ["cognition", "odoo"]
+    assert talk.requests[-1].parameters["previous_goal"] == ""
+    assert "HCS_AX_NATIVE_BUNDLE_ID" not in os.environ
+    assert cli._APP_CONTEXT["software"] == "odoo"
+    assert not talk.flashes
+
+
 def test_silence_preserves_armed_feedback_for_the_next_actual_comment(talk):
     directory = talk.directory / "sess_finished"
     directory.mkdir()

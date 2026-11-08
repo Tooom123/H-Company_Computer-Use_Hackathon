@@ -15,7 +15,7 @@ Source officielle : [Odoo 20 — Search, filter, and group records](https://gith
 
 ## CRM : opportunité, étape commerciale et activité de relance
 
-Procédure de consultation de la démo : ouvrir CRM, rechercher l'opportunité par l'intitulé demandé, puis vérifier son client pour distinguer les homonymes. Lire les informations de la fiche sans déplacer la carte ni changer son étape. Une activité est un suivi lié à un enregistrement : elle n'est ni l'étape commerciale de l'opportunité ni son revenu attendu.
+Procédure de consultation de la démo : si le pipeline CRM est déjà ouvert, y rester et utiliser le champ « Rechercher… » pour retrouver l'opportunité par l'intitulé demandé. Ouvrir CRM seulement depuis une autre application. Vérifier le client pour distinguer les homonymes. Le filtre « Mes opportunités » peut restreindre les résultats : examiner les filtres affichés avant de conclure qu'une fiche est absente. Lire les informations de la fiche sans déplacer la carte ni changer son étape. Une activité est un suivi lié à un enregistrement : elle n'est ni l'étape commerciale de l'opportunité ni son revenu attendu.
 
 Les activités sont visibles depuis le fil de discussion de la fiche, les cartes Kanban et certaines listes. Leur icône varie selon le type d'activité. Les couleurs indiquent une activité future, du jour ou en retard ; elles ne donnent pas à elles seules une date exacte. Pour une échéance demandée, chercher la date affichée dans le détail consultable. Si seule une indication relative est visible, la rapporter comme telle et signaler que la date absolue n'a pas été vérifiée. « Marquer comme fait », planifier, envoyer un message ou modifier une activité change les données.
 

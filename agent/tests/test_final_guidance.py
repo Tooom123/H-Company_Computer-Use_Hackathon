@@ -41,7 +41,6 @@ def rig(monkeypatch):
     monkeypatch.setattr(cli, "_new_request_pending", lambda: False)
     monkeypatch.setattr(cli.time, "time", lambda: clock[0])
     monkeypatch.setitem(cli._SPEECH, "speaker", None)
-    monkeypatch.setattr(cli, "_ScreenWatcher", lambda: None)
     monkeypatch.setattr(cli, "_InputWatcher", lambda: SimpleNamespace(stop=lambda: None))
     return Overlay(), spoken, clock
 

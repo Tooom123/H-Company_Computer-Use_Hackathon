@@ -65,6 +65,8 @@ class Candidate:
     score: float = 0.0
     why: str = ""
     ref: object = None  # the AXUIElement, for hit-testing
+    enabled: bool | None = None  # None means the accessibility API did not provide a Boolean state.
+    selected: bool | None = None
 
     @property
     def center(self) -> tuple[int, int]:
@@ -127,6 +129,15 @@ def _text(v) -> str:
     return v.strip() if isinstance(v, str) else ""
 
 
+def _boolean_state(value) -> bool | None:
+    """Only explicit Boolean/bridged 0-or-1 states are evidence; AX errors are unknown."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    return None
+
+
 def _browsers():
     """Running supported browsers as (pid, name, is_frontmost), frontmost first."""
     from AppKit import NSWorkspace
@@ -143,11 +154,13 @@ def _browsers():
     return out
 
 
-def _browser_window():
+def _browser_window(*, front_only: bool = False):
     """The focused (or first) window of a browser, frontmost browser preferred: (window, app name, is_front)."""
     import ApplicationServices as AS
 
     for pid, name, is_front in _browsers():
+        if front_only and not is_front:
+            continue
         app = AS.AXUIElementCreateApplication(pid)
         for flag in ("AXManualAccessibility", "AXEnhancedUserInterface"):
             AS.AXUIElementSetAttributeValue(app, flag, True)  # ask Chrome to expose the web content
@@ -234,7 +247,8 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
     """Every element with a name and an on-screen frame. One IPC per node (multiple attributes at once)."""
     import ApplicationServices as AS
 
-    attrs = ["AXRole", "AXTitle", "AXDescription", "AXPlaceholderValue", "AXChildren", "AXFrame"]
+    attrs = ["AXRole", "AXTitle", "AXDescription", "AXPlaceholderValue", "AXChildren", "AXFrame",
+             "AXEnabled", "AXSelected"]
     out: list[Candidate] = []
     stack = [web]
     count = 0
@@ -244,7 +258,7 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
         err, vals = AS.AXUIElementCopyMultipleAttributeValues(el, attrs, 0, None)
         if err != 0 or vals is None:
             continue
-        role, title, desc, placeholder, children, frame_v = vals
+        role, title, desc, placeholder, children, frame_v, enabled, selected = vals
         role = role if isinstance(role, str) else ""
         # Electron editors expose typed values as AXStaticText descendants as well as AXValue.
         # Preserve only the input's own label/placeholder; never walk into its content subtree.
@@ -267,7 +281,10 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
                 frame = (float(r.origin.x), float(r.origin.y), float(r.size.width), float(r.size.height))
         if frame is None or frame[2] < 2 or frame[3] < 2:
             continue
-        out.append(Candidate(role=role, name=name, frame=frame, ref=el))
+        # Disabled/selected controls remain useful evidence in the page catalogue.
+        # Selection does not imply either disabled state or a successful action.
+        out.append(Candidate(role=role, name=name, frame=frame, ref=el,
+                             enabled=_boolean_state(enabled), selected=_boolean_state(selected)))
     return out
 
 
@@ -321,10 +338,31 @@ def page() -> PageInfo | None:
     """What the frontmost browser shows: app, window title, URL and the named elements with their frames."""
     if not available():
         return None
+    if os.environ.get("HCS_AUTO_CONTEXT") == "1":
+        return foreground_page()
     if bundle := native_target():
         return _native_page(bundle)
+    return _read_browser_page(_browser_window())
+
+
+def foreground_page() -> PageInfo | None:
+    """Only known demo products in the foreground; do not walk a background browser."""
+    if not available():
+        return None
+    from AppKit import NSWorkspace
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    if front is None:
+        return None
+    bundle = front.bundleIdentifier()
+    if bundle in NATIVE_APPLICATIONS:
+        return _native_page(bundle)
+    if front.localizedName() not in BROWSERS:
+        return PageInfo(app="Other application", title="", url="", is_front=False)
+    return _read_browser_page(_browser_window(front_only=True), known_only=True)
+
+
+def _read_browser_page(bw, *, known_only=False) -> PageInfo | None:
     t0 = time.time()
-    bw = _browser_window()
     if bw is None:
         return None
     win, app_name, is_front = bw
@@ -334,6 +372,10 @@ def page() -> PageInfo | None:
     url = _attr(web, "AXURL")
     url = str(url) if url is not None else ""
     info = PageInfo(app=app_name, title=_text(_attr(win, "AXTitle")), url=url, is_front=is_front, viewport=_frame(web))
+    if known_only:
+        from .app_context import profile_for_page
+        if profile_for_page(info) is None:
+            return info  # inspect identity before walking labels on an unrelated/login page
     elements = _walk(web)
     # Right after a navigation Chrome exposes the new page progressively: give it a moment before deciding
     # the page is empty (an empty catalogue would send the guide to the slow path for nothing).
@@ -353,6 +395,10 @@ def page() -> PageInfo | None:
                     and e.frame[1] < vy + vh]
     info.elements = elements
     info.walk_s = time.time() - t0
+    if known_only:
+        from .app_context import profile_for_page
+        if profile_for_page(info) is None:
+            info.elements = []  # navigation may have changed the origin during collection
     return info
 
 
@@ -404,8 +450,9 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
         n = el.name.lower()
         score = 0.0
         why = ""
-        if n in desc_l and len(n) >= 2:
-            pos = desc_l.find(n)
+        m_label = re.search(r"(?<![a-z0-9])" + re.escape(n) + r"(?![a-z0-9])", desc_l) if len(n) >= 2 else None
+        if m_label:  # the label appears as whole words ("Agent" does not count for "Agents entry")
+            pos = m_label.start()
             score = 10 + min(len(n), 24)  # the element's own label is written in the description
             why = f"label '{el.name}' in description"
             if pos >= ctx_start:
@@ -418,7 +465,9 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
                 why += " + role word"
         elif any(q and (q in n or n in q) and min(len(q), len(n)) >= 3 for q in quoted):
             q = next(q for q in quoted if q and (q in n or n in q))
-            score = 8 + min(len(q), len(n))
+            # A partial match ("Agent" vs "Agents", "Log" vs "Log note") is a hint, never a confident hit on its own.
+            score = 8 + min(len(q), len(n)) if q == n else 6 + min(len(q), len(n)) - 2 * abs(len(q) - len(n))
+            score = min(score, 9.5) if q != n else score
             why = f"label '{el.name}' ~ '{q}'"
         else:
             e_tokens = set(_tokens(el.name))

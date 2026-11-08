@@ -114,8 +114,10 @@ HTTPS des sept fichiers. Une commande libre `id` avec cette même clé est refus
 homepage passent. Les autres blocs Caddy et identifiants de conteneurs sont
 inchangés ; le portail Odoo reste protégé (401 sans identifiants).
 
-**Le déclenchement GitHub après merge reste à constater une fois ce workflow
-intégré à main** ; la publication SSH manuelle ne constitue pas un run Actions.
+La PR #10 a ensuite été fusionnée sur main (`b751d80`). Le premier
+[run GitHub Actions](https://github.com/Tooom123/H-Company_Computer-Use_Hackathon/actions/runs/42448143936)
+est **success** : tests et publication suivie des vérifications HTTPS terminés.
+Le déclenchement après merge est donc confirmé, en plus du test SSH manuel.
 
 ## Vérifications effectuées
 

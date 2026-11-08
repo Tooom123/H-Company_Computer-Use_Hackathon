@@ -4,7 +4,7 @@ id: hcompany_platform_redeem_credits
 software: hcompany
 software_version: "2026-11"
 session_type: configuration
-title: Redeem a promo code / check credits in Billing
+title: Redeem a promo code in Billing (adds credits)
 reversible: false
 max_attempts: 1
 max_steps_per_attempt: 25

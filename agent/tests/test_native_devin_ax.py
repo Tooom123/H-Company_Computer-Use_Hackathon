@@ -128,6 +128,42 @@ def test_native_window_without_web_area_exposes_its_native_controls(fake_ax):
     assert any(el.name == "Review" and el.box == (120, 180, 100, 30) for el in info.elements)
 
 
+@pytest.mark.parametrize("attributes,enabled,selected", [
+    ({}, None, None),
+    ({"AXEnabled": False, "AXSelected": True}, False, True),
+    ({"AXEnabled": True, "AXSelected": False}, True, False),
+    ({"AXEnabled": 0, "AXSelected": 1}, False, True),
+    ({"AXEnabled": "false", "AXSelected": -25205}, None, None),
+    ({"AXEnabled": object(), "AXSelected": None}, None, None),
+])
+def test_native_control_states_are_explicit_or_unknown_and_disabled_controls_remain_visible(
+        fake_ax, attributes, enabled, selected):
+    button = _node("AXButton", "Current plan", AXFrame=_rect(120, 180, 100, 30), **attributes)
+    fake_ax.root = {"AXFocusedWindow": _node("AXWindow", "Devin", [button])}
+
+    info = a11y.page()
+
+    control = next(el for el in info.elements if el.name == "Current plan")
+    assert control.enabled is enabled
+    assert control.selected is selected
+    assert (button, "AXEnabled") in fake_ax.reads and (button, "AXSelected") in fake_ax.reads
+
+
+def test_input_states_do_not_read_entered_values_or_descendants(fake_ax):
+    private_child = _node("AXStaticText", AXValue="private-child-text")
+    field = _node("AXTextField", "Search", [private_child], AXEnabled=False, AXSelected=True,
+                  AXValue="private-field-value", AXFrame=_rect(120, 180, 100, 30))
+    fake_ax.root = {"AXFocusedWindow": _node("AXWindow", "Devin", [field])}
+
+    info = a11y.page()
+
+    control = next(el for el in info.elements if el.name == "Search")
+    assert control.enabled is False and control.selected is True
+    assert not any(node is field and name == "AXValue" for node, name in fake_ax.reads)
+    assert not any(node is private_child for node, _name in fake_ax.reads)
+    assert not any("private-" in el.name for el in info.elements)
+
+
 def test_native_menu_sibling_of_web_area_is_collected_without_reading_other_windows_or_input_values(fake_ax):
     trigger = _node("AXPopUpButton", "Devin Settings", AXFrame=_rect(800, 90, 40, 25))
     web = _node("AXWebArea", children=[trigger], AXFrame=_rect(50, 90, 880, 610),

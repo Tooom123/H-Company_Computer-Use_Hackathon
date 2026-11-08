@@ -205,7 +205,8 @@ def _record(source: ControlTowerSource, directory: Path, *, detail=False):
     review, labels = _json(directory, 'agent-review.json'), _json(directory, 'labels.json')
     frames = _frames(directory, meta)
     mode = _text(meta.get('mode', request.get('mode', report.get('mode', 'act'))), 50)
-    software = meta.get('software', request.get('software', report.get('software', source.software)))
+    software = meta.get('software', request.get('software', report.get('software',
+                        meta.get('source', source.software))))
     row.update(software=_text(software, 80) or source.software,
                goal=_text(meta.get('goal', request.get('goal', report.get('goal', meta.get('title', '')))), 3000),
                mode=mode, human_present=meta.get('human_present') is True,

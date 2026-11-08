@@ -1,0 +1,80 @@
+# H Company platform — guided procedure (read-only). Unverified on the live site: the Billing page's labels are
+# taken from the public docs; the guide plans each step from the real page anyway (plan-first software).
+id: hcompany_platform_check_credits
+software: hcompany
+software_version: "2026-11"
+session_type: discovery
+title: Check credits, plan and usage in Billing (read-only)
+reversible: true
+max_attempts: 1
+max_steps_per_attempt: 20
+max_time_s_per_attempt: 240
+
+parameters: []
+
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+
+objective: >-
+  Show where the account's credits, plan and usage are displayed on platform.hcompany.ai (Settings, Billing)
+  and leave that information visible.
+
+planned_changes:
+  - "Read-only: nothing is created or changed."
+
+allowed_actions:
+  - Navigate to Settings / Billing (or Usage) and scroll to the credit balance, plan and usage figures.
+
+forbidden_actions:
+  - Entering a payment method; clicking Buy, Upgrade or any purchase.
+  - Redeeming a code or changing the plan.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab. Read-only.
+  Procedure: open Settings, then Billing (or Usage); point at the credit balance, the current plan and the usage
+  figures; leave them visible. Never click Buy / Upgrade / add a payment method.
+
+guide_steps:
+  - instruction: "Open Billing in Settings"
+    element: "the Billing (or Usage) entry in the settings navigation of the platform"
+    why: "This page shows your credits, your plan and what the sessions consumed."
+    done_when: "a Billing or Usage page is displayed with a credit balance or plan information"
+  - instruction: "Here are your credits, plan and usage"
+    why: "Credits are consumed by sessions; the plan sets the concurrent-session limit (Free: 3)."
+    annotations:
+      - element: "the credit balance figure on the Billing page"
+        text: "Credits left"
+        shape: circle
+      - element: "the current plan name on the Billing page"
+        text: "Your plan"
+        shape: underline
+      - element: "the Upgrade or Buy credits button on the Billing page"
+        text: "Not needed now: a purchase"
+        shape: label
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to go back to the platform home"
+    element: "the H Company logo at the top-left of the platform page"
+    why: "The home page is where every section starts from."
+
+postcondition:
+  description: >-
+    The Billing (or Usage) page is displayed with the credit balance and plan visible.
+  checks:
+    - key: billing_page
+      prompt: A Billing or Usage page of the platform is displayed.
+    - key: balance_visible
+      prompt: A credit balance or plan information is visible on screen.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Report whether the Billing/Usage page is displayed with the credit balance or plan.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must confirm the user's role allows seeing billing information.
+  default_category: unknown

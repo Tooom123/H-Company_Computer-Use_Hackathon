@@ -126,6 +126,113 @@ def test_ax_box_follows_layout_but_does_not_resurrect_invalidated_coordinates(ri
     assert not rig.w.acted("click")
 
 
+def test_fresh_ax_after_invalidation_can_request_replan_but_never_restore_click_target(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    rig.w.update_target_box(None)
+    rig.clock[0] += 0.2
+    measured_at = rig.clock[0]
+    measurement = (1, measured_at, 123, (80, 80, 40, 40))
+    rig.w.update_target_box(measurement[3])
+    click(rig)
+    assert not rig.w.acted("click")
+    assert rig.w.reobservation_ready(measurement, 1)
+    assert rig.w._target is None
+
+
+@pytest.mark.parametrize("failure", ["predates", "stale", "wrong_step", "wrong_app", "focus_changed",
+                                      "missing_box", "unknown_app"])
+def test_replan_requires_fresh_same_step_and_same_app_ax_measurement(rig, failure):
+    arm(rig, box=(80, 80, 40, 40))
+    rig.w.update_target_box(None)
+    rig.clock[0] += 0.2
+    step, started_at, app, box = 1, rig.clock[0], 123, (80, 80, 40, 40)
+    if failure == "predates":
+        started_at = rig.w.invalidated_at
+    elif failure == "stale":
+        rig.clock[0] += 2
+    elif failure == "wrong_step":
+        step = 2
+    elif failure == "wrong_app":
+        app = 456
+    elif failure == "focus_changed":
+        rig.app[0] = 456
+    elif failure == "missing_box":
+        box = None
+    elif failure == "unknown_app":
+        rig.w._expected_app = None
+    assert not rig.w.reobservation_ready((step, started_at, app, box), 1)
+
+
+def test_uninvalidated_target_never_requests_automatic_replan(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    assert not rig.w.reobservation_ready((1, rig.clock[0], 123, (80, 80, 40, 40)), 1)
+
+
+def test_missing_target_can_request_new_plan_from_fresh_page_but_not_confirm_a_click(rig):
+    arm(rig, box=(80, 80, 40, 40))
+    rig.w.update_target_box(None)
+    rig.clock[0] += 0.2
+    measurement = (1, rig.clock[0], 123, None)
+    assert rig.w.reobservation_ready(measurement, 1, allow_missing_target=True)
+    assert not rig.w.acted('click') and rig.w._target is None
+    rig.app[0] = 456
+    assert not rig.w.reobservation_ready(measurement, 1, allow_missing_target=True)
+
+
+@pytest.mark.parametrize('description', ['Rechercher…', 'the search field'])
+def test_tracker_keeps_exact_search_field_when_button_has_same_label(monkeypatch, description):
+    from hcs_agent.a11y import Candidate
+    # Avoid starting a real AX thread: exercise the pure selection of a recorded read.
+    monkeypatch.setattr(cli.sys, 'platform', 'test')
+    tracker = cli._TargetTracker()
+    box = (650, 200, 230, 30)
+    tracker.follow(1, description, box, expected_app=123)
+    button = Candidate('AXButton', 'Rechercher…', (420, 200, 40, 30))
+    field = Candidate('AXSearchField', 'Rechercher…', box)
+    assert tracker._choose_candidate(button, [field]) is field
+    tracker._target_role = field.role
+    field.frame = (652, 201, 230, 30)
+    assert tracker._choose_candidate(button, [field]) is field
+    # Do not jump to another same-named control or reinterpret a button as an input.
+    assert tracker._choose_candidate(button, []) is None
+    other = Candidate('AXSearchField', 'Rechercher…', (100, 600, 230, 30))
+    assert tracker._choose_candidate(other, []) is None
+    assert tracker._choose_candidate(field, [Candidate('AXSearchField', 'Rechercher…', field.frame)]) is None
+
+
+def test_tracker_does_not_read_ax_when_a_different_app_is_foreground(monkeypatch):
+    from hcs_agent import a11y
+    monkeypatch.setattr(a11y, "available", lambda: True)
+    monkeypatch.setattr(a11y, "find", lambda _: pytest.fail("Must not inspect another app"))
+    monkeypatch.setattr(cli._InputWatcher, "_frontmost_app", staticmethod(lambda: 456))
+    tracker = cli._TargetTracker()
+    tracker.description, tracker.step, tracker.box = "Current plan", 1, (80, 80, 40, 40)
+    tracker._expected_app = 123
+    waits = iter([False, True])
+    tracker._stop = SimpleNamespace(wait=lambda _: next(waits))
+    tracker._run()
+    assert tracker.box is None and tracker.measurement is None
+
+
+def test_tracker_loop_publishes_the_original_box_despite_duplicate_search_names(monkeypatch):
+    from hcs_agent import a11y
+    monkeypatch.setattr(a11y, 'available', lambda: True)
+    monkeypatch.setattr(cli._InputWatcher, '_frontmost_app', staticmethod(lambda: 123))
+    button = a11y.Candidate('AXButton', 'Rechercher…', (400, 200, 40, 30))
+    field = a11y.Candidate('AXSearchField', 'Rechercher…', (650, 200, 230, 30))
+    page = a11y.PageInfo('Chrome', 'Pipeline', 'https://example.test/crm', elements=[button, field])
+    monkeypatch.setattr(a11y, 'find', lambda _: (button, [field], page))
+    tracker = cli._TargetTracker()
+    tracker.description, tracker.step, tracker._expected_app = 'Rechercher…', 1, 123
+    tracker._anchor_box = field.box
+    waits = iter([False, True])
+    tracker._stop = SimpleNamespace(wait=lambda _: next(waits))
+    tracker._run()
+    assert tracker.box == field.box
+    assert tracker.measurement[0] == 1 and tracker.measurement[2:] == (123, field.box)
+    assert tracker._target_role == 'AXSearchField'
+
+
 def test_ax_control_disappearing_after_target_click_still_requests_verification(rig):
     arm(rig, box=(80, 80, 40, 40))
     click(rig)
@@ -224,7 +331,6 @@ def loop_rig(rig, monkeypatch):
     it = intervention()
     prefetched, stopped = [], []
     monkeypatch.setattr(cli, "_InputWatcher", lambda: rig.w)
-    monkeypatch.setattr(cli, "_ScreenWatcher", lambda: pytest.fail("Screen differences must not advance GUIDE"))
     monkeypatch.setattr(cli, "_new_request_pending", lambda: False)
     monkeypatch.setitem(cli._SPEECH, "speaker", SimpleNamespace(
         prefetch=lambda texts, **options: prefetched.append((texts, options)), stop=lambda: stopped.append(True)))
@@ -261,6 +367,64 @@ def test_loop_target_interaction_requests_reobservation_not_claimed_success(loop
     assert len(r.it.replies) == 1
     assert r.it.replies[0].note.startswith("Observed interaction:")
     assert "Result not verified" in r.it.replies[0].note
+
+
+@pytest.mark.parametrize('automatic,box', [(False, (80, 80, 40, 40)),
+                                         (True, (80, 80, 40, 40)), (True, None)])
+def test_loop_replans_once_from_fresh_ax_without_confirming_action(loop_rig, monkeypatch, automatic, box):
+    r = loop_rig
+    monkeypatch.setenv("HCS_AX_NATIVE_BUNDLE_ID", "com.exafunction.windsurf")
+    r.it.request.software, r.it.request.autonomy, r.it.request.mode = "cognition", 0, cli.Mode.guide
+    if automatic:
+        monkeypatch.delenv('HCS_AX_NATIVE_BUNDLE_ID')
+        r.it.request.software = 'odoo'
+        r.it.request.parameters = {'automatic_context': '1'}
+    tracker = SimpleNamespace(measurement=None)
+
+    def follow(step, description, box, **kwargs):
+        tracker.measurement = None
+        assert kwargs["expected_app"] == 123
+
+    tracker.follow, tracker.stop = follow, lambda: None
+    monkeypatch.setattr(cli, "_TargetTracker", lambda: tracker)
+
+    def invalidate_then_measure():
+        r.rig.w._on_event("scroll", (0, 0, 0, 1))
+        r.rig.clock[0] += 0.2
+        tracker.measurement = (r.it.guidance[-1].index, r.rig.clock[0], 123, box)
+
+    def next_(command):
+        r.it.replies.append(command)
+        r.it.guidance.append(GuidanceStep(index=2, instruction="Use the freshly observed target",
+                                          pointer=(100, 100)))
+
+    r.it.next = next_
+    r.actions.extend([invalidate_then_measure, lambda: None, invalidate_then_measure, lambda: None])
+    cli._guide_loop(r.it, auto=False, overlay=False)
+    assert len(r.it.replies) == 1  # a second invalidation needs explicit confirmation or Stop
+    reply = r.it.replies[0]
+    assert reply.done is False
+    assert reply.note.startswith("Observation only: target invalidated; reobserve requested.")
+    assert "No user action was confirmed" in reply.note
+    assert r.rig.w._target is None
+
+
+@pytest.mark.parametrize("software,autonomy,mode,bundle", [
+    ("odoo", 0, cli.Mode.guide, "com.exafunction.windsurf"),
+    ("cognition", 1, cli.Mode.guide, "com.exafunction.windsurf"),
+    ("cognition", 0, cli.Mode.act, "com.exafunction.windsurf"),
+    ("cognition", 0, cli.Mode.guide, ""),
+    ("cognition", 0, cli.Mode.guide, "other.native.app"),
+])
+def test_other_modes_keep_explicit_confirmation_without_automatic_replan(
+        loop_rig, monkeypatch, software, autonomy, mode, bundle):
+    r = loop_rig
+    monkeypatch.setenv("HCS_AX_NATIVE_BUNDLE_ID", bundle)
+    r.it.request.software, r.it.request.autonomy, r.it.request.mode = software, autonomy, mode
+    monkeypatch.setattr(r.rig.w, "reobservation_ready", lambda *args: pytest.fail("Replan is outside this pilot"))
+    r.actions.append(lambda: r.rig.w._on_event("scroll", (0, 0, 0, 1)))
+    cli._guide_loop(r.it, auto=False, overlay=False)
+    assert r.it.replies == []
 
 
 @pytest.mark.parametrize("stdin,expected", [("", 0), ("\n", 1)])

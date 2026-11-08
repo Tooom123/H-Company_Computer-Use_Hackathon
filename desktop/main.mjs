@@ -222,11 +222,12 @@ if (ownsInstance) {
     if (process.platform === "darwin" && !smoke) {
       if (app.dock) app.dock.setIcon(path.join(here, "assets", "companion.png"));
       try {
-        const canStart = process.env.HCS_PILOT_KIND === "devin-native"
+        const canStart = ["devin-native", "multi-product"].includes(process.env.HCS_PILOT_KIND)
           && path.isAbsolute(process.env.HCS_PILOT_PYTHON || "")
           && fs.existsSync(process.env.HCS_PILOT_PYTHON);
         menuBar = createMenuBar({ Tray, Menu, nativeImage, dialog,
           iconPath: path.join(here, "assets", "companionTemplate.png"), showWindow: showMainWindow,
+          coachLabel: process.env.HCS_PILOT_KIND === "multi-product" ? "H Companion coach" : "Devin coach",
           stopTask: () => call(AGENT, "POST", "/stop", {}, { "X-HCS-App": "1" }),
           startRuntime: canStart ? startDevinRuntime : null, quit: () => app.quit() });
       } catch (error) {

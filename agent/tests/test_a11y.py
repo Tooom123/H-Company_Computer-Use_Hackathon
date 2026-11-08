@@ -7,6 +7,13 @@ def _el(role, name, x=0, y=0, w=80, h=30):
     return Candidate(role=role, name=name, frame=(x, y, w, h))
 
 
+def test_candidate_optional_states_preserve_existing_positional_callers():
+    ref = object()
+    candidate = Candidate("AXButton", "Review", (0, 0, 80, 30), 0.5, "label match", ref)
+    assert candidate.ref is ref and candidate.score == 0.5 and candidate.why == "label match"
+    assert candidate.enabled is None and candidate.selected is None
+
+
 CHATTER = [
     _el("AXButton", "Send message", 1000, 270), _el("AXButton", "Log note", 1120, 270),
     _el("AXButton", "Activity", 1230, 270), _el("AXStaticText", "Log note", 300, 600, 60, 16),
@@ -76,3 +83,11 @@ def test_doc_lookup_prefers_guides_and_limits_pages():
 
     assert sitemap.find_doc_pages("How many concurrent sessions can I run at once?", k=1)[0]["title"] == "Plans and limits"
     assert sitemap.find_doc_pages("What is a skill?", k=1)[0]["title"] == "Skills"
+
+
+def test_label_match_needs_whole_words():
+    els = [_el("AXCheckBox", "Agent", 10, 10, 60, 20), _el("AXLink", "Agents", 10, 40, 60, 20)]
+    best = match("the Agents entry in the left navigation menu of the platform", els)[0]
+    assert (best.role, best.name) == ("AXLink", "Agents")
+    ranked = match("the Agents entry in the left navigation menu", els)
+    assert ranked[0].name == "Agents" and ranked[0].score - ranked[1].score > 10  # no tie: a partial match is a weak hint

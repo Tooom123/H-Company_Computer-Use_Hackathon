@@ -90,9 +90,11 @@ def _prefetch_voice(request: InterventionRequest) -> None:
 
 
 _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
+_APP_CONTEXT: dict = {}
 _FEEDBACK = DesktopFeedback()
 _RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
 _GUIDE_REPLY_LOCK = threading.Lock()
+_REOBSERVE_GUIDANCE_NOTE = "Observation only: target invalidated; reobserve requested."
 _TEST_SENTENCE = "Hello, I am H Companion. I can now read the guidance aloud."
 
 
@@ -148,6 +150,8 @@ def _control_status() -> dict:
                    "speed": getattr(sp, "speed", None) or float(os.environ.get("HCS_TTS_SPEED") or 1.0),
                    "speaking": bool(sp is not None and sp.speaking)},
         "current": cur,
+        "accessibility": dict(getattr(backend, "last_catalogue_diagnostic", {}) or {}),
+        "context": dict(_APP_CONTEXT),
     }
 
 
@@ -662,7 +666,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
     registry = ProcedureRegistry()
     coaching_software = getattr(args, "software", None)
+    automatic = coaching_software == "auto"
     coaching = coaching_software in _COACHING_SOFTWARE
+    if automatic:
+        os.environ["HCS_AUTO_CONTEXT"] = "1"
+        os.environ.pop("HCS_AX_NATIVE_BUNDLE_ID", None)
+        _APP_CONTEXT.clear()
+        _APP_CONTEXT.update(mode="automatic", label="Selected from the foreground app on your next request", sources=0)
     if coaching:
         registry.get(_COACHING_SOFTWARE[coaching_software][1])  # fail before opening devices if the fixture is missing
         _set_autonomy(0)
@@ -728,7 +738,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         print(f"  (accessibility tree unavailable: {exc})")
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     _VOICE["ptt"] = ptt
-    router = None if coaching else IntentRouter(registry)
+    router = None if coaching or automatic else IntentRouter(registry)
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need. Release to send. Responses are in English. Ctrl+C to quit.")
     if ov is not None:
@@ -769,7 +779,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if _consume_talk_control(text, ov):
                 history.clear()
                 continue
-            if not coaching and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
+            if not coaching and not automatic and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
                 print(f"  -> resuming {request.procedure_id} from the current screen")
                 try:
@@ -783,7 +793,28 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             if ov is not None:
                 ov.badge("Thinking…", pulsing=True)
-            if coaching:
+            if automatic:
+                from . import a11y
+                from .app_context import make_request
+                try:
+                    request, context_status = make_request(text, a11y.foreground_page(), backend.knowledge, last_request)
+                except ValueError as exc:
+                    _APP_CONTEXT.clear()
+                    _APP_CONTEXT.update(mode="automatic", label="No supported product in front", sources=0)
+                    _flash(ov, str(exc), "question")
+                    continue
+                except Exception:
+                    _flash(ov, "I couldn't read the active application. Bring the product window to the front and try again.", "question")
+                    continue
+                bundle = request.parameters.get("context_bundle_id")
+                if bundle:
+                    os.environ["HCS_AX_NATIVE_BUNDLE_ID"] = bundle
+                else:
+                    os.environ.pop("HCS_AX_NATIVE_BUNDLE_ID", None)
+                _APP_CONTEXT.clear()
+                _APP_CONTEXT.update(context_status)
+                history.clear()
+            elif coaching:
                 context = ""
                 if last_request is not None:
                     context = "Previous request (historical context, not a new authorization): " + last_request.goal
@@ -882,7 +913,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     if pages:
                         request.parameters["page_title"] = pages[0]["title"]
             last_request = request
-            if not coaching:
+            if not coaching and not automatic:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
@@ -913,69 +944,6 @@ def cmd_talk(args: argparse.Namespace) -> int:
         return 0
 
 
-class _ScreenWatcher:
-    """Detects that the user acted: the screen differs from when the step was shown, then holds still."""
-
-    def __init__(self, min_dwell_s: float = 1.0, settle_s: float = 0.8, threshold: float = 12.0) -> None:
-        self.min_dwell_s, self.settle_s, self.threshold = min_dwell_s, settle_s, threshold
-        self._base = None
-        self._armed_at = 0.0
-        self._changed_at: float | None = None
-        self._last = None
-        self._last_t = 0.0
-
-    def _grab(self):
-        try:
-            import numpy as np
-
-            from .grounding import grab_screen
-
-            img = grab_screen().convert("L").resize((96, 60))
-            return np.asarray(img, dtype=np.float32)
-        except Exception:  # noqa: BLE001
-            return None
-
-    def arm(self) -> None:
-        self._armed_at = time.time()
-        self._changed_at = None
-        self._base = None  # the baseline is taken on the next tick, once the overlay is drawn (it is not captured)
-        self._last_t = 0.0
-
-    def changed_and_settled(self) -> bool:
-        import numpy as np
-
-        now = time.time()
-        if now - self._last_t < 0.4:
-            return False
-        self._last_t = now
-        frame = self._grab()
-        if frame is None:
-            return False
-        if self._base is None:
-            self._base, self._last = frame, frame
-            return False
-        if now - self._armed_at < self.min_dwell_s:
-            self._last = frame
-            return False
-        # Block-wise: a small dialog or card changing anywhere must count, not just the screen average.
-        def block_diff(a, b) -> float:
-            d = np.abs(a - b).reshape(6, 10, 8, 12).mean(axis=(1, 3))  # 96x60 -> 6x8 blocks
-            return float(d.max())
-
-        diff_base = block_diff(frame, self._base)
-        diff_last = block_diff(frame, self._last)
-        self._last = frame
-        if diff_base > self.threshold:
-            if diff_last < self.threshold / 3:
-                if self._changed_at is None:
-                    self._changed_at = now
-                elif now - self._changed_at >= self.settle_s:
-                    return True
-            else:
-                self._changed_at = None
-        return False
-
-
 class _TargetTracker:
     """While a step is shown, re-measure its control through the accessibility tree every ~0.5 s so the frame
     follows the control (scroll, layout change) and disappears when the control is gone or covered."""
@@ -985,10 +953,20 @@ class _TargetTracker:
         self.step: int | None = None
         self.box: tuple[int, int, int, int] | None = None  # latest measured box (None = not visible)
         self.measured_at = 0.0
+        # (step, read-start monotonic time, foreground PID, box); never a reused prior read.
+        self.measurement = None
+        self._expected_app = None
+        self._anchor_box = None
+        self._target_role = None
+        self._generation = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def follow(self, step: int, description: str | None, box) -> None:
+    def follow(self, step: int, description: str | None, box, *, expected_app=None) -> None:
+        self._generation += 1
+        self.measurement = None
+        self._expected_app = expected_app
+        self._anchor_box, self._target_role = box, None
         self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
         if self._thread is None and description and sys.platform == "darwin":
             self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
@@ -1006,16 +984,54 @@ class _TargetTracker:
             desc, step = self.description, self.step
             if not desc:
                 continue
+            generation, expected_app = self._generation, self._expected_app
+            # Do not inspect a different app while recovering from focus loss.
+            if expected_app is None or _InputWatcher._frontmost_app() != expected_app:
+                self.box, self.measurement = None, None
+                continue
+            started_at = time.monotonic()
             try:
                 best, ties, info = a11y.find(desc)
             except Exception:  # noqa: BLE001
                 continue
-            if (self.description, self.step) != (desc, step):
+            if self._generation != generation:
                 continue  # the step changed meanwhile
+            if _InputWatcher._frontmost_app() != expected_app:
+                self.box, self.measurement = None, None
+                continue
             if info is None or len(info.elements) <= 1:
                 continue  # no page to compare with: keep what we have
-            self.box = best.box if (best and not ties and info.is_front) else None
+            tracked = self._choose_candidate(best, ties) if info.is_front else None
+            self.box = tracked.box if tracked else None
+            if tracked:
+                self._anchor_box, self._target_role = tracked.box, tracked.role
             self.measured_at = time.time()
+            self.measurement = (step, started_at, expected_app, self.box)
+
+    def _choose_candidate(self, best, ties):
+        """Keep the originally grounded control, not just its possibly duplicated label.
+
+        Odoo exposes a search button and a search field with the same name. The
+        original exact box disambiguates the first read; the role stays pinned.
+        Ambiguous movement still hides the marker and requests a fresh plan.
+        """
+        candidates = [e for e in [best, *ties] if e is not None
+                      and (self._target_role is None or e.role == self._target_role)]
+        exact = [e for e in candidates if e.name.casefold().strip() == (self.description or '').casefold().strip()]
+        candidates = exact or candidates  # scripted steps can use a descriptive `where`, not a raw label
+        if not candidates:
+            return None
+        if self._anchor_box is None:
+            return None
+        x, y, w, h = self._anchor_box
+        matches = []
+        for e in candidates:
+            ex, ey, ew, eh = e.box
+            intersection = max(0, min(x+w, ex+ew)-max(x, ex)) * max(0, min(y+h, ey+eh)-max(y, ey))
+            union = w*h + ew*eh - intersection
+            if union > 0 and intersection / union >= 0.6:
+                matches.append(e)
+        return matches[0] if len(matches) == 1 else None
 
     def stop(self) -> None:
         self._stop.set()
@@ -1044,6 +1060,7 @@ class _InputWatcher:
         self._target_click = False
         self._field_focused = False
         self._expected_app = None
+        self.invalidated_at = None
         self._hub, self._kb = None, keyboard
         try:
             if self._kb is None:
@@ -1089,6 +1106,8 @@ class _InputWatcher:
 
     def _invalidate(self) -> None:
         # A coordinate from a previous page/focus is no longer evidence. Only a new step re-arms it.
+        if self._target is not None and self.invalidated_at is None:
+            self.invalidated_at = self._clock()
         self._target = None
         self._target_click = self._field_focused = False
         self.typed, self.last_submit = 0, 0.0
@@ -1145,6 +1164,7 @@ class _InputWatcher:
 
     def arm(self, guidance) -> None:
         self.armed_at = self._clock()
+        self.invalidated_at = None
         self._kind = getattr(guidance, "kind", "click")
         self.typed, self.last_submit = 0, 0.0
         self._target_click = self._field_focused = False
@@ -1155,6 +1175,21 @@ class _InputWatcher:
             self._target = ("box", tuple(box))
         elif self._finite(pointer, 2):
             self._target = ("point", tuple(pointer))
+
+    @property
+    def expected_app(self):
+        return self._expected_app
+
+    def reobservation_ready(self, measurement, step: int, *, allow_missing_target: bool = False) -> bool:
+        """A fresh AX read may request a new plan, never restore or confirm the old target."""
+        if self.invalidated_at is None or self._expected_app is None or measurement is None:
+            return False
+        measured_step, started_at, app, box = measurement
+        return (measured_step == step and started_at > self.invalidated_at
+                and 0 <= self._clock() - started_at <= 1.5
+                and app == self._expected_app and self._focus_probe() == self._expected_app
+                and ((allow_missing_target and box is None)
+                     or (self._finite(box, 4) and box[2] > 0 and box[3] > 0)))
 
     def update_target_box(self, box) -> None:
         """Follow an AX box without resurrecting a target invalidated by scroll/navigation."""
@@ -1214,13 +1249,24 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     tracker = _TargetTracker()
     prompted = False
     guidance_scene_shown = False
+    reobservations = 0
+    # Automatic product routing uses the same no-action replan contract. The runner
+    # checks the foreground product again; this is never a confirmation of a click.
+    request = getattr(it, "request", None)
+    automatic = bool(getattr(request, "parameters", {}).get("automatic_context"))
+    reobserve_allowed = (getattr(request, "mode", None) is Mode.guide
+                         and getattr(request, "autonomy", None) == 0
+                         and (automatic or (getattr(request, "software", None) == "cognition"
+                              and os.environ.get("HCS_AX_NATIVE_BUNDLE_ID") == "com.exafunction.windsurf")))
     inputs = _InputWatcher()
 
-    def advance(done: bool = True, note: str = "") -> None:
+    def advance(done: bool = True, note: str = "") -> bool:
         nonlocal guidance_scene_shown
-        if _submit_guidance(it, shown_step, done=done, note=note) and ov:
+        accepted = _submit_guidance(it, shown_step, done=done, note=note)
+        if accepted and ov:
             ov.hide()
             guidance_scene_shown = False
+        return accepted
 
     def status_badge() -> None:
         if ov is None:
@@ -1228,7 +1274,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         if _VOICE.get("state") in ("recording", "transcribing"):
             return  # the voice badge is already shown; do not overwrite it mid-sentence
         if it.state is State.awaiting_user:
-            ov.badge(None)
+            message = None
+            if inputs.invalidated_at is not None:
+                message = ("Keep the app in front. Updating the guidance…" if reobserve_allowed and reobservations < 1
+                           else "The target is no longer visible. Stop task, then ask again.")
+            ov.badge(message)
         elif time.time() - _LAST_LOOKUP_AT < 4:
             ov.badge("Searching the web…", pulsing=True)
         elif it.state is State.running:
@@ -1264,7 +1314,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     interrupted = {"done": False}
 
     def tick() -> None:
-        nonlocal shown_step, shown_key, prompted, guidance_scene_shown
+        nonlocal shown_step, shown_key, prompted, guidance_scene_shown, reobservations
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
             print("\n>> voice received: stopping the current task before routing", flush=True)
@@ -1311,7 +1361,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     ov.show_scene(scene)
                     shown.update(scene=scene, box=g.box, hidden=False)
                     guidance_scene_shown = True
-                tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None, g.box)
+                tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None,
+                               g.box, expected_app=inputs.expected_app)
                 speaker = _SPEECH.get("speaker")
                 if speaker is not None:
                     speaker.prefetch(list(getattr(g, "prepared_speech", [])), replace=True)
@@ -1330,6 +1381,13 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if inputs.acted(g.kind):
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
+                return
+            if reobserve_allowed and reobservations < 1 and inputs.reobservation_ready(
+                    tracker.measurement, g.index, allow_missing_target=automatic):
+                if advance(done=False, note=_REOBSERVE_GUIDANCE_NOTE + " No user action was confirmed."):
+                    reobservations += 1
+                    print("\n  target invalidated; fresh AX observation requests one new plan, not a completed action",
+                          flush=True)
                 return
             try:
                 ready, _, _ = select.select([sys.stdin], [], [], 0)
@@ -1489,7 +1547,7 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(fn=cmd_run)
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
-    talk.add_argument("--software", choices=list(_COACHING_SOFTWARE), help="Open-ended H Company or Cognition coaching; responses in English")
+    talk.add_argument("--software", choices=[*list(_COACHING_SOFTWARE), "auto"], help="Coach a fixed product, or auto-select H/Odoo/SAP/Devin from the foreground app; responses in English")
     talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
     talk.add_argument("--confirm", action="store_true", help="Ask for approval before running (default: the spoken request is the approval)")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")
