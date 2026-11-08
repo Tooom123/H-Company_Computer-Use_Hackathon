@@ -286,7 +286,9 @@ class Intervention:
                 if last_attempt is None:
                     from .a11y import native_target
                     if native_target():
-                        message = "Native accessibility guidance is unavailable. Keep Devin Desktop in front and retry."
+                        # None can mean a planning/progression problem as well as unreadable controls.
+                        # Do not diagnose a macOS accessibility failure without that observation.
+                        message = "I couldn't prepare the next instruction. Please describe what you see and what you want help with."
                         self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1,
                                                              instruction=message, kind="info", last=True))
                         last_attempt = AttemptResult(None, "completed", DeclaredResult(
@@ -496,9 +498,23 @@ class Intervention:
         """Guide without a script: each step is planned from the controls actually on the page (accessibility
         tree) and the local site knowledge, in one text-only model call; the box is exact. None = could not
         read the page or got lost -> the caller falls back to the H agent."""
+        from .a11y import native_target
+
+        native_mode = bool(native_target())
+
+        def native_blocked(message: str, reason: str) -> AttemptResult:
+            self._trace(f"native guidance blocked: {reason}")
+            self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1,
+                                                 instruction=message, kind="info", last=True))
+            return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
+                                                                    blocker=message))
+
         catalogue = getattr(self.backend, "page_catalogue", None)
         planner = getattr(self.backend, "plan_step", None)
         if catalogue is None or planner is None:
+            if native_mode:
+                return native_blocked("The native coach is not ready to prepare instructions. Reopen H Companion and retry.",
+                                      "coach_components_unavailable")
             return None
         from .backend import _where
         from .procedures import coaching_page_allowed
@@ -552,6 +568,9 @@ class Intervention:
             t0 = time.time()
             cat = catalogue(bound)
             if cat is None:
+                if native_mode:
+                    return native_blocked("I couldn't read Devin's controls. Keep Devin Desktop in front; if this persists, check macOS Accessibility permission.",
+                                          "catalogue_unavailable")
                 self._trace("no browser page to read: handing the guide to the H agent")
                 return None if not history else AttemptResult(None, "completed", DeclaredResult(
                     outcome="unclear", summary="Guided from the page; outcome to verify."))
@@ -566,6 +585,9 @@ class Intervention:
                     self._on_guidance_nowait(gs)
                 time.sleep(1.0)
                 if waited_front > 40:
+                    if native_mode:
+                        return native_blocked("I couldn't access the focused Devin window. Bring Devin Desktop to the front and ask again.",
+                                              "focused_window_unavailable")
                     return None
                 continue
             waited_front = 0
@@ -594,7 +616,8 @@ class Intervention:
             if native:
                 fresh = catalogue(bound)
                 if fresh is None:
-                    return None  # _run explicitly blocks native whole-desktop fallback.
+                    return native_blocked("The Devin window could no longer be read. Bring its window to the front and ask again.",
+                                          "catalogue_lost_after_planning")
                 current, current_items = fresh
                 signature = lambda p, es: (getattr(p, "bundle_id", None), p.is_front, p.title, p.url,
                                           p.viewport, tuple((e.name, e.box) for e in es))
@@ -602,6 +625,9 @@ class Intervention:
                     self._trace("Native window changed while planning; discard the stale instruction.")
                     continue
             if not isinstance(plan, dict):
+                if native_mode:
+                    return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
+                                          "invalid_planner_response")
                 return None
             self._trace(f"planned step {n + 1} in {time.time() - t0:.1f}s: "
                         f"{'done' if plan.get('done') else plan.get('instruction', '')[:70]}")
@@ -614,10 +640,16 @@ class Intervention:
                     steps_taken=history))
             instruction = (plan.get("instruction") or "").strip()
             if not instruction:
+                if native_mode:
+                    return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
+                                          "empty_planner_instruction")
                 return None
             if instruction == last_instruction:
                 repeats += 1
                 if repeats >= 2:
+                    if native_mode:
+                        return native_blocked("I keep suggesting the same step without confirming progress. Tell me what changed, or ask a more specific question.",
+                                              "repeated_planner_instruction")
                     self._trace("the planner repeats itself: handing over")
                     return None
             else:
@@ -637,6 +669,9 @@ class Intervention:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             did, note = reply
             if not did:
+                if native_mode:
+                    return native_blocked("You're still stuck on this step. Describe what you see, or ask a more specific question.",
+                                          "user_reported_stuck")
                 return None  # the user is stuck: the caller decides (takeover / agent) from the autonomy level
             history.append(f"Instruction shown: {instruction}. " + (note or "User reported an interaction; result not verified."))
             self._wait_page_change(catalogue, bound, signature)

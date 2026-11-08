@@ -825,3 +825,20 @@ seule interface Electron et réutilisé le moteur prêt ; le panneau natif affic
 **Right ⌥: new request**. La vérification de signature passe. Ce bundle est un
 raccourci vers le checkout et l'environnement du Mac, sans secret embarqué,
 pas encore une distribution autonome destinée aux autres équipes.
+
+## 2026-11-08 — Diagnostic du blocage natif Devin
+
+Deux essais humains se terminaient par « Native accessibility guidance is
+unavailable ». Leurs journaux montrent pourtant trois plans successifs chacun,
+avec des contrôles AX natifs nommés et positionnés, en environ 1 à 1,7 seconde
+par plan. Le vrai déclencheur était la répétition d'une consigne, suivie d'un
+message de repli trop général. Ces observations ne prouvent pas une permission
+macOS manquante ni un arbre inaccessible.
+
+Le moteur distingue désormais répétition, absence de catalogue, perte du premier
+plan, réponse de planification invalide et blocage signalé par l'utilisateur. Il
+demande ce qui a changé plutôt que d'attribuer toute absence de progression à AX.
+**112 tests ciblés passent**, dont sept nouvelles régressions. Aucun repli vers
+Chrome ou une capture globale n'a été introduit. La cause exacte de la répétition
+après les gestes humains et la qualité du guidage restent à mesurer sur un nouvel
+essai ; aucun de ces essais n'a été labellisé réussi automatiquement.

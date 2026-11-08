@@ -318,4 +318,67 @@ def test_native_runner_missing_ax_finishes_blocked_without_any_h_agent(tmp_path,
     assert runner.report is not None and runner.report.status is CaseStatus.escalated
     assert runner.report.declared.outcome == 'blocked'
     assert not runner.takeover
-    assert any(e.type == 'guidance' and 'Native accessibility guidance is unavailable' in (e.message or '') for e in events)
+    assert any(e.type == 'guidance' and "couldn't read Devin's controls" in (e.message or '') for e in events)
+
+
+def test_native_repeated_plan_reports_no_progress_not_accessibility_failure(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    calls = []
+    dynamic.backend.plan_step = lambda *args: calls.append(args) or {
+        'done': False, 'instruction': 'Open Details', 'kind': 'click', 'target': 0}
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert len(calls) == 3 and len(dynamic.shown) == 3
+    assert result.declared.outcome == 'blocked'
+    assert 'same step without confirming progress' in result.declared.blocker
+    assert 'accessibility' not in result.declared.blocker.lower()
+    assert dynamic.shown[-1].last and dynamic.shown[-1].pointer is None
+    assert any('repeated_planner_instruction' in step.summary for step in dynamic.it.steps)
+
+
+@pytest.mark.parametrize('plan', [None, {}, {'instruction': '', 'why': 'private-provider-error-details'}])
+def test_native_planning_failure_is_distinct_from_readable_tree(dynamic, monkeypatch, plan):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    dynamic.backend.plan_step = lambda *args: plan
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert 'I can read' in result.declared.blocker
+    assert 'rephrase' in result.declared.blocker
+    assert 'private-provider-error-details' not in result.declared.blocker
+    assert len(dynamic.shown) == 1 and dynamic.shown[0].last
+
+
+def test_native_human_stuck_does_not_claim_accessibility_was_lost(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.it._on_guidance = lambda step: dynamic.shown.append(step) or (False, "I cannot find this")
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert "You're still stuck" in result.declared.blocker
+    assert 'accessibility' not in result.declared.blocker.lower()
+    assert len(dynamic.calls) == 1
+
+
+def test_native_front_window_timeout_has_specific_observation(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    dynamic.info.is_front = False
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    monkeypatch.setattr('hcs_agent.runner.time.sleep', lambda _: None)
+    result = dynamic.it._dynamic_guide(dynamic.bound, max_steps=42)
+    assert result.declared.outcome == 'blocked'
+    assert 'focused Devin window' in result.declared.blocker
+    assert dynamic.calls == []
+
+
+def test_native_catalogue_lost_after_planning_is_reported_without_arrow(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    info, items = dynamic.backend.page_catalogue(None)
+    views = iter([(info, items), None])
+    dynamic.backend.page_catalogue = lambda _: next(views)
+    dynamic.it._on_guidance_nowait = dynamic.shown.append
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'blocked'
+    assert 'could no longer be read' in result.declared.blocker
+    assert len(dynamic.calls) == 1 and len(dynamic.shown) == 1
+    assert dynamic.shown[0].pointer is None
