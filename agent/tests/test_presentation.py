@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from hcs_agent.presentation import action_narration, clean_narration, paginate_text
+from hcs_agent.presentation import action_narration, clean_narration, has_report_sections, paginate_text
 
 
 @pytest.mark.parametrize('tools, expected', [
@@ -43,6 +43,37 @@ def test_public_narration_rejects_code_and_status_only_fallbacks(value):
 def test_public_narration_preserves_exact_product_names_and_explanations():
     assert clean_narration('**Local:** choose `h/holo-desktop`.') == 'Local: choose h/holo-desktop.'
     assert clean_narration('Projects — this is where you organize your workspace.') == 'Projects — this is where you organize your workspace.'
+
+
+@pytest.mark.parametrize('heading', ['Result: done', '**Result:** done', '## Result: done',
+                                    'Summary:', '**Summary:**', 'Steps performed:', 'Steps taken:'])
+def test_audit_appendix_is_not_displayed_or_spoken(heading):
+    closing = 'Sessions shows your runs. What would you like to explore next?'
+    value = closing + '\n\n' + heading + '\nI opened Home, Projects and Sessions.\n1. Opened Home.'
+    assert has_report_sections(value)
+    assert clean_narration(value) == closing
+    assert clean_narration(heading + '\nAudit content only.') == ''
+
+
+def test_summary_control_reference_is_still_a_useful_instruction():
+    text = 'Open the Summary tab to see the result of this run.'
+    assert not has_report_sections(text)
+    assert clean_narration(text) == text
+
+
+def test_backend_marks_public_closing_separately_from_the_audit_report():
+    from hcs_agent import backend
+    closing = "That gives you the basics. What would you like to explore next?"
+    provider = SimpleNamespace(type='AgentEvent', timestamp=None, data={
+        'kind': 'policy_event', 'content': closing + '\n\nResult: done\nSummary: Repeated audit.', 'tool_reqs': []})
+    step = backend._event_to_step(provider, 1, 1)
+    assert step.detail['narration'] == closing
+    assert step.detail['final_narration'] is True
+    assert 'Result: done' in step.summary  # preserve audit evidence
+    provider.data.update(content=closing, tool_reqs=[{'tool_name':'answer', 'args':{}}])
+    assert backend._event_to_step(provider, 2, 1).detail['final_narration'] is True
+    provider.data['tool_reqs'] = []
+    assert backend._event_to_step(provider, 3, 1).detail['final_narration'] is False
 
 
 def test_backend_exposes_public_narration_separately_from_reasoning_and_actions(monkeypatch):

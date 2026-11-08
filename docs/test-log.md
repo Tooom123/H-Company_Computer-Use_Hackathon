@@ -1380,3 +1380,35 @@ interruption/preferences/routing checks, plus 49 speech/procedure checks).
 Regressions include immediate post-action observations, generic actions not
 prolonging old notes, tool-free explanations, old-session events, and ACT final
 answers retaining their independently unverified status.
+
+### Stable centered notes and conversational tour endings — 2026-11-08
+
+Human feedback on the next welcome tour: notes first appeared beside controls,
+then jumped to the upper center when their pointers expired. The final public
+message contained useful Sessions prose followed by "Result: done", "Summary"
+and "Steps performed". Our ACT prompt explicitly requested that report format,
+and the terminal display then read the structured summary again. The run is
+still escalated/unverified; the user's original wording was also imperfectly
+transcribed. This UI fix does not change its result or infer a usefulness label.
+
+Main notes and their explanatory text now use a stable upper-center position;
+the control is framed separately without a long connector. Removing the target
+preserves pagination and avoids reanimating the note. Voice-only still retains
+the control frame. Native font/layout tests cover three screen dimensions.
+
+ACT now requests a short conversational closing alongside the answer tool,
+with audit fields confined to the structured answer. A local presentation filter
+removes appended report sections while retaining the preceding public prose.
+Once that closing is presented, the terminal view keeps it without replaying
+the summary or interrupting its voice. The independent verification remains
+visible and the complete report remains unchanged in the trace.
+Verifier prose is retained in its trace and cannot replace the actor's closing;
+the verification status badge remains available.
+
+Validation: 131 focused offline tests passed after the final changes, including
+closing/native-layout and actor/verifier narration isolation checks. Local
+replay of the actual actor archive preserved four public explanations and a
+21-word closing without the audit appendix. An initial replay selected the
+verifier archive and was corrected to the actor archive. No external call or
+desktop action was performed during replay. Live voice/layout validation awaits
+the user's next trial; no latency or task-success improvement is claimed.

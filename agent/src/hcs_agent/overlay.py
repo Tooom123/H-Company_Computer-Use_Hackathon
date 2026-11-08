@@ -1,7 +1,7 @@
 """macOS pencil overlay for guide mode: a rough red-pencil draft on paper scraps over the screen.
 
 Design rules: it must look like a quick draft, never like a UI. Thin pencil strokes, loose circles and
-boxes around controls, arrows from notes to targets, handwritten text on small white paper cutouts.
+boxes around controls, centered handwritten explanations on small white paper cutouts.
 Transparent, click-through, always-on-top, excluded from screen capture so H never sees its own marks.
 Must run on the main thread (AppKit); worker threads call `show()` / `hide()`.
 
@@ -48,7 +48,7 @@ class Mark:
 @dataclass
 class Scene:
     text: str = ""  # main instruction (goes on the big paper note)
-    target: tuple[float, float] | None = None  # main control: circle + arrow from the note
+    target: tuple[float, float] | None = None  # main control: framed separately from the centered note
     why: str = ""  # secondary explanation (lighter note under the main one)
     marks: list[Mark] = field(default_factory=list)
     step: int | None = None
@@ -379,41 +379,35 @@ class _SketchView(AppKit.NSView):
         _REVEAL["total"] = max(1, self.stroke_total)
         style = self.seed % 4
 
-        placed: list = []  # paper rects and element boxes nothing may cover
-        # Every annotated element stays visible: its box (or a default area around its point) is reserved first.
+        placed: list = []  # secondary labels avoid reserved controls and the stable main note
+        # Reserve annotated elements before placing their small secondary labels.
         for m in sc.marks:
             if m.box:
                 placed.append((m.box[0] - 8, m.box[1] - 8, m.box[2] + 16, m.box[3] + 16))
             else:
                 placed.append((m.xy[0] - 50, m.xy[1] - 36, 100, 72))
-        main_note = None
-        if sc.target is not None and self.text_enabled:
+        if sc.target is not None:
             tx, ty = sc.target
-            label = f"{sc.step}. {sc.text}" if sc.step else sc.text
-            _, _, lw, lh = _measure(label, 19, note_width)
-            pw, ph = lw + 20, lh + 18  # paper size
-            half_w = (sc.target_box[2] / 2 + 14) if sc.target_box else 52
-            half_h = (sc.target_box[3] / 2 + 14) if sc.target_box else 44
             if sc.target_box:
                 placed.append((sc.target_box[0] - 12, sc.target_box[1] - 12, sc.target_box[2] + 24, sc.target_box[3] + 24))
             else:
                 placed.append((tx - 60, ty - 44, 120, 88))
-            right = tx + half_w + pw + 30 < W - _INSETS["right"]
-            paper_x = tx + half_w + 10 if right else tx - half_w - 10 - pw
-            paper_y = ty + half_h  # above the control (AppKit: y grows upwards)
-            px, py = _place(paper_x, paper_y, pw, ph, (W, H), placed)
-            main_note = (px + 10, py + 9, pw, ph, right)  # text anchor + paper size
-        elif sc.text and self.text_enabled:
+        main_note = None
+        if sc.text and self.text_enabled:
             label = f"{sc.step}. {sc.text}" if sc.step else sc.text
             _, _, lw, lh = _measure(label, 19, note_width)
             pw, ph = lw + 20, lh + 18
-            px, py = _place(W / 2 - pw / 2, H - 130, pw, ph, (W, H), placed)
-            main_note = (px + 10, py + 9, pw, ph, True)
+            # The explanation has one stable reading position. Target movement or
+            # invalidation must not move it from a control to the center mid-sentence.
+            px, py = _clamp(W / 2 - pw / 2, H - 130, pw, ph, W, H)
+            placed.append((px, py, pw, ph))
+            main_note = (px + 10, py + 9, pw, ph)
         why_rect = None
         if sc.why and main_note:
             _, _, ww, wh = _measure(sc.why, 14, why_width)
             pw2, ph2 = ww + 20, wh + 18
-            px2, py2 = _place(main_note[0] - 10 + 6, main_note[1] - 9 - 10 - ph2, pw2, ph2, (W, H), placed)
+            px2, py2 = _clamp(W / 2 - pw2 / 2, main_note[1] - 9 - 10 - ph2, pw2, ph2, W, H)
+            placed.append((px2, py2, pw2, ph2))
             why_rect = (px2 + 10, py2 + 9)
 
         # Secondary marks (their labels avoid the papers already placed).
@@ -444,28 +438,17 @@ class _SketchView(AppKit.NSView):
                 lx, ly, lw2, lh2 = _note(lx, ly, m.text, rnd, size=15, max_w=320, color=PAPER_SOFT, underline=False, bounds=(W, H), placed=placed)
                 _stroke([(mx + (34 if lx > mx else -34), my + 8), (lx + (-4 if lx > mx else lw2 - 24), ly - 2)], rnd, 1.1, 1.0)
 
-        # Main note + circle + arrow, drawn last so they stay on top.
+        # The centered explanation and target frame are independent. No long
+        # connector crosses the screen or pulls the note toward a changing target.
         if main_note:
-            nx, ny, w, h, right = main_note
+            nx, ny, w, h = main_note
             label = (f"{sc.step}. {sc.text}" if sc.step else sc.text)
             _note(nx, ny, label, rnd, max_w=note_width)
             if why_rect:
                 _note(why_rect[0], why_rect[1], sc.why, rnd, size=14, max_w=why_width, color=PAPER_SOFT, underline=False)
-            if sc.target is not None:
-                tx, ty = sc.target
-                _frame(tx, ty, rnd, style, box=sc.target_box)
-                half_w = (sc.target_box[2] / 2 + 12) if sc.target_box else 46
-                half_h = (sc.target_box[3] / 2 + 8) if sc.target_box else 30
-                start = (nx + (4 if right else w - 24), ny - 12)  # bottom edge of the paper
-                # Aim at the nearest edge of the frame, not at a fixed side.
-                end_x = tx + (half_w if start[0] > tx + half_w else -half_w if start[0] < tx - half_w else 0)
-                end_y = ty + (half_h if start[1] > ty + half_h else -half_h if start[1] < ty - half_h else 0)
-                if (end_x, end_y) == (tx, ty):
-                    end_y = ty + half_h
-                _arrow(start, (end_x, end_y), rnd)
             if sc.doodle:
                 _doodle(sc.doodle, nx + w - 14, ny + h - 2, rnd)
-        elif sc.target is not None:
+        if sc.target is not None:
             # Voice-only still points to the control; it just omits written notes.
             _frame(*sc.target, rnd, style, box=sc.target_box)
         # Remember how many strokes this scene has, so the next frames reveal them in sequence.

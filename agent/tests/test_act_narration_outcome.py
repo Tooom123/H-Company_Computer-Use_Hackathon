@@ -18,8 +18,9 @@ class Overlay:
     def badge(self, *args, **kwargs):
         pass
 
-    def show_scene(self, scene):
+    def show_scene(self, scene, animate=True):
         self.scene = scene
+        self.animated = animate
         self.scenes.append(scene)
 
     def run_until(self, done, tick, interval):
@@ -125,3 +126,31 @@ def test_act_final_waits_for_speech_but_remains_bounded_and_interruptible(rig, m
     monkeypatch.setattr(cli, "_new_request_pending", lambda: False)
     rig.clock[0] += 25
     assert rig.overlay.done()  # broken audio state cannot keep the completed task alive indefinitely
+
+
+@pytest.mark.parametrize('status', [CaseStatus.resolved, CaseStatus.escalated])
+def test_already_presented_closing_is_not_repeated_as_an_audit_recap(rig, monkeypatch, status):
+    it = intervention('I opened Home, Projects and Sessions and explained every section.', status=status)
+    it._presented_actor_answer = 'What would you like to explore next?'
+    before = it.report.declared.model_dump()
+    speaker = SimpleNamespace(speaking=True)
+    monkeypatch.setitem(cli._SPEECH, 'speaker', speaker)
+    cli._show_outcome(rig.overlay, it)
+    assert rig.overlay.scene.text == it._presented_actor_answer
+    assert rig.overlay.animated is False  # don't erase/redraw the same closing at the end
+    assert not rig.spoken  # leave the already queued closing playing, no summary or duplicate
+    assert rig.overlay.scene.why == ('I\'ve checked this on screen.' if status is CaseStatus.resolved
+                                     else "I couldn't confirm the result yet.")
+    assert it.report.declared.model_dump() == before
+    rig.clock[0] += 6
+    assert not rig.overlay.done()
+    speaker.speaking = False
+    assert rig.overlay.done()
+
+
+def test_interruption_does_not_replay_an_already_presented_closing(rig):
+    it = intervention('Audit content.', status=CaseStatus.abandoned)
+    it._presented_actor_answer = 'What would you like to explore next?'
+    cli._show_outcome(rig.overlay, it)
+    assert rig.overlay.scene.text == "I've stopped the task."
+    assert all(it._presented_actor_answer not in s for speech in rig.spoken for s in speech)

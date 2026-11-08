@@ -198,10 +198,10 @@ def test_takeover_narrates_public_content_and_removes_only_stale_pointer(rig, mo
     assert spoken == [("Projects organizes related work.",), ("Sessions shows your agent runs and their results.",)]
 
 
-def _tour_event(event_id, *, narration="", tools=None, observation=False, session="tour", **detail):
+def _tour_event(event_id, *, narration="", tools=None, observation=False, session="tour", attempt=1, **detail):
     cli._print_event(SimpleNamespace(type="step", session_id=session, event_id=event_id,
         simulated=True, message="", data={"step": {
-            "kind": "observation" if observation else "action",
+            "kind": "observation" if observation else "action", "attempt": attempt,
             "detail": {"tools": tools, "narration": narration, **detail}}}))
 
 
@@ -304,3 +304,36 @@ def test_tool_free_public_explanation_is_narrated_without_reasoning_fallback(rig
     ov.run_until = run
     cli._guide_loop(it, auto=False, overlay=True, ov=ov)
     assert spoken == [("Sessions show your agent runs and their results.",)]
+
+
+def test_presented_closing_survives_empty_answer_events_until_outcome(rig, monkeypatch):
+    ov, spoken, _ = rig
+    it = intervention()
+    it.state, it.report, it.takeover = State.running, None, True
+    it.request = SimpleNamespace(session_id="tour")
+    monkeypatch.setattr(cli, "_LAST_ACTION", {})
+    monkeypatch.setattr(cli, "_voice_input_active", lambda: False)
+    closing = "What would you like to explore next?"
+
+    def run(done, tick, interval):
+        _tour_event("closing", narration=closing, final_narration=True)
+        tick()
+        assert it._presented_actor_answer == closing
+        _tour_event("answer", tools=["answer"])
+        tick()
+        assert it._presented_actor_answer == closing
+        assert spoken == [(closing,)]
+        _tour_event("verifier", narration="I will audit all completed steps.", tools=["answer"],
+                    final_narration=True, attempt=0)
+        tick()
+        assert it._presented_actor_answer == closing
+        assert spoken == [(closing,)]  # verifier prose cannot become a second tour ending
+        # A later attempt's new explanation invalidates this closing.
+        _tour_event("new-attempt", narration="Let me check Projects.", tools=["click_desktop"])
+        tick()
+        assert not it._presented_actor_answer
+        it.state, it.report = State.resolved, object()
+        assert done()
+
+    ov.run_until = run
+    cli._guide_loop(it, auto=False, overlay=True, ov=ov)

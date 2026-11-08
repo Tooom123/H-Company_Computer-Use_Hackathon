@@ -46,7 +46,10 @@ class InterventionAnswer(BaseModel):
 
     result: Literal["done", "blocked", "unclear"] | None = Field(
         default=None, description="done if the task was completed, blocked if something prevented it, else unclear.")
-    summary: str = ""
+    summary: str = Field(default="", description=(
+        "A short, conversational answer for the user, in English, without report headings. "
+        "For a tour, close warmly in one sentence without repeating the sections already explained. "
+        "For a factual question, give the direct answer. Put the action history only in steps_taken."))
     blocker: str | None = Field(default=None, description="Exact text of the error or limit encountered.")
     blocker_category: Literal[
         "usage", "configuration", "permissions", "data", "suspected_product_defect", "environment", "unknown"
@@ -795,7 +798,7 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
     if etype == "AgentEvent":
         kind = d.get("kind")
         if kind == "policy_event":
-            from .presentation import clean_narration
+            from .presentation import clean_narration, has_report_sections
 
             reqs = d.get("tool_reqs") or []
             actions = [f"{r.get('tool_name')}({_short(r.get('args'))})" for r in reqs]
@@ -809,6 +812,8 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
             return Step(index=index, attempt=attempt, timestamp=ts, kind="action", summary=summary[:300],
                         detail={"actions": actions, "reasoning": _short(d.get("reasoning_content"), 500),
                                 "narration": clean_narration(d.get("content")),
+                                "final_narration": (has_report_sections(d.get("content"))
+                                                    or any(r.get("tool_name") == "answer" for r in reqs)),
                                 "pointer": pointer, "element": element, "tools": [r.get("tool_name") for r in reqs]})
         if kind == "observation_event":
             img = (d.get("image") or {}).get("source")

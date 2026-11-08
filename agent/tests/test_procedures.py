@@ -32,3 +32,16 @@ def test_answer_without_result_falls_back_on_session_outcome():
     assert ans.to_declared("blocked").outcome == "blocked"
     assert ans.to_declared("success").outcome == "done"
     assert ans.to_declared(None).outcome == "unclear"
+
+
+def test_actor_closing_separates_conversation_from_structured_audit():
+    from hcs_agent.contract import Mode
+    from hcs_agent.backend import InterventionAnswer
+    req = InterventionRequest(software='h-company', goal='A quick welcome tour', procedure_id='generic', mode=Mode.act)
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    message = bound.task_message()
+    assert 'one short conversational closing' in message
+    assert 'never in public content' in message
+    assert 'without recapping the areas already explained' in message
+    assert 'one-paragraph summary' not in message
+    assert 'without repeating' in InterventionAnswer.model_fields['summary'].description

@@ -338,8 +338,14 @@ class BoundProcedure(BaseModel):
                 "For an introductory tour, cover two or three relevant areas. Use one sentence of at most "
                 "16 words per area: name the area and explain its purpose. Avoid technical status labels, "
                 "filler, account/security pages and artificial waits. "
-                "When finished, answer with: result (done / blocked / unclear), a one-paragraph summary, "
-                "the exact blocker text if blocked, and the list of steps you actually performed."
+                "When finished, put one short conversational closing in public content alongside the answer "
+                "tool call. For a tour, invite the user to explore, without recapping the areas already explained "
+                "(e.g. \"That gives you the basics. What would you like to explore next?\"). "
+                "For a factual question, give the direct answer instead. Never announce 'Result', 'Done', "
+                "'Summary' or 'Steps performed', and never read a list of completed actions aloud. "
+                "Fill the structured answer separately: result, a brief user-facing summary, the exact blocker "
+                "if blocked, and steps_taken for the audit trail. These field names and the audit trail belong "
+                "only in the structured answer, never in public content."
             )
         return "\n\n".join(parts)
 

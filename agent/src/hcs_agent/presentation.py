@@ -8,6 +8,16 @@ VERIFIED_RESULT = "I've checked this on screen."
 UNVERIFIED_RESULT = "I couldn't confirm the result yet."
 STOPPED_RESULT = "I've stopped the task."
 
+_REPORT_SECTION = re.compile(
+    r"(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?"
+    r"(?:result\s*:\s*(?:\*\*)?\s*(?:done|blocked|unclear|success|failed)\b|"
+    r"summary\s*:|steps(?:\s+performed|\s+taken)?\s*:|blocker\s*:)")
+
+
+def has_report_sections(value) -> bool:
+    """Recognize audit headings, not ordinary references to a Summary button."""
+    return isinstance(value, str) and _REPORT_SECTION.search(value) is not None
+
 
 def action_narration(tools: list[str]) -> str:
     """Short operational status only; never substitute this for the agent's explanation."""
@@ -42,6 +52,11 @@ def clean_narration(value) -> str:
     if not isinstance(value, str):
         return ""
     text = value.strip()
+    # Old prompts sometimes appended the audit report to an otherwise useful
+    # public explanation. Keep the explanation; reports belong in the trace.
+    report = _REPORT_SECTION.search(text)
+    if report:
+        text = text[:report.start()].strip()
     if not text or text.startswith(("{", "[", "```")):
         return ""
     if re.search(r"\b\w+_(?:desktop|web)\s*\(|\b(?:print|exec|eval|subprocess\.\w+)\s*\(|"

@@ -399,13 +399,17 @@ def _print_event(e: AgentEvent) -> None:
         _LAST_LOOKUP_AT = time.time()
     current_session = getattr(getattr(_MAGNET.get("current"), "request", None), "session_id", None)
     current_event = current_session is None or current_session == getattr(e, "session_id", None)
-    if current_event and e.type == "step" and e.data["step"]["kind"] == "action":
+    if (current_event and e.type == "step" and e.data["step"]["kind"] == "action"
+            and e.data["step"].get("attempt", 1) != 0):
+        # The read-only verifier (attempt 0) keeps its own trace and status badge;
+        # its audit prose must not replace or re-read the actor's closing.
         from .presentation import action_narration
 
         det = e.data["step"].get("detail", {})
         explanation = clean_narration(det.get("narration"))
         if det.get("tools") or explanation:
             _LAST_ACTION.update(summary=explanation or action_narration(det["tools"]), narration=explanation,
+                                final_narration=bool(det.get("final_narration")),
                                 pointer=det.get("pointer"), session_id=getattr(e, "session_id", None),
                                 at=time.time(), id=e.event_id, stale_at=None)
     elif current_event and e.type == "step" and e.data["step"]["kind"] == "observation":
@@ -715,6 +719,9 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
     actor_answer = (clean_narration(getattr(declared, "summary", "")) if final is None
                     and r.status.value != "abandoned" and getattr(declared, "outcome", "not_run") != "not_run"
                     and (r.mode is Mode.act or getattr(it, "takeover", False)) else "")
+    presented_answer = (clean_narration(getattr(it, "_presented_actor_answer", "")) if final is None
+                        and r.status.value != "abandoned" and getattr(declared, "outcome", "not_run") != "not_run"
+                        and (r.mode is Mode.act or getattr(it, "takeover", False)) else "")
     ov.badge(None)
     if final is not None:
         # The model's explanation is useful even when verification is inconclusive;
@@ -722,6 +729,11 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         _say(final.instruction, text)
         ov.show_scene(Scene(text=final.instruction, target=final.pointer, target_box=final.box,
                             why=text, step=final.index, doodle=doodle))
+    elif presented_answer:
+        # The public closing has already entered the speech queue. Keep it
+        # visible with verification, without replaying the audit summary or
+        # interrupting its voice with another closing message.
+        ov.show_scene(Scene(text=presented_answer, why=text, doodle=doodle), animate=False)
     elif actor_answer:
         _say(actor_answer, text)
         ov.show_scene(Scene(text=actor_answer, why=text, doodle=doodle))
@@ -1383,6 +1395,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             ov.badge("Checking the result…" if it.state is State.verifying else "Taking over…", pulsing=True)
             explanation = _LAST_ACTION.get("narration") or ""
             if explanation:
+                it._presented_actor_answer = explanation if _LAST_ACTION.get("final_narration") else ""
                 if explanation != shown_action["narration"]:
                     _say(explanation, interrupt=False)
                 shown_action.update(narration=explanation, detached=False, announced=True, at=time.time())
