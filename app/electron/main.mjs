@@ -14,6 +14,7 @@ import { acceptGazeSample, acceptHeadSample, calibratedForSelection, headDiagnos
 import { TargetSequence } from './target-sequence.mjs';
 import { summarizeTargetScores } from './target-benchmark.mjs';
 import { installVoicePilot } from './voice-pilot.mjs';
+import { forwardGaze } from './agent-gaze-feed.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const voiceMode = process.env.HCS_PILOT_MODE === '1';
@@ -242,6 +243,8 @@ ipcMain.on('companion:gaze', (event, sample) => {
   // Receipt clock, NOT a camera-frame capture timestamp. The upstream callback
   // does not expose a reliable camera timestamp; never call this tracker latency.
   gaze = acceptGazeSample(sample, display.bounds, performance.now());
+  // Vision opt-in (Tom): the agent crops its screenshots around this point when the user turned Vision on.
+  forwardGaze(gaze, display.bounds, state.tracker.calibrationErrorPx);
   // Gaze halo (Tom): relay the accepted point to the overlay window only. Coordinates, no image;
   // the overlay is excluded from captures, so the halo never reaches Holo.
   if (overlay && !overlay.isDestroyed() && overlay.isVisible()) {

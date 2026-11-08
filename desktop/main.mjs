@@ -5,6 +5,7 @@
 
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } from "electron";
 import { createMenuBar } from "./menu-bar.mjs";
+import { createGazeCalibrator } from "./gaze-window.mjs";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -14,13 +15,16 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|ptt|rate|feedback|feedback\/dictate)$/;
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|ptt|rate|feedback|feedback\/dictate|vision)$/;
 let mainWin = null;
 let menuBar = null;
 let quitting = false;
 const agentCache = new Map();
 
 const smoke = process.argv.includes("--smoke");
+// Linux: forcing XWayland (to keep the gaze honeycomb above every app) crashed the GPU process on Tom's Wayland
+// session (grey window); opt-in only.
+if (process.platform === "linux" && process.env.HCS_OZONE_X11 === "1") app.commandLine?.appendSwitch("ozone-platform", "x11");
 // A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
 // preferences (voice, key) when it clicks around.
 if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
@@ -71,33 +75,37 @@ ipcMain.handle("agent", async (_e, method, p, body) => {
 });
 
 // Vision Lab (Édouard): started as its own process from app/, stopped with this app.
+// Vision: Édouard's Vision Lab on macOS when it is installed; otherwise the built-in webcam calibration
+// (gaze-window.mjs: heatmap/vision.html in a full-screen window that keeps tracking, click-through, afterwards).
 let vision = null;
+const gaze = createGazeCalibrator({ heatmapDir: path.resolve(here, "..", "heatmap"), agentUrl: AGENT,
+  preload: path.join(here, "gaze-preload.cjs"), overlayPreload: path.join(here, "gaze-overlay-preload.cjs"),
+  trackerScript: path.join(here, "tracker", "gaze_tracker.py"),
+  trackerPython: process.env.HCS_TRACKER_PYTHON || path.join(here, "tracker", ".venv", "bin", "python") });
+function labStatus() {
+  if (process.platform !== "darwin" || process.env.HCS_VISION_BUILTIN === "1") return null; // the lab needs macOS
+  if (!fs.existsSync(path.join(VISION_DIR, "package.json")) || !fs.existsSync(path.join(VISION_DIR, "node_modules"))) return null;
+  return { available: true, running: Boolean(vision && vision.exitCode === null), builtin: false };
+}
 function visionStatus() {
-  if (!fs.existsSync(path.join(VISION_DIR, "package.json"))) {
-    return { available: false, running: false, reason: "app/ (Vision Lab) is not in this checkout" };
-  }
-  if (!fs.existsSync(path.join(VISION_DIR, "node_modules"))) {
-    return { available: false, running: false, reason: "Run `npm ci` in app/ once" };
-  }
-  return { available: true, running: Boolean(vision && vision.exitCode === null) };
+  return labStatus() || gaze.status();
 }
 ipcMain.handle("vision:status", () => visionStatus());
-ipcMain.handle("vision:start", () => {
-  const s = visionStatus();
-  if (!s.available || s.running) return s;
+ipcMain.handle("vision:start", async () => {
+  const lab = labStatus();
+  if (!lab) return gaze.start();
+  if (lab.running) return lab;
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE; // the lab is a full Electron app of its own
-  vision = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "dev"], {
-    cwd: VISION_DIR,
-    stdio: "ignore",
-    env,
-  });
+  vision = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "dev"], { cwd: VISION_DIR, stdio: "ignore", env });
   vision.on("exit", () => (vision = null));
   return { ...visionStatus(), running: true };
 });
+ipcMain.handle("vision:honeycomb", (_e, on) => gaze.setHoneycomb(on === true));
 ipcMain.handle("vision:stop", () => {
   if (vision && vision.exitCode === null) vision.kill();
-  return { ...visionStatus(), running: false };
+  gaze.stop();
+  return visionStatus();
 });
 
 // Window controls for the frameless window (the top bar draws them; only these three actions exist).
@@ -243,4 +251,5 @@ app.on("before-quit", () => {
   quitting = true;
   if (menuBar) { menuBar.destroy(); menuBar = null; }
   if (vision && vision.exitCode === null) vision.kill();
+  gaze.dispose();
 });

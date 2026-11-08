@@ -39,6 +39,7 @@ from .desktop_feedback import DesktopFeedback, FeedbackError
 
 DEFAULT_PORT = 8768
 APP_HEADER = "X-HCS-App"
+GAZE_HEADER = "X-HCS-Gaze"  # gaze feed from the Vision Lab (POST /gaze only)
 APP_TIMEOUT_S = 6.0  # the app polls every second; silent longer than this = closed, the Magnet comes back
 
 AUTONOMY_LABELS = ("Show me", "Help if I'm stuck", "Do it, I watch")
@@ -263,6 +264,9 @@ class Controller:
         s["autonomy_hints"] = list(AUTONOMY_HINTS)
         s["voices"] = list(VOICES)
         s["ptt_keys"] = list(PTT_KEYS)
+        from .gaze_crop import STATE
+
+        s["vision"] = STATE.snapshot()
         return s
 
     def usage(self) -> dict[str, Any]:
@@ -344,6 +348,21 @@ class Controller:
             return 200, self.status()
         if method == "POST" and path == "/voice/test":
             return 200, {"spoken": self._test_voice()}
+        if method == "POST" and path == "/vision":  # opt-in from the desktop app; off by default
+            from .gaze_crop import STATE
+
+            if not isinstance(body.get("enabled"), bool):
+                return 400, {"error": "enabled must be true or false"}
+            STATE.set_enabled(body["enabled"])
+            return 200, STATE.snapshot()
+        if method == "POST" and path == "/gaze":  # gaze points (screen points) from the Vision Lab
+            from .gaze_crop import STATE
+
+            x, y, err = body.get("x"), body.get("y"), body.get("error_px")
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (x, y)):
+                return 400, {"error": "x and y must be numbers"}
+            STATE.push(x, y, err if isinstance(err, (int, float)) and not isinstance(err, bool) else None)
+            return 200, {"accepted": STATE.enabled}
         return 404, {"error": "not found"}
 
 
@@ -371,7 +390,10 @@ def _handler(ctl: Controller) -> type[BaseHTTPRequestHandler]:
 
         def _serve(self, method: str) -> None:
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
-            if host not in ("127.0.0.1", "localhost") or self.headers.get(APP_HEADER) != "1":
+            # The Vision Lab only sends gaze points: its own header, and it does not count as the app being open
+            # (the app's presence hides the on-screen Magnet).
+            gaze_feed = self.path.split("?", 1)[0] == "/gaze" and self.headers.get(GAZE_HEADER) == "1"
+            if host not in ("127.0.0.1", "localhost") or (self.headers.get(APP_HEADER) != "1" and not gaze_feed):
                 self._reply(403, {"error": "forbidden"})
                 return
             body: dict[str, Any] = {}
@@ -384,7 +406,8 @@ def _handler(ctl: Controller) -> type[BaseHTTPRequestHandler]:
                 except ValueError:
                     self._reply(400, {"error": "JSON object expected"})
                     return
-            ctl.seen(_bounds(self.headers.get("X-HCS-App-Bounds")))
+            if not gaze_feed:
+                ctl.seen(_bounds(self.headers.get("X-HCS-App-Bounds")))
             try:
                 code, payload = ctl.handle(method, self.path, body)
             except Exception as exc:  # noqa: BLE001 - one bad request must not kill the agent

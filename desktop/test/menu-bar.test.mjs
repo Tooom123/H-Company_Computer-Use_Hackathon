@@ -112,6 +112,7 @@ async function mainHarness({ platform = "darwin", lock = true, smoke = false } =
     app, BrowserWindow: WindowDouble, ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} },
     Tray: TrayDouble, Menu: {}, nativeImage: {}, dialog: {},
     createMenuBar: (options) => { trayOptions = options; return tray; },
+    createGazeCalibrator: () => ({ status: () => ({ available: false, running: false }), start: async () => ({}), stop: () => ({}), dispose() {} }),
     path, fs: { mkdtempSync: () => "/tmp/profile" }, os: { tmpdir: () => "/tmp" },
     console, setTimeout, clearTimeout, AbortSignal,
     fetch: async (_url, options) => { calls.push({ request: options }); return { ok: true, status: 200, json: async () => ({ current: null }) }; } });

@@ -58,6 +58,11 @@ function pref(key, value) {
 }
 
 async function syncPrefs() {
+  // Vision is off by default in the assistant: a "on" chosen in the app is applied again when it (re)starts.
+  if (pref("vision") === "true" && status && status.vision && !status.vision.enabled) {
+    const r = await api.agent("POST", "/vision", { enabled: true });
+    if (r.ok) status.vision = r.data;
+  }
   const sp = status && status.speech;
   const want = {};
   const voice = pref("voice");
@@ -473,14 +478,79 @@ $("speed").addEventListener("change", async () => {
 $("testVoice").addEventListener("click", () => api.agent("POST", "/voice/test"));
 
 // vision ----------------------------------------------------------------------------------------
+// Vision opt-in: off by default; when on, the agent crops its screenshots around the gaze (gaze_crop.py).
+function renderVisionToggle() {
+  const v = status && status.vision;
+  const on = Boolean(v && v.enabled);
+  $("visionSwitch").setAttribute("aria-checked", String(on));
+  $("visionSwitch").disabled = !status;
+  const live = $("visionLive");
+  if (!status) {
+    live.textContent = "Assistant not running";
+    live.className = "badge";
+  } else if (!on) {
+    live.textContent = "Off";
+    live.className = "badge";
+  } else if (v.live) {
+    live.textContent = "Gaze received";
+    live.className = "badge on";
+  } else {
+    live.textContent = v.gaze_age_s === null ? "Waiting for the gaze" : `No gaze for ${v.gaze_age_s} s`;
+    live.className = "badge test";
+  }
+  $("visionStats").textContent = on && v
+    ? `accuracy ~${v.error_px} px · ${v.crops} crops sent · ${v.fallbacks} fell back to the full screen`
+    : "";
+  $("visionHint").textContent = !status
+    ? "Start the assistant to turn it on."
+    : on && !v.live
+      ? "Start the gaze tracking with Recalibrate below and follow the calibration."
+      : on
+        ? "Your face never leaves this Mac: only the screen region goes to Holo."
+        : "";
+}
+$("visionSwitch").addEventListener("click", async () => {
+  const on = $("visionSwitch").getAttribute("aria-checked") !== "true";
+  $("visionSwitch").setAttribute("aria-checked", String(on));
+  pref("vision", on);
+  const r = await api.agent("POST", "/vision", { enabled: on });
+  if (r.ok && status) status.vision = r.data;
+  renderVisionToggle();
+});
+
+// Honeycomb: shown by default; the choice is kept and applied again at each launch.
+function applyHoneycomb(on) {
+  $("honeycombSwitch").setAttribute("aria-checked", String(on));
+  if (api.vision && api.vision.honeycomb) api.vision.honeycomb(on);
+}
+$("honeycombSwitch").addEventListener("click", () => {
+  const on = $("honeycombSwitch").getAttribute("aria-checked") !== "true";
+  pref("honeycomb", on);
+  applyHoneycomb(on);
+});
+applyHoneycomb(pref("honeycomb") !== "false");
+
 async function loadVision(s) {
+  renderVisionToggle();
   const v = s || (await api.vision.status());
-  $("visionState").textContent = v.running ? "Calibrating" : v.available ? "Ready" : "Not installed";
+  const state = !v.available ? "Not installed" : v.tracking ? "Tracking your gaze" : v.running ? "Calibrating" : "Ready";
+  $("visionState").textContent = state;
   $("visionState").className = `badge${v.running ? " on" : ""}`;
-  $("visionBtn").textContent = v.running ? "Close" : "Recalibrate";
+  $("visionBtn").textContent = v.running ? (v.builtin ? "Stop tracking" : "Close the lab") : "Recalibrate";
   $("visionBtn").disabled = !v.available;
-  $("visionNote").textContent =
-    v.reason || (v.running ? "Follow the targets on screen; it closes with this app." : "Opens the calibration screen.");
+  $("visionNote").textContent = v.reason || (v.running
+    ? v.builtin
+      ? v.tracking
+        ? `The camera follows your gaze in the background (accuracy ~${v.errorPx ?? "?"} px). Stop it here.`
+        : v.native
+          ? "Calibration on screen: look at each red dot and click it 3 times, then just look at 4 more dots."
+          : v.browser
+          ? "Calibration opened in your browser, full screen: start the camera, click each red dot 5 times, then Start tracking."
+          : "Calibration open: look at each red dot and click it 5 times, then look at 4 more dots."
+      : "Follow the targets on screen; it closes with this app."
+    : v.builtin
+      ? "Opens a full-screen calibration (9 dots + an accuracy check); then your gaze is tracked over every app, shown as a red honeycomb."
+      : "Opens Édouard's Vision Lab on the calibration screen.");
   $("visionBtn").onclick = async () => loadVision(v.running ? await api.vision.stop() : await api.vision.start());
 }
 
@@ -492,6 +562,7 @@ async function poll() {
   if (status && !was) await syncPrefs();
   renderHome();
   if (view === "voice") renderVoice();
+  if (view === "vision") loadVision();
   // A task just ended (or the assistant came up): refresh the numbers and the list.
   const key = status && status.current ? `${status.current.session_id}:${status.current.terminal}` : String(Boolean(status));
   if (key !== lastSessionKey || Boolean(was) !== Boolean(status)) {

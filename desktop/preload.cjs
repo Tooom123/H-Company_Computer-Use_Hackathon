@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("hcs", {
     status: () => ipcRenderer.invoke("vision:status"),
     start: () => ipcRenderer.invoke("vision:start"),
     stop: () => ipcRenderer.invoke("vision:stop"),
+    honeycomb: (on) => ipcRenderer.invoke("vision:honeycomb", on),
   },
   window: {
     minimize: () => ipcRenderer.send("win", "minimize"),

@@ -260,3 +260,6 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
 .stopbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 24px; background: var(--white); border-bottom: 1px solid var(--grey-250); }
 .stopbar p { margin: 2px 0 0; }
 .stopbar .btn { flex: none; }
+
+/* vision: opt-in gaze cropping */
+.vision-facts { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
