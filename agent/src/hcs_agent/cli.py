@@ -90,6 +90,7 @@ def _prefetch_voice(request: InterventionRequest) -> None:
 
 
 _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
+_APP_CONTEXT: dict = {}
 _FEEDBACK = DesktopFeedback()
 _RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
 _GUIDE_REPLY_LOCK = threading.Lock()
@@ -150,6 +151,7 @@ def _control_status() -> dict:
                    "speaking": bool(sp is not None and sp.speaking)},
         "current": cur,
         "accessibility": dict(getattr(backend, "last_catalogue_diagnostic", {}) or {}),
+        "context": dict(_APP_CONTEXT),
     }
 
 
@@ -664,7 +666,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
     registry = ProcedureRegistry()
     coaching_software = getattr(args, "software", None)
+    automatic = coaching_software == "auto"
     coaching = coaching_software in _COACHING_SOFTWARE
+    if automatic:
+        os.environ["HCS_AUTO_CONTEXT"] = "1"
+        os.environ.pop("HCS_AX_NATIVE_BUNDLE_ID", None)
+        _APP_CONTEXT.clear()
+        _APP_CONTEXT.update(mode="automatic", label="Selected from the foreground app on your next request", sources=0)
     if coaching:
         registry.get(_COACHING_SOFTWARE[coaching_software][1])  # fail before opening devices if the fixture is missing
         _set_autonomy(0)
@@ -730,7 +738,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
         print(f"  (accessibility tree unavailable: {exc})")
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     _VOICE["ptt"] = ptt
-    router = None if coaching else IntentRouter(registry)
+    router = None if coaching or automatic else IntentRouter(registry)
     ptt.start()
     print(f"Hold [{ptt.key_name}] and tell me what you need. Release to send. Responses are in English. Ctrl+C to quit.")
     if ov is not None:
@@ -771,7 +779,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             if _consume_talk_control(text, ov):
                 history.clear()
                 continue
-            if not coaching and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
+            if not coaching and not automatic and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
                 print(f"  -> resuming {request.procedure_id} from the current screen")
                 try:
@@ -785,7 +793,28 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             if ov is not None:
                 ov.badge("Thinking…", pulsing=True)
-            if coaching:
+            if automatic:
+                from . import a11y
+                from .app_context import make_request
+                try:
+                    request, context_status = make_request(text, a11y.foreground_page(), backend.knowledge, last_request)
+                except ValueError as exc:
+                    _APP_CONTEXT.clear()
+                    _APP_CONTEXT.update(mode="automatic", label="No supported product in front", sources=0)
+                    _flash(ov, str(exc), "question")
+                    continue
+                except Exception:
+                    _flash(ov, "I couldn't read the active application. Bring the product window to the front and try again.", "question")
+                    continue
+                bundle = request.parameters.get("context_bundle_id")
+                if bundle:
+                    os.environ["HCS_AX_NATIVE_BUNDLE_ID"] = bundle
+                else:
+                    os.environ.pop("HCS_AX_NATIVE_BUNDLE_ID", None)
+                _APP_CONTEXT.clear()
+                _APP_CONTEXT.update(context_status)
+                history.clear()
+            elif coaching:
                 context = ""
                 if last_request is not None:
                     context = "Previous request (historical context, not a new authorization): " + last_request.goal
@@ -884,7 +913,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
                     if pages:
                         request.parameters["page_title"] = pages[0]["title"]
             last_request = request
-            if not coaching:
+            if not coaching and not automatic:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
@@ -1542,7 +1571,7 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(fn=cmd_run)
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
-    talk.add_argument("--software", choices=list(_COACHING_SOFTWARE), help="Open-ended H Company or Cognition coaching; responses in English")
+    talk.add_argument("--software", choices=[*list(_COACHING_SOFTWARE), "auto"], help="Coach a fixed product, or auto-select H/Odoo/SAP/Devin from the foreground app; responses in English")
     talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
     talk.add_argument("--confirm", action="store_true", help="Ask for approval before running (default: the spoken request is the approval)")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")

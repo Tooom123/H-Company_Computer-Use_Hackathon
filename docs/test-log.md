@@ -1019,3 +1019,31 @@ de l'historique en cas de blocage et la séparation entre options visibles et
 réussite d'une modification. Le guidage vocal complet doit encore être retesté
 par Edouard ; la vérification indépendante et l'utilité ne sont pas déduites de
 ces rejeux.
+
+## 8 novembre 2026 — CD et préparation multi-produit
+
+CD : la PR #10 a été fusionnée sur main (`b751d80`). Le run Actions
+`42448143936` s'est terminé en succès : tests de la homepage, publication des
+sept fichiers autorisés, puis comparaison HTTPS octet par octet. La clé dédiée
+refuse une commande libre `id`. Neuf tests du récepteur et cinq tests de la
+homepage passent. Les autres blocs Caddy et les conteneurs sont préservés.
+
+Le dernier essai vocal Devin `sess_05b59d921064` reste **escalated**, avec une
+consigne demandant de remettre Devin au premier plan. Aucun feedback humain
+n'était enregistré ni en cours de dictée lors du contrôle avant mise à jour.
+Ce passage ne constitue pas une démonstration réussie du menu.
+
+Le nouveau profil `auto` sélectionne H/Odoo/SAP/Devin à chaque nouvelle demande,
+lie la tâche à ce produit et à sa surface, puis injecte les extraits du corpus
+correspondant. Tests locaux : refus des origines inconnues et des logins,
+isolation documentaire, changement de produit sans ancien historique, arrêt du
+guidage si l'app change, conservation littérale du JSON documentaire et du texte
+utilisateur. La recherche avec les quatre corpus réels retourne respectivement
+3/4/3/4 extraits pour les questions H/Devin/Odoo/SAP préparées, sans appel modèle.
+
+Le profil de démo active le slider en démarrant à 0 ; le pilote de recherche
+observation seule garde son verrouillage. Les tests du renderer vérifient le
+glisser et le clavier, le retour à 0, l'affichage du contexte et le maintien du
+verrouillage historique. **Ces tests simulés ne prouvent pas un parcours vocal
+réussi**. Les huit questions de `demo-eight-questions-2026-11-08.md` restent à
+évaluer en répétition humaine, avec réussite et utilité labellisées séparément.

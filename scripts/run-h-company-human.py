@@ -23,7 +23,9 @@ def atomic(path, value):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--software', choices=('hcompany', 'cognition'), default='hcompany')
+    parser.add_argument('--software', choices=('hcompany', 'cognition', 'auto'), default='hcompany')
+    parser.add_argument('--allow-actions', action='store_true',
+                        help='Enable the autonomy slider in the automatic multi-product demo; starts at Show me.')
     parser.add_argument('--native-devin', action='store_true',
                         help='Read the focused Devin Desktop accessibility tree instead of a browser tab.')
     parser.add_argument('--private-root', type=Path)
@@ -35,6 +37,8 @@ def main():
     args = parser.parse_args()
     if args.native_devin and args.software != 'cognition':
         parser.error('--native-devin requires --software cognition.')
+    if args.allow_actions and args.software != 'auto':
+        parser.error('--allow-actions is available only with --software auto; research pilots stay observation-only.')
     if args.control_port == args.backend_port or not all(1024 <= p <= 65535 for p in (args.control_port, args.backend_port)):
         parser.error('Choose two distinct local ports.')
     for port in (args.control_port, args.backend_port):
@@ -44,7 +48,7 @@ def main():
                 probe.bind(('127.0.0.1', port))
             except OSError:
                 parser.error(f'Port {port} is already in use. Finish and stop the existing coaching runtime first.')
-    private_name = 'human-cognition' if args.software == 'cognition' else 'human-h-company'
+    private_name = 'human-demo' if args.software == 'auto' else 'human-cognition' if args.software == 'cognition' else 'human-h-company'
     private = (args.private_root or Path.home() / 'Library/Application Support/HCompanionResearch' / private_name).expanduser().resolve()
     if any((p / '.git').exists() for p in (private, *private.parents)):
         parser.error('Human recordings must stay outside Git.')
@@ -77,11 +81,12 @@ def main():
     runs = private/'episodes'
     runs.mkdir(exist_ok=True, mode=0o700)
     # These must be set before importing cli.py, whose defaults are import-time.
-    os.environ.update(HCS_AUTONOMY='0', HCS_GUIDE_OBSERVE_ONLY='1', HCS_AUTO_CLEANUP='0',
+    os.environ.update(HCS_AUTONOMY='0', HCS_GUIDE_OBSERVE_ONLY='0' if args.allow_actions else '1', HCS_AUTO_CLEANUP='0',
         HCS_MODEL='holo4-35b-a3b', HCS_CONTROL_PORT=str(args.control_port),
         HCS_BACKEND_URL=f'http://127.0.0.1:{args.backend_port}', HCS_INGEST_TOKEN=credentials['ingest_token'],
         HCS_SUPPORT_USER=private_name, HCS_SUPPORT_EVENTS='1', HCS_PTT_KEY=args.key,
         HCS_RUNS_DIR=str(runs), HCS_VOICE_LANGUAGE=args.input_language)
+    os.environ['HCS_AUTO_CONTEXT'] = '1' if args.software == 'auto' else '0'
     if args.native_devin:
         os.environ['HCS_AX_NATIVE_BUNDLE_ID'] = 'com.exafunction.windsurf'
     else:
@@ -103,22 +108,40 @@ def main():
     from hcs_agent import cli
     from pilot.knowledge import LocalMarkdownKnowledge
     docs = private/'knowledge' if args.software == 'cognition' else private.parent/'cloud-pilot/knowledge'
-    if docs.is_dir() or args.software == 'cognition':
+    if args.software == 'auto':
+        from hcs_agent.app_context import ProductKnowledge
+        seeds = {
+            'h-company': ROOT/'docs/knowledge/h-company-guide.md',
+            'odoo': ROOT/'docs/knowledge/odoo-rich.md',
+            'sap': ROOT/'docs/knowledge/sap-trial-guide.md',
+            'cognition': ROOT/'agent/src/hcs_agent/data/cognition-guide-knowledge.md',
+        }
+        corpora = {}
+        for product, source in seeds.items():
+            corpus = LocalMarkdownKnowledge(private/'knowledge-products'/product,
+                                            tenant_id='demo-' + product, software=product)
+            corpus.upload(source.name, source.read_text())
+            corpora[product] = corpus
+        knowledge = ProductKnowledge(corpora)
+        document_count = sum(len(c.list_documents()) for c in corpora.values())
+    elif docs.is_dir() or args.software == 'cognition':
         knowledge = LocalMarkdownKnowledge(docs,
             tenant_id='cognition-human' if args.software == 'cognition' else 'h-company-cloud',
             software='cognition' if args.software == 'cognition' else 'h-company')
         if args.software == 'cognition':
             source = ROOT/'agent/src/hcs_agent/data/cognition-guide-knowledge.md'
             knowledge.upload(source.name, source.read_text())
+        document_count = len(knowledge.list_documents())
+    else:
+        knowledge = None
+        document_count = 0
+    if knowledge is not None:
         original_backend = cli.make_backend
         def with_knowledge(mock=False):
             backend = original_backend(mock)
             backend.knowledge = knowledge
             return backend
         cli.make_backend = with_knowledge
-        document_count = len(knowledge.list_documents())
-    else:
-        document_count = 0
     spec = importlib.util.spec_from_file_location('human_h_trace_export', ROOT/'scripts/trace_export_h.py')
     exporter = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = exporter
@@ -151,11 +174,11 @@ def main():
     cli._RUN_FINISHED_HOOK = archive_finished
     revision = subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip()
     atomic(private/'runtime.json', {'git_revision':revision, 'pid':os.getpid(), 'model':'holo4-35b-a3b',
-        'mode':'guide', 'human_present':True, 'observe_only':True, 'control_port':args.control_port,
+        'mode':'guide', 'human_present':True, 'observe_only':not args.allow_actions, 'control_port':args.control_port,
         'backend_port':args.backend_port, 'knowledge_documents':document_count, 'voice':'gladia',
         'raw_microphone_audio_retained':False, 'software':args.software, 'response_language':'en',
         'input_language':args.input_language,
-        'surface':'devin-desktop' if args.native_devin else 'browser',
+        'surface':'automatic' if args.software == 'auto' else 'devin-desktop' if args.native_devin else 'browser',
         'native_bundle_id':os.environ.get('HCS_AX_NATIVE_BUNDLE_ID')})
     print(f'Human coaching control: http://127.0.0.1:{args.control_port}', flush=True)
     print(f'Support dashboard: http://127.0.0.1:{args.backend_port}/dashboard', flush=True)

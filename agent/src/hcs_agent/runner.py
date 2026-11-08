@@ -547,6 +547,7 @@ class Intervention:
         from .a11y import INPUT_ROLES, INTERACTIVE, native_target
 
         native_mode = bool(native_target())
+        automatic = bool(bound.request.parameters.get("automatic_context"))
 
         def native_blocked(message: str, reason: str) -> AttemptResult:
             self._trace(f"native guidance blocked: {reason}")
@@ -578,7 +579,7 @@ class Intervention:
             "cognition": ("Devin official documentation session review playbooks knowledge", {
                 "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"}),
         }
-        if bound.request.software in public_queries:
+        if bound.request.software in public_queries and not automatic:
             query, origins = public_queries[bound.request.software]
             try:
                 answer = self.backend.knowledge.ask(query, software=bound.request.software, depth="standard")
@@ -622,6 +623,9 @@ class Intervention:
             t0 = time.time()
             cat = catalogue(bound)
             if cat is None:
+                if automatic:
+                    return native_blocked("I couldn't read the selected application's controls. Bring its window to the front and try again.",
+                                          "automatic_context_unavailable")
                 if native_mode:
                     return native_blocked("I couldn't read Devin's controls. Keep Devin Desktop in front; if this persists, check macOS Accessibility permission.",
                                           "catalogue_unavailable")
@@ -639,6 +643,8 @@ class Intervention:
                     self._on_guidance_nowait(gs)
                 time.sleep(1.0)
                 if waited_front > 40:
+                    if automatic:
+                        return native_blocked("Bring the selected product to the front and ask again.", "automatic_window_not_front")
                     if native_mode:
                         return native_blocked("I couldn't access the focused Devin window. Bring Devin Desktop to the front and ask again.",
                                               "focused_window_unavailable")
@@ -646,6 +652,11 @@ class Intervention:
                 continue
             waited_front = 0
             native = getattr(info, "native", False)
+            if automatic:
+                from .app_context import request_matches_page
+                if not request_matches_page(bound.request, info):
+                    return native_blocked("The application changed. Ask a new question in the product you want help with.",
+                                          "automatic_context_changed")
             if not coaching_page_allowed(bound.request.software, info.url, native=native,
                                          bundle_id=getattr(info, "bundle_id", None), is_front=info.is_front):
                 message = "Open the authorized product page; prepare private account access separately."
@@ -653,7 +664,7 @@ class Intervention:
                                               kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                       blocker="The visible page is outside the authorized read-only coaching scope."))
-            if native and not items:
+            if (native or automatic) and not items:
                 # Electron may expose the focused window before its content is ready.
                 # Do not turn a single short-lived empty/covered read into a permission diagnosis.
                 empty_native_reads += 1
@@ -666,9 +677,9 @@ class Intervention:
                     self._stop.wait(0.15 * empty_native_reads)
                     continue  # Recheck focus/scope on every read; never reuse an older target.
                 if diagnostic.get("status") == "controls_covered":
-                    message = "Devin's controls are currently covered. Move other windows or menus aside and ask again."
+                    message = "The controls are currently covered. Move other windows or menus aside and ask again."
                 else:
-                    message = "I can see Devin's window, but it has not exposed usable controls yet. Wait for the page to load, then ask again."
+                    message = "I can see the selected window, but it has not exposed usable controls yet. Wait for the page to load, then ask again."
                 self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1, instruction=message,
                                                       kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
@@ -691,10 +702,10 @@ class Intervention:
             plan = planner(goal, context, page_description, cands, history)
             if self._stop.is_set():
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
-            if native:
+            if native or automatic:
                 fresh = catalogue(bound)
                 if fresh is None:
-                    return native_blocked("The Devin window could no longer be read. Bring its window to the front and ask again.",
+                    return native_blocked("The selected window could no longer be read. Bring its window to the front and ask again.",
                                           "catalogue_lost_after_planning")
                 current, current_items = fresh
                 if _catalogue_signature(info, items) != _catalogue_signature(current, current_items):

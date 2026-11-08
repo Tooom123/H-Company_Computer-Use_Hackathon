@@ -154,11 +154,13 @@ def _browsers():
     return out
 
 
-def _browser_window():
+def _browser_window(*, front_only: bool = False):
     """The focused (or first) window of a browser, frontmost browser preferred: (window, app name, is_front)."""
     import ApplicationServices as AS
 
     for pid, name, is_front in _browsers():
+        if front_only and not is_front:
+            continue
         app = AS.AXUIElementCreateApplication(pid)
         for flag in ("AXManualAccessibility", "AXEnhancedUserInterface"):
             AS.AXUIElementSetAttributeValue(app, flag, True)  # ask Chrome to expose the web content
@@ -336,10 +338,31 @@ def page() -> PageInfo | None:
     """What the frontmost browser shows: app, window title, URL and the named elements with their frames."""
     if not available():
         return None
+    if os.environ.get("HCS_AUTO_CONTEXT") == "1":
+        return foreground_page()
     if bundle := native_target():
         return _native_page(bundle)
+    return _read_browser_page(_browser_window())
+
+
+def foreground_page() -> PageInfo | None:
+    """Only known demo products in the foreground; do not walk a background browser."""
+    if not available():
+        return None
+    from AppKit import NSWorkspace
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    if front is None:
+        return None
+    bundle = front.bundleIdentifier()
+    if bundle in NATIVE_APPLICATIONS:
+        return _native_page(bundle)
+    if front.localizedName() not in BROWSERS:
+        return PageInfo(app="Other application", title="", url="", is_front=False)
+    return _read_browser_page(_browser_window(front_only=True), known_only=True)
+
+
+def _read_browser_page(bw, *, known_only=False) -> PageInfo | None:
     t0 = time.time()
-    bw = _browser_window()
     if bw is None:
         return None
     win, app_name, is_front = bw
@@ -349,6 +372,10 @@ def page() -> PageInfo | None:
     url = _attr(web, "AXURL")
     url = str(url) if url is not None else ""
     info = PageInfo(app=app_name, title=_text(_attr(win, "AXTitle")), url=url, is_front=is_front, viewport=_frame(web))
+    if known_only:
+        from .app_context import profile_for_page
+        if profile_for_page(info) is None:
+            return info  # inspect identity before walking labels on an unrelated/login page
     elements = _walk(web)
     # Right after a navigation Chrome exposes the new page progressively: give it a moment before deciding
     # the page is empty (an empty catalogue would send the guide to the slow path for nothing).
@@ -368,6 +395,10 @@ def page() -> PageInfo | None:
                     and e.frame[1] < vy + vh]
     info.elements = elements
     info.walk_s = time.time() - t0
+    if known_only:
+        from .app_context import profile_for_page
+        if profile_for_page(info) is None:
+            info.elements = []  # navigation may have changed the origin during collection
     return info
 
 

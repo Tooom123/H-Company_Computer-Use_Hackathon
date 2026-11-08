@@ -645,13 +645,19 @@ class HBackend:
             if info is not None:
                 diagnostic.update(native=bool(getattr(info, "native", False)), is_front=bool(info.is_front),
                                   raw=len(info.elements))
-            if info is None or (not getattr(info, "native", False) and len(info.elements) <= 1):
+            automatic = bool(bound and bound.request.parameters.get("automatic_context"))
+            if automatic and info is not None:
+                from .app_context import request_matches_page
+                if not info.is_front or not request_matches_page(bound.request, info):
+                    diagnostic["status"] = "context_changed"
+                    return info, []
+            if info is None or (not automatic and not getattr(info, "native", False) and len(info.elements) <= 1):
                 diagnostic["status"] = "unavailable"
                 return None
             if getattr(info, "native", False) and not info.is_front:
                 diagnostic["status"] = "window_not_front"
                 return info, []
-            if not getattr(self, "observe_only", False):
+            if not getattr(self, "observe_only", False) and not automatic:
                 sitemap.remember(info)
             seen: set[tuple[str, str]] = set()
             items = []

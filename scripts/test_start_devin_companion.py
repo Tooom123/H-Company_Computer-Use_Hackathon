@@ -85,6 +85,17 @@ def test_takeover_enabled_runtime_is_not_reused(launcher, monkeypatch):
         launcher.start_runtime("/unused/python", launcher.test_private)
 
 
+def test_explicit_multi_product_profile_reuses_only_matching_runtime(launcher, monkeypatch):
+    (launcher.test_private / 'launcher.json').write_text(json.dumps({'profile': 'multi-product'}))
+    metadata(launcher, software='auto', surface='automatic', native_bundle_id=None, observe_only=False)
+    monkeypatch.setattr(launcher, 'control_status', lambda: status(observe_only=False))
+    assert launcher.start_runtime('/unused/python', launcher.test_private) is False
+    metadata(launcher)
+    monkeypatch.setattr(launcher, 'control_status', status)
+    with pytest.raises(RuntimeError, match='different profile'):
+        launcher.start_runtime('/unused/python', launcher.test_private)
+
+
 def test_matching_ready_runtime_reused_without_spawn_or_socket_probe(launcher, monkeypatch):
     metadata(launcher)
     monkeypatch.setattr(launcher, "control_status", status)

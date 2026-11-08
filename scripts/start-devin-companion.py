@@ -69,8 +69,12 @@ def port_busy(port):
 
 def owns_runtime(status, metadata):
     agent = (status or {}).get('agent') or {}
-    return (isinstance(agent, dict) and isinstance(agent.get('pid'), int) and agent['pid'] == metadata.get('pid')
-            and metadata.get('software') == 'cognition'
+    if not isinstance(agent, dict) or not isinstance(agent.get('pid'), int) or agent['pid'] != metadata.get('pid'):
+        return False
+    if metadata.get('software') == 'auto':
+        return (metadata.get('surface') == 'automatic' and metadata.get('native_bundle_id') is None
+                and metadata.get('observe_only') is False and agent.get('observe_only') is False)
+    return (metadata.get('software') == 'cognition'
             and metadata.get('surface') == 'devin-desktop'
             and metadata.get('native_bundle_id') == BUNDLE
             and agent.get('observe_only') is True)
@@ -82,11 +86,14 @@ def ready(status):
 
 
 def start_runtime(python, private=PRIVATE):
+    automatic = read_json(private / 'launcher.json').get('profile') == 'multi-product'
     metadata = lambda: read_json(private / 'runtime.json')
     status = control_status()
     if status is not None:
         if not owns_runtime(status, metadata()):
             raise RuntimeError('Port 8780 belongs to a different coach. Close that runtime before starting Devin.')
+        if automatic != (metadata().get('software') == 'auto'):
+            raise RuntimeError('The existing coach uses a different profile. Finish the task and restart the coach to change it.')
         if ready(status):
             return False
         # A previous launcher may still be preparing the microphone/channel.
@@ -102,8 +109,9 @@ def start_runtime(python, private=PRIVATE):
     stamp = time.strftime('%Y%m%d-%H%M%S')
     log_path = private / ('runtime-' + stamp + '.log')
     with log_path.open('ab') as log:
+        profile_args = ['--software', 'auto', '--allow-actions'] if automatic else ['--software', 'cognition', '--native-devin']
         proc = subprocess.Popen([python, '-u', str(ROOT / 'scripts/run-h-company-human.py'),
-                                 '--software', 'cognition', '--native-devin', '--input-language', 'fr-en',
+                                 *profile_args, '--input-language', 'fr-en', '--key', 'alt_r',
                                  '--private-root', str(private)],
                                 cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True, close_fds=True)
@@ -126,7 +134,8 @@ def start_desktop(python, private=PRIVATE):
     env = dict(os.environ)
     env.pop('ELECTRON_RUN_AS_NODE', None)
     env.update(HCS_CONTROL_URL='http://127.0.0.1:8780', HCS_BACKEND_URL='http://127.0.0.1:8781',
-               HCS_PILOT_KIND='devin-native', HCS_PILOT_PYTHON=python)
+               HCS_PILOT_KIND='multi-product' if read_json(private/'launcher.json').get('profile') == 'multi-product' else 'devin-native',
+               HCS_PILOT_PYTHON=python)
     with (private / 'desktop.log').open('ab') as log:
         proc = subprocess.Popen([str(electron), str(ROOT / 'desktop')], cwd=ROOT / 'desktop', env=env,
                                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
@@ -156,7 +165,7 @@ def main():
             started = start_runtime(python)
             if not args.backend_only:
                 start_desktop(python)
-            print('Devin coach ready. ' + ('Started.' if started else 'Already running.')
+            print('H Companion coach ready. ' + ('Started.' if started else 'Already running.')
                   + (' Open H Companion from its menu-bar icon.' if not args.backend_only else ''))
             return 0
         except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
