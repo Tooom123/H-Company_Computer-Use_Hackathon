@@ -55,8 +55,10 @@ def test_quota_only_fetched_for_relevant_question_and_cached(monkeypatch):
     original = {'url': URL}
     assert screen.attach_quota(original, 'Explain Skills') == original
     fetch.assert_not_called()
-    assert screen.attach_quota(original, 'How many agents can I run?')['account_quota'] == quota
-    assert screen.attach_quota(original, 'Combien de sessions simultanées ?')['account_quota'] == quota
+    assert screen.attach_quota(original, 'How many agent sessions can my current plan run at once?') == original
+    fetch.assert_not_called()
+    assert screen.attach_quota(original, 'How many agents can the Companion API connection run?')['account_quota'] == quota
+    assert screen.attach_quota(original, 'Combien de sessions simultanées pour Companion API ?')['account_quota'] == quota
     assert 'account_quota' not in original
     fetch.assert_called_once()
 
@@ -64,4 +66,4 @@ def test_quota_only_fetched_for_relevant_question_and_cached(monkeypatch):
 def test_unavailable_quota_is_not_invented(monkeypatch):
     monkeypatch.setattr(screen, 'fetch_quota', Mock(side_effect=RuntimeError('provider failure')))
     monkeypatch.setattr(screen, '_quota_at', 0)
-    assert 'account_quota' not in screen.attach_quota({'url': URL}, 'How many sessions can I run?')
+    assert 'account_quota' not in screen.attach_quota({'url': URL}, 'How many sessions can Companion API run?')

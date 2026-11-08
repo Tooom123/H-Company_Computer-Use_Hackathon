@@ -188,8 +188,29 @@ def sensitive_key_creation(decision: CoachDecision, observation: dict) -> bool:
         return key_page and decision.key == "enter"
     if decision.action != "click":
         return False
-    label = next((str(c.get("label", "")) for c in observation.get("controls", [])
+    controls = observation.get("controls", [])
+    label = next((str(c.get("label", "")) for c in controls
                   if c.get("id") == decision.target), "")
+    # H's list-page button opens the editor; it does not create a credential.
+    # Exempt only that observed entry point, with positive list-page evidence
+    # and no visible editor. Ambiguous or final Create/Generate buttons still
+    # require confirmation, even when the list remains visible behind a dialog.
+    normalized_label = " ".join(label.casefold().split())
+    list_heading = any(c.get("role") == "AXHeading"
+                       and " ".join(str(c.get("label", "")).casefold().split()) == "api keys"
+                       for c in controls)
+    form_visible = any(
+        c.get("role") in {"AXDialog", "AXSheet"}
+        or (c.get("role") in {"AXTextField", "AXTextArea", "AXComboBox", "AXPopUpButton"}
+            and re.search(r"\b(?:name|expiry|expiration|expires?|duration)\b", str(c.get("label", "")), re.I))
+        or (c.get("role") == "AXHeading"
+            and re.search(r"\b(?:create|generate|add|new)\b.{0,35}\b(?:key|token)\b",
+                          str(c.get("label", "")), re.I))
+        or str(c.get("label", "")).strip().casefold() == "cancel"
+        for c in controls)
+    if (key_page and normalized_label in {"create an api key", "new api key"}
+            and list_heading and not form_visible):
+        return False
     explicit = re.search(r"\b(?:create|generate|add|new)\b.{0,35}\b(?:api\s*)?(?:key|token)\b", label, re.I)
     final = re.fullmatch(r"\s*(?:create|generate|add|save|confirm|submit)(?:\s+(?:key|token))?\s*", label, re.I)
     return bool(explicit or key_page and final)
@@ -243,6 +264,9 @@ def _observation(raw: dict) -> dict:
         except ValueError as exc:
             raise CoachProtocolError("Invalid quota timestamp.", kind="observation", reason="invalid_account_quota") from exc
         result["account_quota"] = {k: quota[k] for k in ("limit", "active", "available", "source", "observed_at")}
+        if quota.get("account") == "configured_api_connection":
+            result["account_quota"]["account"] = "configured_api_connection"
+            result["account_quota"]["browser_account_match"] = "unverified"
     return result
 
 
@@ -367,7 +391,11 @@ class CoachClient:
                                      "Write every speech field in English, including tour points. Do not imitate the language of the transcript or earlier replies. "
                                      + ("You guide: for click/type actions, address the person in the imperative: 'Click …', 'Open …', 'Type …'. "
                                         "Never describe these actions using 'I', 'I'll', 'I will', or 'Let me'."
-                                        if mode == "guide" else "You act: briefly explain your next requested action."))
+                                        if mode == "guide" else "You act: briefly explain your next requested action.")
+                                     + (" The browser account has NOT been matched to Companion's API connection. "
+                                        "Never describe account_quota as 'your current plan'. Attribute those figures to "
+                                        "Companion's API connection, then show Billing & Subscription to check the browser account."
+                                        if "account_quota" in observed else ""))
                              }, ensure_ascii=False, separators=(",", ":"))}],
                 "tools": [{"type": "function", "function": {"name": "coach_step", "strict": True,
                            "description": "One short user-facing explanation and at most one next step.", "parameters": schema}}],

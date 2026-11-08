@@ -5,7 +5,7 @@ H Platform configures and runs computer-use agents in browsers/desktops. Three u
 - Skill = focused Markdown instructions loaded when relevant, not permanent agent policy.
 - Cloud browser = runs on H infrastructure, leaving the user's computer free; Browser Profiles preserve remote logins.
 
-Navigation map (use observed sidebar IDs, never guessed account URLs): Agents → configuration; Sessions → runs/answers; Skills → reusable instructions; Environments → execution location; Browser Profiles → remote login state; API keys → access keys; Plans/Current plan → allowance.
+Navigation map (use observed sidebar IDs, never guessed account URLs): Agents → configuration; Sessions → runs/answers; Skills → reusable instructions; Environments → execution location; Browser Profiles → remote login state; API keys → access keys; Billing & Subscription/Plans/Current plan → allowance.
 
 For the tour: introduce H in one sentence; show Agents (configure), Sessions (follow runs/read answers), Skills (reusable instructions), at most three visible targets.
 

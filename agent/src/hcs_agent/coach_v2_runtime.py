@@ -111,6 +111,13 @@ def same_platform_origin(first, second) -> bool:
     return (a.scheme, a.netloc) == (b.scheme, b.netloc) and b.hostname == "platform.hcompany.ai" and allowed_page(second)
 
 
+def make_tour_cache(runs_dir):
+    from .coach_v2 import SYSTEM_PROMPT_PATH, PRODUCT_KNOWLEDGE_PATH
+    from .coach_v2_tour_cache import TourCache
+    fingerprint = "holo4-35b-a3b\n" + SYSTEM_PROMPT_PATH.read_text() + PRODUCT_KNOWLEDGE_PATH.read_text()
+    return TourCache(Path(runs_dir).parent / "tour-cache.json", fingerprint)
+
+
 def inside(point, box) -> bool:
     x, y = point
     bx, by, width, height = box
@@ -272,6 +279,7 @@ class Runtime:
                                              "I navigate and explain, one step at a time."]
                 return result
         self.runs_dir, self.api_key = runs_dir, api_key
+        self.tour_cache = make_tour_cache(runs_dir)
         self.overlay, self.speaker, self.desktop = overlay, speaker, desktop
         self.events = queue.Queue()
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="h-coach-v2")
@@ -438,14 +446,21 @@ class Runtime:
             run.record("observation", observed.data)
             observation_ms = round((time.monotonic() - started) * 1000)
             stage = "model"
-            client = CoachClient(self.api_key)
-            model_started = time.monotonic()
-            decision = client.decide(run.request.goal, observed.data, run.request.mode, history)
-            run.record("model", {"decision": decision.model_dump(), "raw": client.last_raw,
-                                 "usage": client.last_usage, "latency_ms": round((time.monotonic() - started) * 1000),
-                                 "observation_ms": observation_ms,
-                                 "model_ms": round((time.monotonic() - model_started) * 1000),
-                                 "superseded": generation != self.generation})
+            cache = getattr(self, "tour_cache", None)
+            decision = cache.get(run.request.goal, {**observed.data, "viewport": observed.viewport},
+                                 run.request.mode) if cache and not history else None
+            if decision:
+                run.record("tour_cache_hit", {"decision": decision.model_dump(), "observation_ms": observation_ms,
+                                              "model_call": False, "source": "completed_tour_cache"})
+            else:
+                client = CoachClient(self.api_key)
+                model_started = time.monotonic()
+                decision = client.decide(run.request.goal, observed.data, run.request.mode, history)
+                run.record("model", {"decision": decision.model_dump(), "raw": client.last_raw,
+                                     "usage": client.last_usage, "latency_ms": round((time.monotonic() - started) * 1000),
+                                     "observation_ms": observation_ms,
+                                     "model_ms": round((time.monotonic() - model_started) * 1000),
+                                     "superseded": generation != self.generation})
             if generation != self.generation:
                 return
             stage = "refresh"
@@ -499,19 +514,30 @@ class Runtime:
         # The decision's IDs belong to its original frame. Use the freshly
         # rebound label for the final-action guard, not a reused numeric ID.
         guard_observation = dict(observation.data)
+        guard_decision = decision
         if target is not None:
-            guard_observation["controls"] = [{"id": decision.target, "label": target.name,
-                                              "role": target.role}]
+            # Keep current form/list evidence while avoiding an old frame's ID
+            # accidentally referring to another current control.
+            controls = list(observation.data.get("controls", []))
+            guard_id = max((c["id"] for c in controls), default=0) + 1
+            controls.append({"id": guard_id, "label": target.name, "role": target.role})
+            guard_observation["controls"] = controls
+            guard_decision = decision.model_copy(update={"target": guard_id})
         needs_confirmation = (self.current.request.mode == "act"
-                              and sensitive_key_creation(decision, guard_observation))
+                              and sensitive_key_creation(guard_decision, guard_observation))
         if not needs_confirmation:
             self.show(decision.speech, target)
         if decision.action == "tour":
+            targets = tour_targets or observation.targets
+            cache_observation = {**observation.data, "viewport": observation.viewport,
+                                 "controls": [{"id": p.target, "label": targets[p.target].name,
+                                               "role": targets[p.target].role, "box": targets[p.target].box,
+                                               "enabled": targets[p.target].enabled} for p in decision.points]}
             self.tour = {"points": [(point, (tour_targets or observation.targets)[point.target])
                                     for point in decision.points],
                          "url": observation.data["url"], "index": 0, "last_text": decision.speech,
                          "visit": self.current.request.mode == "act", "viewport": observation.viewport,
-                         "phase": "presenting"}
+                         "phase": "presenting", "cache_entry": (decision, cache_observation)}
             self.current.set_running()
             if self.speaker and self.response_mode != "text":
                 self.speaker.prefetch([p.speech for p in decision.points])
@@ -760,6 +786,12 @@ class Runtime:
                 if self.speaker and self.response_mode != "text" and self.speaker.speaking:
                     return
                 if self.tour["index"] >= len(self.tour["points"]):
+                    cache = getattr(self, "tour_cache", None)
+                    if cache:
+                        decision, cache_observation = self.tour["cache_entry"]
+                        saved = cache.put(self.current.request.goal, decision, cache_observation,
+                                          self.current.request.mode)
+                        self.current.record("tour_cache_saved", {"saved": saved})
                     self.finish("completed", self.tour["last_text"], show=False)
                 else:
                     point, original = self.tour["points"][self.tour["index"]]

@@ -118,7 +118,12 @@ def fetch_quota():
 def attach_quota(observation: dict, question: str) -> dict:
     global _quota_at, _quota_cache
     result = dict(observation)
-    if not _QUOTA_QUESTION.search(question):
+    # No verified link exists between this API key and the browser account.
+    # For "my current plan", the visible Billing page is the relevant evidence.
+    # Supplying unrelated API numbers caused both attribution and limit/free-slot
+    # confusion in real model probes, despite explicit prompting.
+    api_connection_requested = re.search(r"\bcompanion\b.{0,40}\bapi\b|\bapi\b.{0,40}\bcompanion\b", question, re.I)
+    if not _QUOTA_QUESTION.search(question) or not api_connection_requested:
         return result
     with _quota_lock:
         if time.monotonic() - _quota_at > 30 or _quota_at == 0:

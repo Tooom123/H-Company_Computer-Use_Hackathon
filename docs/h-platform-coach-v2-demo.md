@@ -14,6 +14,8 @@ Pour la vidéo de deux minutes, privilégier **tour → cloud → création de S
 
 Le modèle prépare cette séquence dans un seul appel `tour`. En Do it, le runtime ouvre chaque section, confirme sa sélection ou son titre dans une nouvelle lecture AX, puis la présente. Les coordonnées sont relues avant chaque clic. En Show me, il présente uniquement les boutons sans cliquer. Aucun nouvel appel Holo entre les pages, aucune création de ressource. Si seuls deux contrôles sont visibles, deux points suffisent. Interrompre pendant le deuxième point doit arrêter la voix et les visites restantes.
 
+Un tour général terminé peut être conservé 24 heures dans un cache privé, séparé par mode et invalidé si modèle/prompts changent. Il conserve les phrases et les noms de sections, jamais les IDs ou coordonnées. Une demande particulière, une sidebar absente/ambiguë ou un cache expiré repasse par Holo. Les traces distinguent `tour_cache_hit` d'un appel modèle. Le tour que l'utilisateur a validé a été mis en cache pour la répétition ; le délai réel jusqu'à la voix reste à mesurer.
+
 ## 2. Une clé API temporaire
 
 **Départ :** H Platform connecté, nom `h-hackathon` disponible. Mode **Do it, I watch**, ou Show me si l’utilisateur veut cliquer lui-même.
@@ -23,6 +25,8 @@ Le modèle prépare cette séquence dans un seul appel `tour`. En Do it, le runt
 **Attendu :** ouvrir API keys, inspecter le formulaire, remplir le nom, identifier l’option d’expiration réelle. **L’existence d’une expiration de 24 heures n’est pas encore confirmée.** Si elle n’existe pas, le compagnon le dit et s’arrête avant création; il ne remplace pas ce choix par « jamais ».
 
 En mode autonome, la création finale attend une confirmation explicite dans le compagnon. L’agent ne lit, ne prononce, ne copie ni ne journalise la valeur secrète. Il vérifie uniquement le nom, l’expiration ou le message de création non secret.
+
+L'ouverture du formulaire depuis le bouton « Create an API key » de la liste est autonome ; elle ne doit pas demander la confirmation prévue pour la soumission finale. Un contexte ambigu reste soumis à confirmation.
 
 **Captation :** la valeur peut apparaître dans l’interface H après confirmation. La supprimer du contexte modèle ne la masque pas dans l’enregistrement vidéo; cadrer ou masquer cette partie avant diffusion. Ne jamais filmer la valeur en clair.
 
@@ -59,6 +63,8 @@ Le contenu couvre : une consigne à la fois, contrôle visible identifié, l’u
 **Attendu :** distinguer limite totale, sessions actives et places disponibles. Ne donner la limite du compte navigateur que si elle est effectivement constatée. Le quota API éventuellement fourni au modèle appartient au compte connecté à Companion; sans correspondance d’identité vérifiée, le présenter comme tel, sans l’assimiler au compte ouvert dans Chrome.
 
 Montrer la page Plans/Current plan/billing en lecture seule, ou la documentation officielle. Les nombres publics Free/Builder/Startup sont une référence générale; ils ne prouvent pas le plan de cet utilisateur. Aucun clic Upgrade, achat ou changement de moyen de paiement.
+
+Pour « my current plan », aucun quota de la connexion API n'est injecté tant que son identité n'est pas reliée au compte navigateur. Seule une demande visant explicitement l'API de Companion peut recevoir ce quota distinct. Si Billing ne montre pas la limite, le compagnon doit le dire plutôt que donner un chiffre non constaté.
 
 **Réussite :** réponse sourcée par une donnée présente, bonne distinction total/disponible, destination montrée, aucun chiffre de compte inventé.
 

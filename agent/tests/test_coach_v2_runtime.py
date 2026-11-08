@@ -429,6 +429,42 @@ def test_tour_rematches_moved_target_before_highlighting(rt, monkeypatch):
     assert event == ('tour_point', 1, point, moved, URL)
 
 
+def test_cached_tour_skips_holo_but_refreshes_targets(rt, monkeypatch):
+    targets = {i: Target(name) for i, name in enumerate(['Agents', 'Sessions', 'Skills'], 1)}
+    first = observation(); first.targets = targets
+    fresh = observation(); fresh.targets = {i: Target(t.name, box=(30, i * 50, 80, 40))
+                                           for i, t in targets.items()}
+    observer = Mock(side_effect=[first, fresh])
+    monkeypatch.setattr(runtime, 'observe', observer)
+    model = Mock()
+    monkeypatch.setattr(runtime, 'CoachClient', model)
+    rt.tour_cache = Mock()
+    rt.tour_cache.get.return_value = tour_decision()
+    rt.decide_worker(rt.current, 1, [])
+    model.assert_not_called()
+    assert observer.call_count == 2
+    event = rt.events.get_nowait()
+    assert event[0] == 'decision' and event[-1][1] is fresh.targets[1]
+    log = (rt.current.runs_dir / 'events.jsonl').read_text()
+    assert '"tour_cache_hit"' in log and '"model_call": false' in log
+    assert '"type": "model"' not in log
+
+
+def test_key_form_opener_acts_with_current_list_evidence_despite_reused_ids(rt, monkeypatch):
+    url = 'https://platform.hcompany.ai/settings/api-keys'
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: url)
+    rt.current = CoachRun(rt.runs_dir, 'Create a demo API key for one day.', 'act')
+    target = Target('Create an API key')
+    decision = CoachDecision(action='click', target=1, speech="I'll open the key form.")
+    obs = observation(target, url=url)
+    obs.data['controls'] = [{'id': 1, 'label': 'API Keys', 'role': 'AXHeading'},
+                            {'id': 4, 'label': target.name, 'role': target.role}]
+    rt.accept_decision(1, decision, obs, target)
+    assert not rt.requires_confirmation
+    assert rt.due[1] == 'act' and rt.current.state.value == 'running'
+    assert rt.pending[1] is target
+
+
 def prepare_key_confirmation(rt, monkeypatch):
     url = 'https://platform.hcompany.ai/api-keys'
     monkeypatch.setattr(runtime, 'foreground_url', lambda: url)

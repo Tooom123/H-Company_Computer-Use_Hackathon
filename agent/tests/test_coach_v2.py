@@ -421,6 +421,46 @@ def test_explicit_key_creation_requires_runtime_confirmation_anywhere(label, obs
     assert sensitive_key_creation(decision, observation)
 
 
+@pytest.mark.parametrize('label', ['Create an API key', 'New API key'])
+def test_key_list_opener_does_not_require_creation_confirmation(label, observation):
+    observation['url'] = 'https://platform.hcompany.ai/settings/api-keys'
+    observation['controls'][0]['label'] = label
+    observation['controls'].extend([
+        {'id': 8, 'role': 'AXHeading', 'label': 'API Keys'},
+        # The list's sortable Name column is not an editable key-name field.
+        {'id': 9, 'role': 'AXButton', 'label': 'Name'},
+    ])
+    decision = CoachDecision(**step(action='click', target=1))
+    assert not sensitive_key_creation(decision, observation)
+    observation['controls'] = [c for c in observation['controls'] if c['id'] != 8]
+    assert sensitive_key_creation(decision, observation)  # no positive list evidence
+
+
+@pytest.mark.parametrize('role,label', [
+    ('AXTextField', 'Name'), ('AXTextField', 'API key name'),
+    ('AXComboBox', 'Expiration'), ('AXPopUpButton', 'Expires after'),
+    ('AXTextField', 'Expiry'), ('AXTextArea', 'Name'),
+    ('AXHeading', 'Create an API key'), ('AXHeading', 'New API key'),
+    ('AXDialog', ''), ('AXSheet', ''), ('AXButton', 'Cancel'),
+])
+def test_key_opener_label_remains_guarded_when_editor_is_visible(role, label, observation):
+    observation['url'] = 'https://platform.hcompany.ai/settings/api-keys'
+    observation['controls'][0]['label'] = 'Create an API key'
+    observation['controls'].extend([
+        {'id': 8, 'role': 'AXHeading', 'label': 'API Keys'},
+        {'id': 9, 'role': role, 'label': label},
+    ])
+    assert sensitive_key_creation(CoachDecision(**step(action='click', target=1)), observation)
+
+
+@pytest.mark.parametrize('label', ['Create', 'Generate', 'Create API key', 'Generate key'])
+def test_list_heading_does_not_exempt_final_or_uncertain_creation_controls(label, observation):
+    observation['url'] = 'https://platform.hcompany.ai/settings/api-keys'
+    observation['controls'][0]['label'] = label
+    observation['controls'].append({'id': 8, 'role': 'AXHeading', 'label': 'API keys'})
+    assert sensitive_key_creation(CoachDecision(**step(action='click', target=1)), observation)
+
+
 @pytest.mark.parametrize('label', ['Create', 'Generate', 'Save', 'Confirm', 'Submit'])
 def test_key_dialog_final_controls_require_runtime_confirmation(label, observation):
     observation['url'] = 'https://platform.hcompany.ai/api-keys'
@@ -443,14 +483,16 @@ def test_key_creation_reaches_confirmation_gate_instead_of_blanket_block(observa
 
 def quota():
     return {'limit': 10, 'active': 2, 'available': 8, 'source': 'H sessions quota API',
-            'observed_at': '2026-11-08T10:00:00+00:00'}
+            'observed_at': '2026-11-08T10:00:00+00:00', 'account': 'configured_api_connection'}
 
 
 def test_account_quota_evidence_reaches_model(observation, client_factory):
     observation['account_quota'] = quota()
     client, requests = client_factory()
     client.decide('How many sessions can my current plan run?', observation, 'guide')
-    assert json.loads(requests[0]['messages'][1]['content'])['current_observation']['account_quota'] == quota()
+    payload = json.loads(requests[0]['messages'][1]['content'])
+    assert payload['current_observation']['account_quota'] == {**quota(), 'browser_account_match': 'unverified'}
+    assert 'NOT been matched' in payload['response_instructions']
 
 
 @pytest.mark.parametrize('changes', [{'limit': True}, {'active': -1}, {'available': 'ten'},
