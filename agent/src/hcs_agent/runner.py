@@ -84,6 +84,34 @@ def _label_matches(label: str, name: str) -> bool:
     return bool(a and b) and (f" {a} " in f" {b} " or f" {b} " in f" {a} ")
 
 
+def _field_state(e) -> str:
+    """' value="…"' / ' empty' (+ required) for fields whose content was read (browser only)."""
+    value = getattr(e, "value", None)
+    if value is None:
+        return ""
+    state = f' value="{value[:60]}"' if value.strip() else " EMPTY"
+    return state + (" REQUIRED" if getattr(e, "required", False) else "")
+
+
+def _container_of(target, elements, sw: float, sh: float) -> list[tuple[int, int, int, int]]:
+    """The dialog (or panel) holding the target: the overlay keeps its notes off it, so the form stays readable."""
+    if target is None or not elements or getattr(target, "box", None) is None:
+        return []
+    tx, ty, tw, th = target.box
+    best = None
+    for e in elements or []:
+        if e.role not in ("AXGroup", "AXSheet", "AXDialog", "AXForm") or e is target:
+            continue
+        x, y, w, h = e.frame
+        if not (x <= tx and y <= ty and x + w >= tx + tw and y + h >= ty + th):
+            continue
+        if w * h < 4 * tw * th or w * h > 0.45 * sw * sh:
+            continue
+        if best is None or w * h > best.frame[2] * best.frame[3]:
+            best = e
+    return [best.box] if best is not None else []
+
+
 def _page_change_note(before, after) -> str:
     """What the user's action changed on the page, for the planner (it cannot see the screen)."""
     if after is None:
@@ -688,7 +716,8 @@ class Intervention:
                                                       kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                                                         blocker=message))
-            cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" for e in items]
+            cands = [f"{e.role.replace('AX', '')} '{e.name[:50]}' ({_where(e.center, sw, sh)})" + _field_state(e)
+                     for e in items]
             parts = urlsplit(info.url)
             page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
             page_description = (f"Native application: Devin Desktop; bundle_id={info.bundle_id}; focused window: {info.title[:80]}"
@@ -787,18 +816,19 @@ class Intervention:
                         corrections.append(seen)
                     last_instruction = ""
                     continue
-                if native_mode:
-                    return native_blocked("I keep suggesting the same step without confirming progress. Tell me what changed, or ask a more specific question.",
-                                          "inconsistent_planner_instruction")
-                self._trace("the planner keeps naming a control that is not there: handing over")
-                return None
+                # Second time still unsure: keep guiding (stopping mid-task is worse), but never frame a control
+                # the sentence does not name.
+                self._trace("planner still unsure after the screenshot check: showing the step without a frame")
+                if not looped:
+                    target = None
             corrections = []
             shown_on.add(step_key)
             if kind == "type" and plan.get("text") and "«" not in instruction and '"' not in instruction:
                 instruction = f"{instruction} — type \"{plan['text']}\""
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:160],
                               where=target.name if target else "", pointer=target.center if target else None,
-                              box=target.box if target else None, box_exact=target is not None, kind=kind)
+                              box=target.box if target else None, box_exact=target is not None, kind=kind,
+                              keep_clear=_container_of(target, getattr(info, "elements", None), sw, sh))
             signature = (info.url, tuple(sorted(e.name for e in items)))
             reply = self._on_guidance(gs)
             if reply is None:

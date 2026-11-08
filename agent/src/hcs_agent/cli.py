@@ -1309,6 +1309,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     shown["text"] = g.instruction
                     scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
+                        keep_clear=list(g.keep_clear),
                         doodle="question" if "can't see" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
                                     None, a.box)

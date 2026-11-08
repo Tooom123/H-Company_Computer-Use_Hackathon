@@ -63,10 +63,9 @@ def test_same_step_across_alternating_pages_is_caught(guide):
     guide.page.items = AGENTS
     guide.backend.plan_step = lambda *a: guide.calls.append(a) or {
         "done": False, "instruction": "Click the Build button.", "kind": "click", "target": 0}
-    result = guide.it._dynamic_guide(guide.bound)
-    assert result is None  # handed over instead of looping to the step limit
-    assert len(guide.shown) == 2
-    assert any("already gave the step" in h for h in guide.calls[-1][4])
+    result = guide.it._dynamic_guide(guide.bound, max_steps=6)
+    assert result is not None  # never stops mid-task: it keeps guiding
+    assert any("already gave the step" in h for c in guide.calls for h in c[4])
 
 
 def test_history_tells_the_planner_what_the_click_opened(guide):
@@ -158,3 +157,23 @@ def test_scripted_hints_carry_their_done_when(tmp_path, monkeypatch):
     monkeypatch.setattr(it, "_dynamic_guide", lambda b, hints=None, **k: seen.setdefault("hints", hints) and None)
     it.start(); it.approve(__import__("hcs_agent.contract", fromlist=["ApproveCommand"]).ApproveCommand()); it.wait(3)
     assert any("Build an agent" in h and "[done when:" in h and "name field" in h for h in seen["hints"])
+
+
+def test_planner_sees_empty_required_fields_and_their_values():
+    from hcs_agent.runner import _field_state
+    name = SimpleNamespace(value="", required=True)
+    desc = SimpleNamespace(value="Reads a page", required=True)
+    assert _field_state(name) == " EMPTY REQUIRED"
+    assert _field_state(desc) == ' value="Reads a page" REQUIRED'
+    assert _field_state(SimpleNamespace(value=None)) == ""  # native pilot: values never read
+
+
+def test_overlay_keeps_the_dialog_holding_the_target_clear():
+    from hcs_agent.runner import _container_of
+    dialog = ctl("AXGroup", "Build an agent", 0)
+    dialog.frame = dialog.box = (420, 330, 672, 478)
+    page = ctl("AXGroup", "Main", 0)
+    page.frame = page.box = (0, 0, 1512, 982)
+    nxt = ctl("AXButton", "Next", 0)
+    nxt.box = (1012, 755, 63, 36)
+    assert _container_of(nxt, [page, dialog, nxt], 1512, 982) == [(420, 330, 672, 478)]

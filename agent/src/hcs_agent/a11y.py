@@ -65,6 +65,8 @@ class Candidate:
     score: float = 0.0
     why: str = ""
     ref: object = None  # the AXUIElement, for hit-testing
+    value: str | None = None  # field content (browser fields only; None = not read)
+    required: bool = False
 
     @property
     def center(self) -> tuple[int, int]:
@@ -230,8 +232,9 @@ def _web_area(win):
     return None
 
 
-def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
-    """Every element with a name and an on-screen frame. One IPC per node (multiple attributes at once)."""
+def _walk(web, max_nodes: int = 6000, read_values: bool = False) -> list[Candidate]:
+    """Every element with a name and an on-screen frame. One IPC per node (multiple attributes at once).
+    read_values: also read what a (non-password) field contains, so the guide knows a required field is empty."""
     import ApplicationServices as AS
 
     attrs = ["AXRole", "AXTitle", "AXDescription", "AXPlaceholderValue", "AXChildren", "AXFrame"]
@@ -267,7 +270,12 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
                 frame = (float(r.origin.x), float(r.origin.y), float(r.size.width), float(r.size.height))
         if frame is None or frame[2] < 2 or frame[3] < 2:
             continue
-        out.append(Candidate(role=role, name=name, frame=frame, ref=el))
+        cand = Candidate(role=role, name=name, frame=frame, ref=el)
+        if read_values and role in INPUT_ROLES and role != "AXSecureTextField" \
+                and _attr(el, "AXSubrole") != "AXSecureTextField":
+            cand.value = _text(_attr(el, "AXValue"))[:120]
+            cand.required = bool(_attr(el, "AXRequired")) or name.rstrip().endswith("*")
+        out.append(cand)
     return out
 
 
@@ -334,7 +342,7 @@ def page() -> PageInfo | None:
     url = _attr(web, "AXURL")
     url = str(url) if url is not None else ""
     info = PageInfo(app=app_name, title=_text(_attr(win, "AXTitle")), url=url, is_front=is_front, viewport=_frame(web))
-    elements = _walk(web)
+    elements = _walk(web, read_values=True)
     # Right after a navigation Chrome exposes the new page progressively: give it a moment before deciding
     # the page is empty (an empty catalogue would send the guide to the slow path for nothing).
     for _ in range(4):
@@ -343,7 +351,7 @@ def page() -> PageInfo | None:
         if len(elements) > 3 and not busy:
             break
         time.sleep(0.25)
-        elements = _walk(web)
+        elements = _walk(web, read_values=True)
         url = str(_attr(web, "AXURL") or url)
         info.url, info.title = url, _text(_attr(win, "AXTitle"))
     if info.viewport:  # keep what is actually visible in the viewport (scrolled-out elements keep a frame)

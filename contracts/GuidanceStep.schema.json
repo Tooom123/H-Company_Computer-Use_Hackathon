@@ -220,6 +220,30 @@
       "title": "Annotations",
       "type": "array"
     },
+    "keep_clear": {
+      "description": "Screen boxes (x, y, w, h) the overlay notes must not cover, e.g. the dialog that holds the target: its fields and hints stay readable.",
+      "items": {
+        "maxItems": 4,
+        "minItems": 4,
+        "prefixItems": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "integer"
+          }
+        ],
+        "type": "array"
+      },
+      "title": "Keep Clear",
+      "type": "array"
+    },
     "last": {
       "default": false,
       "title": "Last",

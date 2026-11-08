@@ -188,6 +188,9 @@ class GuidanceStep(BaseModel):
         description="At most two tentative next instructions for audio preparation only. Never display or advance "
                     "to these without a fresh observation and guidance response.")
     annotations: list[Annotation] = Field(default_factory=list)
+    keep_clear: list[tuple[int, int, int, int]] = Field(
+        default_factory=list, description="Screen boxes (x, y, w, h) the overlay notes must not cover, e.g. the "
+                                          "dialog that holds the target: its fields and hints stay readable.")
     last: bool = False
     shown_at: datetime | None = None
     done_s: float | None = Field(default=None, description="Seconds the user took to do the step.")

@@ -53,6 +53,7 @@ class Scene:
     step: int | None = None
     doodle: str | None = None  # "check" | "asterisk" | "question"
     target_box: tuple[float, float, float, float] | None = None  # bounds of the main control
+    keep_clear: list = field(default_factory=list)  # boxes the notes must not cover (the target's dialog)
 
 
 def mouse_position() -> tuple[float, float]:
@@ -350,6 +351,8 @@ class _SketchView(AppKit.NSView):
                 placed.append((m.box[0] - 8, m.box[1] - 8, m.box[2] + 16, m.box[3] + 16))
             else:
                 placed.append((m.xy[0] - 50, m.xy[1] - 36, 100, 72))
+        for k in sc.keep_clear or []:
+            placed.append((k[0] - 6, k[1] - 6, k[2] + 12, k[3] + 12))
         main_note = None
         if sc.target is not None:
             tx, ty = sc.target
@@ -364,6 +367,13 @@ class _SketchView(AppKit.NSView):
                 placed.append((tx - 60, ty - 44, 120, 88))
             right = tx + half_w + pw + 30 < W - _INSETS["right"]
             paper_x = tx + half_w + 10 if right else tx - half_w - 10 - pw
+            # Target inside a dialog: put the note beside the dialog, not over its fields and hints.
+            box = next((k for k in sc.keep_clear or [] if k[0] <= tx <= k[0] + k[2] and k[1] <= ty <= k[1] + k[3]), None)
+            if box is not None:
+                if box[0] + box[2] + 16 + pw < W - _INSETS["right"]:
+                    paper_x = box[0] + box[2] + 16
+                elif box[0] - 16 - pw > 0:
+                    paper_x = box[0] - 16 - pw
             paper_y = ty + half_h  # above the control (AppKit: y grows upwards)
             px, py = _place(paper_x, paper_y, pw, ph, (W, H), placed)
             main_note = (px + 10, py + 9, pw, ph, right)  # text anchor + paper size
@@ -506,6 +516,7 @@ class Overlay:
             marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to), self._flip_box(m.box))
                    for m in scene.marks],
             doodle=scene.doodle, target_box=self._flip_box(scene.target_box),
+            keep_clear=[self._flip_box(b) for b in (scene.keep_clear or [])],
         )
 
         def apply() -> None:
