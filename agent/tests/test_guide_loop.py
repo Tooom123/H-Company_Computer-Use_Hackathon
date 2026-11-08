@@ -331,3 +331,18 @@ def test_newcomer_tour_points_at_each_sidebar_section_not_the_breadcrumb():
     assert [n for n, _ in order] == ["Home", "Agents", "Sessions", "Skills", "Environments", "Browser Profiles",
                                      "Schedules", "API keys", "Upgrade", "Help and feedback"]
     assert dict(order)["Agents"] == 100 and dict(order)["Sessions"] == 100  # sidebar, not breadcrumb
+
+
+def test_planned_notes_are_spoken_in_one_short_line(guide):
+    """User feedback 2026-11-08: the agent + cloud session flow was right but far too long to listen to."""
+    from hcs_agent.runner import _page_notes
+    notes = _page_notes("hcompany")
+    assert notes and all(n.get("say") and len(n["say"]) <= 90 for n in notes)
+    stepper = [ctl("AXRadioButton", n) for n in ["Details", "2 Config", "3 Instructions", "4 Skills", "5 Subagents", "6 Session"]]
+    guide.page.items = stepper + [ctl("AXPopUpButton", "Web environment (default)", 600), ctl("AXButton", "Next", 1040)]
+    plans = iter([{"done": True, "summary": "ok"}])
+    guide.backend.plan_step = lambda *a: next(plans)
+    guide.it._dynamic_guide(guide.bound, history=["Instruction shown: Click 'Next'. ..."])
+    step = guide.shown[0]
+    assert step.why == next(n["say"] for n in notes if n["text"] == step.instruction)
+    assert step.prepared_speech == [step.instruction, step.why]

@@ -158,9 +158,10 @@ class Grounder:
                 "done": {"type": "boolean", "description": "true when the goal is visibly reached on this page"},
                 "blocked": {"type": "boolean", "description": "true if the current coaching scope or unavailable evidence prevents continuing; not success"},
                 "instruction": {"type": "string", "description": "one short imperative sentence in English"},
-                "why": {"type": "string", "description": "the explanation read aloud, 1 to 2 sentences (max 260 "
-                        "characters): what this page or control is for and, when the page offers choices or "
-                        "fields, what they mean, what to pick for this goal and why; never just 'to proceed'"},
+                "why": {"type": "string", "description": "the explanation, 1 to 2 sentences: the FIRST sentence "
+                        "is read aloud and must stand alone in under 100 characters (what this page or control is "
+                        "for, or what to pick and why); the optional second adds detail on screen; never just "
+                        "'to proceed'"},
                 "kind": {"type": "string", "enum": ["click", "type", "info"]},
                 "target": {"type": "integer", "description": "1-based index of the control to act on; 0 if none"},
                 "text": {"type": "string", "description": "for kind=type: what to type"},

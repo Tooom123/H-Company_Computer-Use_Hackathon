@@ -838,7 +838,10 @@ class Intervention:
                 idx, at = note
                 notes_shown.add(idx)
                 n_ = notes[idx]
-                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=n_["text"][:140], why=n_["why"][:320],
+                # Spoken and written: the title and one short line; the full explanation goes to the history.
+                say = (n_.get("say") or n_["why"])[:160]
+                gs = GuidanceStep(index=len(self.guidance) + 1, instruction=n_["text"][:140], why=say,
+                                  prepared_speech=[n_["text"][:140], say],
                                   where=at.name, pointer=at.center, box=at.box, box_exact=True, kind="info",
                                   keep_clear=_container_of(at, getattr(info, "elements", None), sw, sh))
                 self._trace(f"page note: {n_['text'][:60]}")
