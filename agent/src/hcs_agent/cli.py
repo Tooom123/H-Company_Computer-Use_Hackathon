@@ -545,6 +545,36 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 _point_at(ov, backend, intent.point_at)
                 history.clear()
                 continue
+            if intent.task and not intent.procedure_id:
+                # No script for this: the general agent works from the screen, with the vendor docs as context.
+                from .voice import generic_request
+
+                doc = None
+                try:
+                    ans = backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
+                                                software=intent.software or "hcompany", depth="fast")
+                    doc = ans.as_text(2) if ans and ans.answer else None
+                    if ans:
+                        print(f"  [docs] {ans.answer[:120]}")
+                except Exception:  # noqa: BLE001
+                    pass
+                request = generic_request(intent, doc)
+                last_request = request
+                history.clear()
+                print(f"  -> no script for this; general agent | {request.software} | mode {request.mode.value} | {request.goal}")
+                _say("No script for this one, I will work it out from the screen.")
+                try:
+                    code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                                    overlay=not args.no_overlay, ov=ov)
+                except Exception:  # noqa: BLE001
+                    import traceback
+
+                    traceback.print_exc()
+                if args.once:
+                    return 0
+                if ov is not None and not _new_request_pending():
+                    ov.badge("⌘H: new request")
+                continue
             if not intent.procedure_id or intent.missing:
                 # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
                 q = intent.question or "What exactly should I help with?"

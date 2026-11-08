@@ -162,3 +162,20 @@ def test_new_voice_request_mid_task_stops_the_current_one(tmp_path, monkeypatch)
     assert code == 3 and it.report.status is CaseStatus.abandoned
     assert it.report.timings.stop_requested_at is not None
     assert not q.empty()  # the new request is still queued for the talk loop to run next
+
+
+def test_generic_unscripted_task_runs_with_the_general_agent(tmp_path):
+    from hcs_agent.voice import Intent, generic_request
+
+    intent = Intent(procedure_id=None, task="Share the latest session with my team", software="hcompany", mode="guide")
+    req = generic_request(intent, doc_context="Docs: open the session, click Share.")
+    assert req.procedure_id == "generic" and req.software == "hcompany"
+    events = []
+    it = Intervention(req, MockBackend(step_delay_s=0.01, outcome="done"), ProcedureRegistry(), events.append, tmp_path)
+    it.start()
+    assert it.state is State.awaiting_approval and "Share the latest session" in it.plan.objective
+    it.approve(ApproveCommand())
+    _auto_next(it, events, [])
+    it.wait(5)
+    assert it.report is not None and it.report.procedure_id == "generic"
+    assert it.report.verification.checks.keys() == {"goal_achieved"}
