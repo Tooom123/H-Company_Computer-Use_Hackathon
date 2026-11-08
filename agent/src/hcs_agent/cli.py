@@ -487,6 +487,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
         # setup and a running listener initialising at the same time abort the process on macOS.
         print("  preparing the desktop channel…", flush=True)
         backend._desktop_channel()
+    try:
+        from . import a11y
+
+        if a11y.available():
+            n = a11y.warm_up()
+            print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  (accessibility tree unavailable: {exc})")
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     _VOICE["ptt"] = ptt
     router = IntentRouter(registry)

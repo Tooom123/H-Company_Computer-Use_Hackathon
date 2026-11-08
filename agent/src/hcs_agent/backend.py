@@ -485,11 +485,42 @@ class HBackend:
             self._grounder = Grounder()
         return self._grounder
 
-    def locate(self, description: str, context: str = "") -> Located | None:
+    use_a11y: bool = os.environ.get("HCS_A11Y", "1").lower() not in {"0", "false", "no"}
+
+    def _tree_locate(self, description: str) -> tuple[Located | None, list]:
+        """Element from the browser accessibility tree: exact box in milliseconds. (None, ties) when unsure."""
+        if not self.use_a11y:
+            return None, []
         try:
-            return self._grounding().locate(description, context)
+            from . import a11y
+
+            t0 = time.time()
+            best, ties, info = a11y.find(description)
+            if best is None or info is None or not info.is_front:
+                return None, []
+            if best.score < 10:  # only word overlap, no label match: let Holo look
+                return None, []
+            if ties:
+                return None, [best, *ties]
+            return Located(True, best.center, f"tree: {best.role} '{best.name[:40]}'", time.time() - t0, best.box), []
+        except Exception:  # noqa: BLE001 - the tree is an accelerator, never a blocker
+            return None, []
+
+    def locate(self, description: str, context: str = "") -> Located | None:
+        hit, ties = self._tree_locate(description)
+        if hit is not None:
+            return hit
+        try:
+            loc = self._grounding().locate(description, context)
         except Exception as exc:  # noqa: BLE001 - grounding is best effort; the caller falls back
             return Located(False, None, f"grounding error: {exc}")
+        if ties and loc and loc.found and loc.screen_xy:
+            # Several tree elements share the label: Holo decides which one, the tree gives the exact box.
+            x, y = loc.screen_xy
+            near = min(ties, key=lambda c: (c.center[0] - x) ** 2 + (c.center[1] - y) ** 2)
+            if abs(near.center[0] - x) < 80 and abs(near.center[1] - y) < 60:
+                return Located(True, near.center, f"tree+holo: {near.role} '{near.name[:40]}'", loc.latency_s, near.box)
+        return loc
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:
         try:
@@ -497,7 +528,16 @@ class HBackend:
         except Exception as exc:  # noqa: BLE001
             return True, f"effect check unavailable: {exc}"
 
-    def screen_matches(self, expected: str) -> tuple[bool, str]:
+    def screen_matches(self, expected: str, software: str = "") -> tuple[bool, str]:
+        if self.use_a11y:
+            try:
+                from . import a11y
+
+                ok, where = a11y.screen_check(expected, software)
+                if ok is not None:
+                    return ok, f"tree: {where}"
+            except Exception:  # noqa: BLE001
+                pass
         try:
             return self._grounding().screen_matches(expected)
         except Exception as exc:  # noqa: BLE001
@@ -749,7 +789,7 @@ class MockBackend:
                             "[simulated] " + ("all checks visible" if satisfied else "expected element not found"),
                             cost_usd=0.0)
 
-    def screen_matches(self, expected: str) -> tuple[bool, str]:
+    def screen_matches(self, expected: str, software: str = "") -> tuple[bool, str]:
         return True, "[simulated] expected screen displayed"
 
     def effect_visible(self, expected: str) -> tuple[bool, str]:

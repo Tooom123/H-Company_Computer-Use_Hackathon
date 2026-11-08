@@ -55,6 +55,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _screen_check(check, expected: str, software: str) -> tuple[bool, str]:
+    """Call a backend screen check, passing the software name when the backend accepts it."""
+    try:
+        return check(expected, software)
+    except TypeError:
+        return check(expected)
+
+
 class Intervention:
     """One help request, from creation to report. Thread-safe for approve/stop from another thread."""
 
@@ -452,7 +460,7 @@ class Intervention:
         for _ in range(attempts):
             if self._stop.is_set():
                 return False
-            ok, visible = check(expected)
+            ok, visible = _screen_check(check, expected, bound.request.software)
             self._trace(f"screen check: {'ok' if ok else 'not yet'} ({visible[:60]})")
             if ok:
                 if shown:
@@ -483,7 +491,7 @@ class Intervention:
             if self._on_guidance(gs) is None:
                 return False
             check = getattr(self.backend, "screen_matches", None)
-            if check and check(bound.expected_screen)[0]:
+            if check and _screen_check(check, bound.expected_screen, bound.request.software)[0]:
                 return True
         return self._ensure_screen(bound, attempts=10)
 
