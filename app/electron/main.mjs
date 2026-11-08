@@ -19,7 +19,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const voiceMode = process.env.HCS_PILOT_MODE === '1';
 if (voiceMode) {
   const profile = process.env.HCS_PILOT_PROFILE || 'live';
-  if (!['live', 'mock'].includes(profile)) throw new Error('Profil vocal invalide.');
+  if (!['live', 'mock', 'rich', 'rich-mock'].includes(profile)) throw new Error('Profil vocal invalide.');
   app.setPath('userData', path.join(app.getPath('appData'), `HCompanionVoicePilot-${profile}`));
 }
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));

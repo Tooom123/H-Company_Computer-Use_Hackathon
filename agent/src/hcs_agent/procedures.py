@@ -6,6 +6,8 @@ forbidden actions, H prompt, postcondition checks, attempt cap and escalation ru
 
 from __future__ import annotations
 
+import re
+from urllib.parse import unquote, urlsplit
 from pathlib import Path
 from typing import Iterator, Literal
 
@@ -15,6 +17,53 @@ from pydantic import BaseModel, Field
 from .contract import Category, InterventionRequest, Mode, ProposedPlan, SessionType
 
 PROCEDURES_DIR = Path(__file__).parent / "procedures"
+
+RESPONSE_LANGUAGE_INSTRUCTIONS = (
+    "Response language: English. Write every instruction, explanation, clarification, annotation, "
+    "spoken sentence, blocker explanation and final answer in English, even when the user's question "
+    "or the conversation history is in French or requests another response language. Preserve exact "
+    "UI labels, quotations, code and the user's original request when citing them; explain them in English. "
+    "Do not translate or rewrite the stored user question. This language rule does not authorize any action."
+)
+
+
+COACHING_ORIGINS = {
+    "h-company": {"hub.hcompany.ai", "platform.hcompany.ai"},
+    "cognition": {"app.devin.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"},
+}
+
+
+def coaching_page_allowed(software: str, url: str, *, native: bool = False,
+                          bundle_id: str | None = None, is_front: bool = True) -> bool:
+    """Fail closed before sending AX labels from sponsor pilots to the model."""
+    if native:
+        from .a11y import NATIVE_APPLICATIONS
+        if software != "cognition" or bundle_id not in NATIVE_APPLICATIONS or not is_front:
+            return False
+        # Native identity is explicit evidence of the app, not evidence of a web origin. Local Electron
+        # resource URLs may be observed but are never sent to the planner. Real web URLs keep origin rules.
+        if not url:
+            return True
+        try:
+            internal = urlsplit(url)
+            if internal.scheme in {"file", "vscode-file", "vscode-webview", "devin"}:
+                return not internal.username and not internal.password
+        except (TypeError, ValueError):
+            return False
+    allowed = COACHING_ORIGINS.get(software)
+    if allowed is None:
+        return True
+    try:
+        parsed = urlsplit(url)
+        if (parsed.scheme != "https" or parsed.hostname not in allowed or parsed.username or parsed.password
+                or parsed.port not in (None, 443)):
+            return False
+        path = unquote(parsed.path).lower()
+        restricted = r"(?:^|/)(?:auth|login|signin|sign-in|credentials|secrets|vaults?|api-keys?|tokens?|billing|payments?|security)(?:/|$)"
+        # Documentation may describe these features; account pages must never expose their values.
+        return parsed.hostname in {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"} or not re.search(restricted, path)
+    except (TypeError, ValueError):
+        return False
 
 
 class ProcedureParameter(BaseModel):
@@ -203,7 +252,8 @@ class BoundProcedure(BaseModel):
 
     @property
     def guide_instructions(self) -> str:
-        return GUIDE_INSTRUCTIONS + "\n\nReference procedure (what the user must end up doing):\n" + self.agent_instructions
+        return (GUIDE_INSTRUCTIONS + "\n\nReference procedure (what the user must end up doing):\n"
+                + self.agent_instructions + "\n\n" + RESPONSE_LANGUAGE_INSTRUCTIONS)
 
     def plan(self) -> ProposedPlan:
         p = self.procedure
@@ -279,7 +329,12 @@ Rules:
 - Work one step at a time. Look at the screen, then answer with exactly one step.
   `instruction`: one short line, max 12 words, imperative ("Click the CRM app icon").
   `why`: one or two sentences for a first-week user.
-  `target_x`/`target_y`: the pixel position of the control in the screenshot you are looking at.
+  `coordinate_system`: explicitly return "normalized_1000" whenever any target is present.
+  `target_x` = 1000 * horizontal position / full screenshot width;
+  `target_y` = 1000 * vertical position / full screenshot height. Both axes range from 0 to 1000,
+  with origin at the top-left of the FULL screenshot, including browser chrome. This applies to
+  every entry in `steps` too. Never return screenshot pixels, viewport pixels or physical Retina pixels.
+  If the control is not visible or the coordinates are uncertain, return null targets and explain in words.
 - If the expected software is not visible (another app or tab is in front), do NOT hunt for it: answer
   with target null and an instruction like "Bring the Odoo tab to the front", nothing else.
 - After each answer the user tells you they did the step (or could not). Look at the screen again before
@@ -292,6 +347,10 @@ Rules:
   `blocker` and set last=true, blocked=true.
 - If you are not sure what a menu or a field is for, or where a feature lives, call `lookup_docs` and
   put the answer in `why`, briefly. Say "I am not sure" rather than guessing.
+- The reference procedure's scope remains binding when you guide a HUMAN action. An action forbidden
+  by that procedure must not be performed indirectly by asking the user to do it. For a read-only
+  procedure, do not instruct the user to upload, create, change, delete, start or confirm a mutation.
+  Explain the relevant documentation instead and state that carrying it out is outside this procedure.
 """
 
 

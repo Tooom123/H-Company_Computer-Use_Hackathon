@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean } = {}) {
+async function mockPilot(page: Page, failFeedback = false, options: { longPlan?: boolean; deferReport?: boolean; rich?: boolean; restored?: 'resolved' | 'escalated'; quarantineStatus?: string } = {}) {
   await page.addInitScript(({ failFeedback, options }) => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     // This mock represents durable backend state, independent of a renderer reload.
@@ -9,14 +9,33 @@ async function mockPilot(page: Page, failFeedback = false, options: { longPlan?:
     const scenarios = [
       { id: '01', title: 'Lire le prix et le stock', prompt: 'Retrouve le gingembre et lis son prix et son stock.', procedure_id: 'odoo_inventory_read_product', requires_reference: false },
       { id: '02', title: 'Comparer les stocks', prompt: 'Quel produit a le moins de stock ?', procedure_id: 'odoo_inventory_compare_stock', requires_reference: false },
-    ];
+    ].map(card => options.rich ? { ...card, id: `R${card.id}` } : card);
+    if (options.restored && !snapshot) {
+      snapshot = { session_id: 'restored-episode', state: options.restored, restored_read_only: true,
+        simulated: true, report_ready: true, request: { goal: 'Lire les informations du premier scénario.' },
+        declared: { outcome: 'done', summary: 'Informations retrouvées.' },
+        verification: { satisfied: true, observed: 'Critères écran contrôlés par le moteur.' },
+        pilot: { scenario_id: scenarios[0].id, export_status: 'complete',
+          agent_review: { reviewer_type: 'ai', task_success_agent: 'partial', scope_compliance_agent: 'failure',
+            rationale: ['PRIVATE_REVIEW_DETAILS_MUST_NOT_RENDER'] },
+          ...(options.quarantineStatus !== undefined ? { quarantine: { status: options.quarantineStatus, reason: 'PRIVATE_QUARANTINE_DETAILS_MUST_NOT_RENDER' } } : {}) } };
+      localStorage.setItem('hcompanion.voice-pilot.v1', JSON.stringify({ session: 'restored-episode', scenario: scenarios[0].id }));
+      persist();
+    }
     Object.defineProperty(window, '__vpCalls', { value: calls });
     Object.defineProperty(window, '__vpReportReady', { value: () => { snapshot = { ...snapshot, report_ready: true }; persist(); } });
     Object.defineProperty(window, '__vpSetState', { value: (state: string, reportReady: boolean) => { snapshot = { ...snapshot, state, report_ready: reportReady }; persist(); } });
+    Object.defineProperty(window, '__vpSetReview', { value: (verdict: string) => {
+      const pilot = snapshot?.pilot as Record<string, unknown>;
+      snapshot = { ...snapshot, pilot: { ...pilot, agent_review: { ...(pilot.agent_review as Record<string, unknown>), reviewer_type: 'ai', task_success_agent: verdict } } };
+      persist();
+    } });
     Object.defineProperty(window, 'voicePilot', { value: {
       request: async (method: string, path: string, body?: Record<string, unknown>) => {
         calls.push({ method, path, body });
-        if (path === '/pilot/status') return { model: 'holo4-test', simulated: true, busy: false, transcription: { provider: 'test', ready: false } };
+        if (path === '/pilot/status') return { model: 'holo4-test', simulated: true, busy: false, transcription: { provider: 'test', ready: false },
+          ...(options.rich ? { engine_revision: 'b59ef01', support_revision: 'bd3b2ca',
+            environment: { id: 'odoo-rich-v2.1', label: 'Odoo enrichi · v2.1', entry_url: 'http://holo-rich.localhost:18091/odoo/crm', company: 'Boutique Démo', fixture_version: '2.1' } } : {}) };
         if (path === '/pilot/scenarios') return scenarios;
         if (path === '/pilot/episodes' && method === 'POST') {
           snapshot = { session_id: snapshot ? crypto.randomUUID() : 'test-episode', state: 'awaiting_approval', simulated: true, request: { goal: body?.goal }, report_ready: false,
@@ -70,6 +89,30 @@ test('requires approval and saves unknown human labels separately before unlocki
   await page.getByRole('button', { name: 'Préparer le scénario 02' }).click();
   await expect(page.getByRole('heading', { name: 'Comparer les stocks', exact: true })).toBeVisible();
   await expect(page.getByLabel('Votre demande · transcription à relire')).toHaveValue('');
+});
+
+test('selects the rich catalog first card and restores a later episode without returning to the first card', async ({ page }) => {
+  await mockPilot(page, false, { rich: true });
+  await page.goto('/#voice');
+  await expect(page.getByRole('button', { name: 'R01 Lire le prix et le stock' })).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByRole('heading', { name: 'Lire le prix et le stock', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Environnement du test')).toContainText('Odoo enrichi · v2.1');
+  await expect(page.getByLabel('Environnement du test')).toContainText('Moteur b59ef01');
+  await expect(page.getByText('http://holo-rich.localhost:18091/odoo/crm', { exact: true })).toBeVisible();
+  await expect(page.getByText('Lecture seule · CRM, achats, stock, projets et activités métier.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Les scénarios 05 à 10', { exact: false })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'R02 Comparer les stocks' }).click();
+  await page.getByLabel('Votre demande · transcription à relire').fill('Compare les stocks sans rien modifier.');
+  await page.getByRole('button', { name: 'Préparer le plan', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'R02 Comparer les stocks' })).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByRole('heading', { name: 'Comparer les stocks', exact: true })).toBeVisible();
+  await expect(page.getByText('Compare les stocks sans rien modifier.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+  const approvals = await page.evaluate(() => (window as unknown as { __vpCalls: { method: string }[] }).__vpCalls.filter(call => call.method === 'APPROVE'));
+  expect(approvals).toEqual([]);
 });
 
 test('a failed feedback write does not claim saved or unlock another scenario', async ({ page }) => {
@@ -170,3 +213,64 @@ test('retries a stopped restored episode without labels or automatic approval, b
   expect((await calls()).filter(call => call.method === 'APPROVE')).toHaveLength(1);
   expect((await calls()).filter(call => call.method === 'POST' && call.path.endsWith('/feedback'))).toEqual([]);
 });
+
+for (const { state, quarantineStatus } of [
+  { state: 'resolved', quarantineStatus: undefined },
+  { state: 'escalated', quarantineStatus: 'quarantined' },
+  { state: 'escalated', quarantineStatus: 'quarantined_pending_privacy_review' },
+  { state: 'escalated', quarantineStatus: '' },
+] as const) {
+  test(`keeps an AI review separate and retries a restored ${state} episode (${quarantineStatus === undefined ? 'no quarantine' : quarantineStatus || 'empty quarantine status'}) without losing a human draft`, async ({ page }) => {
+    const hasQuarantine = quarantineStatus !== undefined;
+    await mockPilot(page, false, { rich: true, restored: state, quarantineStatus });
+    await page.goto('/#voice');
+    await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Verdict IA : Réussite partielle');
+    await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Périmètre du parcours : Non respecté');
+    const quarantine = page.getByRole('alert', { name: 'Trace en quarantaine' });
+    if (hasQuarantine) {
+      await expect(quarantine).toHaveText('Trace en quarantaine — exclue de l’entraînement ; capture hors périmètre à revoir.');
+    } else {
+      await expect(quarantine).toHaveCount(0);
+    }
+    await expect(page.getByText('PRIVATE_QUARANTINE_DETAILS_MUST_NOT_RENDER', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('PRIVATE_REVIEW_DETAILS_MUST_NOT_RENDER', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Critères écran contrôlés par le moteur.', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('unknown');
+    await expect(page.getByLabel('L’aide était-elle utile ?')).toHaveValue('unknown');
+    await expect(page.getByLabel('J’autorise la réutilisation', { exact: false })).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Enregistrer mon retour', exact: true })).toHaveCount(0);
+
+    const comment = 'Brouillon personnel : la réponse manque de précision.';
+    await page.getByLabel('Votre retour · transcription à relire').fill(comment);
+    await page.getByLabel('Selon vous, la tâche est…').selectOption('partial');
+    await page.evaluate(() => (window as unknown as { __vpSetReview: (verdict: string) => void }).__vpSetReview('success'));
+    await expect(page.getByRole('region', { name: 'Revue IA' }).getByText('Verdict IA : Réussite', { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Revue IA' })).toContainText('Périmètre du parcours : Non respecté');
+    if (hasQuarantine) await expect(quarantine).toBeVisible();
+    await expect(page.getByLabel('Votre retour · transcription à relire')).toHaveValue(comment);
+    await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('partial');
+    await expect(page.getByLabel('L’aide était-elle utile ?')).toHaveValue('unknown');
+    await page.getByRole('button', { name: 'Conserver mon brouillon local' }).click();
+    await page.reload();
+    await expect(page.getByLabel('Votre retour · transcription à relire')).toHaveValue(comment);
+    await expect(page.getByLabel('Selon vous, la tâche est…')).toHaveValue('partial');
+
+    await page.getByRole('button', { name: 'Conserver cet essai et retenter' }).click();
+    await expect(page.getByRole('button', { name: 'R01 Lire le prix et le stock' })).toHaveAttribute('aria-current', 'step');
+    await expect(page.getByLabel('Votre demande · transcription à relire')).toHaveValue('');
+    await expect(quarantine).toHaveCount(0);
+    const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('hcompanion.voice-pilot.feedback-draft.v1:restored-episode') || '{}'));
+    expect(draft).toMatchObject({ comment, outcome: 'partial', useful: 'unknown', allowTraining: false });
+    const oldEpisode = await page.evaluate(() => JSON.parse(localStorage.getItem('vp-test-backend') || '{}'));
+    expect(oldEpisode.state).toBe(state);
+    expect(oldEpisode.pilot.feedback).toBeUndefined();
+    if (hasQuarantine) expect(oldEpisode.pilot.quarantine.status).toBe(quarantineStatus);
+    const writes = () => page.evaluate(() => (window as unknown as { __vpCalls: { method: string; path: string; body?: unknown }[] }).__vpCalls.filter(call => call.method !== 'GET'));
+    expect(await writes()).toEqual([]);
+
+    await page.getByLabel('Votre demande · transcription à relire').fill('Relis les informations du premier scénario.');
+    await page.getByRole('button', { name: 'Préparer le plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Approuver et observer Odoo' })).toBeVisible();
+    expect(await writes()).toEqual([expect.objectContaining({ method: 'POST', path: '/pilot/episodes', body: expect.objectContaining({ scenario_id: 'R01' }) })]);
+  });
+}

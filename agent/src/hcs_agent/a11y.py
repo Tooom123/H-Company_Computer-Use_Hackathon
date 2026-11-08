@@ -1,7 +1,7 @@
-"""Browser accessibility tree as the primary element finder.
+"""Browser or explicitly selected native accessibility tree as the primary element finder.
 
-All the software we support runs in Chrome, and Chrome exposes every element of the page through the macOS
-accessibility API: role, label, placeholder, value and the exact rectangle on screen. Reading it takes
+Chrome and the explicitly selected Devin Desktop application expose controls through the macOS
+accessibility API: role, label, placeholder and the exact rectangle on screen. Input values are never read. Reading it takes
 milliseconds and is pixel-exact, so it is the first thing we try when a guide step needs "the Log note button"
 or "the Opportunity's Name field". Holo (grounding.py) stays as the fallback for what the tree cannot name
 (icons without labels, canvas) and as the tie-breaker when several elements share a label.
@@ -13,12 +13,15 @@ Coordinates are screen points with a top-left origin (the same frame as pynput a
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import time
 from dataclasses import dataclass, field
 
 BROWSERS = ("Google Chrome", "Chromium", "Brave Browser", "Arc", "Microsoft Edge")
+# Explicit native selection, never inferred from a window title or an arbitrary app name.
+NATIVE_APPLICATIONS = {"com.exafunction.windsurf": "Devin Desktop"}
 
 # role words in a description -> accessibility roles that fit
 ROLE_HINTS: dict[str, tuple[str, ...]] = {
@@ -45,6 +48,7 @@ ROLE_HINTS: dict[str, tuple[str, ...]] = {
 }
 INTERACTIVE = ("AXButton", "AXLink", "AXTextField", "AXTextArea", "AXComboBox", "AXCheckBox", "AXRadioButton",
                "AXPopUpButton", "AXMenuItem", "AXTab", "AXSearchField", "AXMenuButton")
+INPUT_ROLES = frozenset({"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXSecureTextField"})
 STOPWORDS = {"the", "a", "an", "of", "in", "on", "at", "to", "for", "with", "and", "or", "its", "this", "that",
              "top", "bottom", "left", "right", "under", "below", "above", "next", "between", "near", "inside",
              "page", "panel", "form", "view", "bar", "area", "section", "list", "dialog", "row", "line", "second",
@@ -82,6 +86,8 @@ class PageInfo:
     viewport: tuple[float, float, float, float] | None = None  # web area frame (screen points)
     elements: list[Candidate] = field(default_factory=list)
     walk_s: float = 0.0
+    native: bool = False
+    bundle_id: str | None = None
 
 
 def available() -> bool:
@@ -154,15 +160,73 @@ def _browser_window():
     return None
 
 
+def native_target() -> str:
+    """An explicitly configured target; an unknown value must still disable browser fallback."""
+    return os.environ.get("HCS_AX_NATIVE_BUNDLE_ID", "").strip()
+
+
+def _native_window(bundle: str):
+    """Only the focused window of the exact foreground application, without enumerating other apps."""
+    if bundle not in NATIVE_APPLICATIONS:
+        return None
+    import ApplicationServices as AS
+    from AppKit import NSWorkspace
+
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    if front is None or front.bundleIdentifier() != bundle:
+        return None
+    pid = front.processIdentifier()
+    app = AS.AXUIElementCreateApplication(pid)
+    for flag in ("AXManualAccessibility", "AXEnhancedUserInterface"):
+        AS.AXUIElementSetAttributeValue(app, flag, True)
+    win = _attr(app, "AXFocusedWindow")
+    return (win, NATIVE_APPLICATIONS[bundle], pid) if win is not None else None
+
+
+def _native_page(bundle: str) -> PageInfo:
+    unavailable = PageInfo(app=NATIVE_APPLICATIONS.get(bundle, "Native application"), title="", url="",
+                           is_front=False, native=True, bundle_id=bundle)
+    selected = _native_window(bundle)
+    if selected is None:
+        return unavailable
+    win, name, pid = selected
+    started = time.monotonic()
+    web = _web_area(win)
+    # AXURL is an observed URL, not a conversion of a native identity to a guessed website.
+    url = str(_attr(web, "AXURL") or "") if web is not None else ""
+    # Electron's native menus can be siblings of AXWebArea in the focused window.
+    # Walking only the web area misses an opened popup and keeps suggesting its trigger.
+    # Stay inside this exact focused window; never enumerate application/background windows.
+    viewport = _frame(win) or (_frame(web) if web is not None else None)
+    elements = [e for e in _walk(win) if e.role not in {"AXWindow", "AXWebArea"}]
+    if viewport:
+        x, y, w, h = viewport
+        elements = [e for e in elements if e.frame[0] + e.frame[2] > x and e.frame[0] < x + w
+                    and e.frame[1] + e.frame[3] > y and e.frame[1] < y + h]
+    # A focus/window switch during collection invalidates the entire observation.
+    again = _native_window(bundle)
+    if again is None or again[2] != pid:
+        return unavailable
+    import ApplicationServices as AS
+    same_window = getattr(AS, "CFEqual", lambda a, b: a is b)(win, again[0])
+    if not same_window:
+        return unavailable
+    return PageInfo(app=name, title=_text(_attr(win, "AXTitle")), url=url, is_front=True,
+                    native=True, bundle_id=bundle, viewport=viewport, elements=elements,
+                    walk_s=time.monotonic() - started)
+
+
 def _web_area(win):
     stack = [win]
     seen = 0
     while stack and seen < 400:
         el = stack.pop()
         seen += 1
-        if _attr(el, "AXRole") == "AXWebArea":
+        role = _attr(el, "AXRole")
+        if role == "AXWebArea":
             return el
-        stack.extend(_attr(el, "AXChildren") or [])
+        if role not in INPUT_ROLES:
+            stack.extend(_attr(el, "AXChildren") or [])
     return None
 
 
@@ -170,7 +234,7 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
     """Every element with a name and an on-screen frame. One IPC per node (multiple attributes at once)."""
     import ApplicationServices as AS
 
-    attrs = ["AXRole", "AXTitle", "AXDescription", "AXValue", "AXPlaceholderValue", "AXChildren", "AXFrame"]
+    attrs = ["AXRole", "AXTitle", "AXDescription", "AXPlaceholderValue", "AXChildren", "AXFrame"]
     out: list[Candidate] = []
     stack = [web]
     count = 0
@@ -180,9 +244,11 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
         err, vals = AS.AXUIElementCopyMultipleAttributeValues(el, attrs, 0, None)
         if err != 0 or vals is None:
             continue
-        role, title, desc, value, placeholder, children, frame_v = vals
+        role, title, desc, placeholder, children, frame_v = vals
         role = role if isinstance(role, str) else ""
-        if children is not None and not isinstance(children, (str, int, float)):
+        # Electron editors expose typed values as AXStaticText descendants as well as AXValue.
+        # Preserve only the input's own label/placeholder; never walk into its content subtree.
+        if role not in INPUT_ROLES and children is not None and not isinstance(children, (str, int, float)):
             try:
                 stack.extend(list(children))  # NSArray proxy, not a Python list
             except TypeError:
@@ -191,7 +257,7 @@ def _walk(web, max_nodes: int = 6000) -> list[Candidate]:
         # Page text (static text, headings, link/button captions) may name an element; what the user typed
         # into a field never does: field values are not read (they can hold personal data or secrets).
         if not name and role in ("AXStaticText", "AXHeading", "AXLink", "AXButton"):
-            name = _text(value) if isinstance(value, str) else ""
+            name = _text(_attr(el, "AXValue"))
         if not name or len(name) > 120:
             continue
         frame = None
@@ -255,6 +321,8 @@ def page() -> PageInfo | None:
     """What the frontmost browser shows: app, window title, URL and the named elements with their frames."""
     if not available():
         return None
+    if bundle := native_target():
+        return _native_page(bundle)
     t0 = time.time()
     bw = _browser_window()
     if bw is None:
@@ -380,7 +448,7 @@ def match(description: str, elements: list[Candidate]) -> list[Candidate]:
 def find(description: str, info: PageInfo | None = None) -> tuple[Candidate | None, list[Candidate], PageInfo | None]:
     """Best candidate for the description on the current page, plus the runner-ups (for tie-breaking)."""
     info = info or page()
-    if info is None or not info.elements:
+    if info is None or not info.is_front or not info.elements:
         return None, [], info
     ranked = match(description, info.elements)
     if not ranked:
@@ -414,12 +482,17 @@ def screen_check(expected: str, software: str = "", info: PageInfo | None = None
     if not info.is_front:
         return False, f"{where} — not in front"
     sw = (software or "").lower()
-    hay = f"{info.url} {info.title}".lower()
+    if getattr(info, "native", False):
+        if getattr(info, "bundle_id", None) not in NATIVE_APPLICATIONS or sw not in ("", "cognition", "devin"):
+            return False, where
+        hay = f"{info.app} {info.title} cognition devin".lower()
+    else:
+        hay = f"{info.url} {info.title}".lower()
     if sw and sw not in hay and sw.rstrip("y") not in hay:  # "hcompany" vs "hcompany.ai", "odoo" vs "odoo.com"
         return False, where
     words = [w for w in re.findall(r"\b[A-Z][\w']+\b", expected) if w.lower() not in {sw, "crm", "the", "a", "h"}]
     if not words:
-        return True, where
+        return None, where  # product identity alone does not prove the expected page or outcome
     text = page_text(info).lower()
     hits = sum(1 for w in words if w.lower() in text)
     if hits >= max(1, round(0.5 * len(words))):

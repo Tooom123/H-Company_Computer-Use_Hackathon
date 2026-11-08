@@ -38,6 +38,11 @@ export function installVoicePilot({ app, ipcMain, globalShortcut, systemPreferen
   }
   function checkId(value) { if (typeof value !== 'string' || !ID.test(value)) throw new Error('Session invalide.'); return value; }
 
+  // Do not expose approval IPC unless this instance owns the emergency shortcut.
+  // A second window may otherwise approve a run before installation fails.
+  const registered = globalShortcut.register(VOICE_STOP_SHORTCUT, () => { void stop().catch(() => show()); });
+  if (!registered) throw new Error('Le raccourci d’arrêt ⌘⇧. est indisponible. Fermez les autres pilotes avant de démarrer.');
+
   ipcMain.handle('voice:request', (event, method, route, body) => {
     authorize(event);
     if (!allowedPilotRequest(method, route) || (body && JSON.stringify(body).length > 40_000)) throw new Error('Demande non autorisée.');
@@ -84,8 +89,6 @@ export function installVoicePilot({ app, ipcMain, globalShortcut, systemPreferen
     return result;
   }
   ipcMain.handle('voice:stop', (event, id) => { authorize(event); return stop(id); });
-  const registered = globalShortcut.register(VOICE_STOP_SHORTCUT, () => { void stop().catch(() => show()); });
-  if (!registered) throw new Error('Le raccourci d’arrêt ⌘⇧. est indisponible. Fermez les autres pilotes avant de démarrer.');
 
   const timer = setInterval(async () => {
     if (!active || approving || polling) return;

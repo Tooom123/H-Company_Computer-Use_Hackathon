@@ -8,17 +8,25 @@ export type Scenario = {
 export type AudioTranscript = { audio_id: string; transcript: string; provider: string };
 export type PilotStatus = {
   model: string; simulated: boolean; busy: boolean;
+  environment?: { id: string; label: string; entry_url: string; company: string; fixture_version: string };
+  engine_revision?: string; support_revision?: string;
   transcription: { provider: string; ready: boolean; message?: string };
 };
 export type PilotPlan = { objective?: string; explanation?: string; allowed_actions?: string[]; forbidden_actions?: string[]; planned_changes?: string[] };
+export type AgentReview = {
+  reviewer_type: 'ai'; task_success_agent: 'success' | 'partial' | 'failure' | 'unknown';
+  scope_compliance_agent?: 'success' | 'partial' | 'failure' | 'unknown';
+};
+export type TraceQuarantine = { status: string; reason: string };
 export type PilotSnapshot = {
   session_id: string; state: string; simulated: boolean; plan?: PilotPlan;
+  restored_read_only?: boolean;
   request?: { goal?: string; procedure_id?: string };
   declared?: { outcome?: string; summary?: string; blocker?: string | null };
   verification?: { performed?: boolean; satisfied?: boolean | null; observed?: string; checks?: Record<string, boolean> };
   steps?: { kind?: string; message?: string; description?: string }[];
   error?: string | null; report_ready?: boolean; report?: { timings?: { approved_at?: string; finished_at?: string }; feedback?: unknown };
-  pilot?: { scenario_id?: string; workflow_id?: string; run_reference?: string; feedback?: unknown; export_status?: unknown };
+  pilot?: { scenario_id?: string; workflow_id?: string; run_reference?: string; feedback?: unknown; export_status?: unknown; agent_review?: AgentReview; quarantine?: TraceQuarantine };
 };
 export interface VoicePilotAPI {
   request<T = unknown>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T>;
@@ -39,6 +47,12 @@ export function stateLabel(state: string): string {
 }
 export function spokenPrompt(prompt: string, reference: string): string {
   return prompt.replaceAll('REFERENCE_DU_PASSAGE', reference.trim() || 'la référence de notre passage');
+}
+export function agentVerdictLabel(verdict?: string): string {
+  return ({ success: 'Réussite', partial: 'Réussite partielle', failure: 'Échec', unknown: 'Non évaluée' } as Record<string, string>)[verdict || ''] || 'Non évaluée';
+}
+export function scopeVerdictLabel(verdict: string): string {
+  return ({ success: 'Respecté', partial: 'Partiellement respecté', failure: 'Non respecté', unknown: 'Non évalué' } as Record<string, string>)[verdict] || 'Non évalué';
 }
 export function elapsedSeconds(snapshot: PilotSnapshot): number | null {
   const timings = snapshot.report?.timings;

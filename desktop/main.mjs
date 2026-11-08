@@ -3,7 +3,8 @@
 // It talks to the running agent (`hcs-agent talk`) on 127.0.0.1:8768 and to the support backend on :8766.
 // No key ever lives here: the agent and the backend keep them; the renderer only sees JSON via IPC.
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } from "electron";
+import { createMenuBar } from "./menu-bar.mjs";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,15 +13,19 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
-const BACKEND = process.env.HCS_BACKEND_URL || "http://127.0.0.1:8766";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|voice|voice\/test|ptt|rate)$/;
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|ptt|rate|feedback|feedback\/dictate)$/;
 let mainWin = null;
+let menuBar = null;
+let quitting = false;
+const agentCache = new Map();
 
 const smoke = process.argv.includes("--smoke");
 // A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
 // preferences (voice, key) when it clicks around.
 if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
+const ownsInstance = smoke || app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
 const section = (process.argv.find((a) => a.startsWith("--section=")) || "").split("=")[1] || "home";
 
 async function call(base, method, p, body, headers = {}) {
@@ -38,17 +43,31 @@ async function call(base, method, p, body, headers = {}) {
   }
 }
 
-ipcMain.handle("agent", (_e, method, p, body) => {
+ipcMain.handle("agent", async (_e, method, p, body) => {
   if (!["GET", "POST"].includes(method) || typeof p !== "string" || !AGENT_PATHS.test(p)) {
     return { ok: false, status: 400, data: { error: "not allowed" } };
   }
-  // The window's place on screen: the agent ignores clicks in it (steering the assistant is not doing the step).
+  if (!smoke && method === "GET" && mainWin && !mainWin.isDestroyed()
+      && (!mainWin.isVisible() || mainWin.isMinimized())) {
+    // Renderer timers may keep firing while hidden. Do not send their presence heartbeat to the coach.
+    return agentCache.get(p) ?? { ok: false, status: 0, hidden: true, data: null };
+  }
+  // Return to the software before H observes it, rather than our confirmation panel.
+  const win = method === "POST" && p === "/next" ? BrowserWindow.fromWebContents(_e.sender) : null;
+  if (win) {
+    win.hide();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  // Compute this after hiding the confirmation window, so its old rectangle cannot consume a click.
   const headers = { "X-HCS-App": "1" };
   if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized()) {
     const b = mainWin.getBounds();
     headers["X-HCS-App-Bounds"] = `${b.x},${b.y},${b.width},${b.height}`;
   }
-  return call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, headers);
+  const result = await call(AGENT, method, p, method === "POST" ? body ?? {} : undefined, headers);
+  if (method === "GET") agentCache.set(p, result);
+  if (win && !result.ok && !win.isDestroyed()) win.show();
+  return result;
 });
 
 // Vision Lab (Édouard): started as its own process from app/, stopped with this app.
@@ -113,6 +132,13 @@ function createWindow() {
     },
   });
   mainWin = win;
+  win.on("close", (event) => {
+    if (menuBar && !quitting && !smoke) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+  win.on("closed", () => { if (mainWin === win) mainWin = null; });
   win.setMenuBarVisibility(false);
   // Like Matteo's overlay: invisible to screen capture, so H never sees (or clicks) the app and the guide's
   // screen watcher does not mistake the app's live updates for the user acting. HCS_APP_CAPTURABLE=1 to record it.
@@ -156,8 +182,65 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
-app.on("window-all-closed", () => app.quit()); // closing the window gives the Magnet back to the screen
+function showMainWindow() {
+  const win = mainWin;
+  if (!win || win.isDestroyed()) createWindow();
+  else {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+}
+
+function startDevinRuntime() {
+  return new Promise((resolve) => {
+    const child = spawn(process.env.HCS_PILOT_PYTHON,
+      [path.resolve(here, "../scripts/start-devin-companion.py"), "--backend-only"],
+      { cwd: path.resolve(here, ".."), env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({ ok: false, message: "Coach startup timed out. Open the launch shortcut to inspect its status." });
+    }, 60000);
+    const append = (chunk) => { output = (output + chunk.toString()).slice(-3000); };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
+    child.on("error", () => finish({ ok: false, message: "The configured Python launcher could not be opened." }));
+    child.on("close", (code) => finish({ ok: code === 0, message: code === 0 ? "" : output.trim() || "The coach exited before it was ready." }));
+  });
+}
+
+if (ownsInstance) {
+  app.whenReady().then(() => {
+    if (process.platform === "darwin" && !smoke) {
+      if (app.dock) app.dock.setIcon(path.join(here, "assets", "companion.png"));
+      try {
+        const canStart = process.env.HCS_PILOT_KIND === "devin-native"
+          && path.isAbsolute(process.env.HCS_PILOT_PYTHON || "")
+          && fs.existsSync(process.env.HCS_PILOT_PYTHON);
+        menuBar = createMenuBar({ Tray, Menu, nativeImage, dialog,
+          iconPath: path.join(here, "assets", "companionTemplate.png"), showWindow: showMainWindow,
+          stopTask: () => call(AGENT, "POST", "/stop", {}, { "X-HCS-App": "1" }),
+          startRuntime: canStart ? startDevinRuntime : null, quit: () => app.quit() });
+      } catch (error) {
+        console.error("Could not create H Companion menu bar:", error.message);
+      }
+    }
+    createWindow();
+  });
+  app.on("activate", showMainWindow);
+  app.on("second-instance", () => app.whenReady().then(showMainWindow));
+}
+app.on("window-all-closed", () => { if (!menuBar || smoke) app.quit(); });
 app.on("before-quit", () => {
+  quitting = true;
+  if (menuBar) { menuBar.destroy(); menuBar = null; }
   if (vision && vision.exitCode === null) vision.kill();
 });

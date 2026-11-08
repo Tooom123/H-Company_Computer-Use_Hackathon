@@ -58,15 +58,30 @@ class Recorder:
                     pass
 
         self._stream = self._sd.InputStream(samplerate=self.sample_rate, channels=1, dtype="int16", callback=cb,
-                                            blocksize=int(self.sample_rate * 0.1))  # 100 ms chunks
-        self._stream.start()
+                                             blocksize=int(self.sample_rate * 0.1))
+        try:
+            self._stream.start()
+        except Exception:
+            self.cancel()
+            raise
+
+    def cancel(self) -> None:
+        """Release the microphone without writing or transcribing unfinished audio."""
+        stream, self._stream = self._stream, None
+        try:
+            if stream is not None:
+                stream.close()
+        finally:
+            self._chunks = []
 
     def stop(self) -> str | None:
         if self._stream is None:
             return None
-        self._stream.stop()
-        self._stream.close()
-        self._stream = None
+        stream, self._stream = self._stream, None
+        try:
+            stream.stop()
+        finally:
+            stream.close()
         if not self._chunks:
             return None
         audio = np.concatenate(self._chunks)
@@ -82,6 +97,13 @@ class Recorder:
 
 
 # --------------------------------------------------------------------------- transcription
+
+
+def _language_config(language: str) -> dict:
+    """Allow explicit French/English code-switching without translating the transcript."""
+    if language == "fr-en":
+        return {"languages": ["fr", "en"], "code_switching": True}
+    return {"languages": [language], "code_switching": False}
 
 
 class LiveTranscriber:
@@ -136,7 +158,7 @@ class LiveTranscriber:
             body = {
                 "encoding": "wav/pcm", "sample_rate": self.sample_rate, "bit_depth": 16, "channels": 1,
                 "model": "solaria-1",
-                "language_config": {"languages": [self.language], "code_switching": False},
+                "language_config": _language_config(self.language),
                 "messages_config": {"receive_partial_transcripts": True, "receive_final_transcripts": True,
                                     "receive_post_processing_events": False, "receive_acknowledgments": False,
                                     "receive_lifecycle_events": False},
@@ -251,7 +273,7 @@ class Transcriber:
         self.language = language or os.environ.get("HCS_VOICE_LANGUAGE", "fr")
 
     def transcribe(self, wav_path: str, vocabulary: list[str] | None = None) -> str:
-        options: dict = {"model": "solaria-3", "language_config": {"languages": [self.language]}}
+        options: dict = {"model": "solaria-3", "language_config": _language_config(self.language)}
         if vocabulary:
             options["custom_vocabulary"] = True
             # Keep the bias gentle: at high intensity Gladia replaces ordinary words with vocabulary terms
@@ -501,32 +523,74 @@ class PushToTalk:
         self._live: LiveTranscriber | None = None
         self.use_live = os.environ.get("HCS_STT_LIVE", "1").lower() not in {"0", "false", "no"}
         self._recording = False
+        self._commands: "queue.Queue[str]" = queue.Queue()
+        self._worker: threading.Thread | None = None
 
     def _on_event(self, event: str, payload) -> None:
         if self.paused:
             return
         if event == "combo_down" or (event == "key_down" and self._hub.plain_key_matches(payload)):
-            self._begin()
+            self._commands.put("begin")
         elif event == "combo_up" or (event == "key_up" and self._hub.plain_key_matches(payload)):
-            self._end()
+            self._commands.put("end")
+
+    def _run_commands(self) -> None:
+        # Microphone permission/device startup can block. Never do it in the macOS event tap:
+        # the release event must remain observable, even while start() is still opening the device.
+        while True:
+            command = self._commands.get()
+            try:
+                if command == "stop":
+                    self._recording = False
+                    self._recorder.cancel()
+                    if self._live is not None:
+                        self._live.cancel()
+                        self._live = None
+                    return
+                if command == "begin":
+                    self._begin()
+                elif command == "end":
+                    self._end()
+            finally:
+                self._commands.task_done()
+
+    def _recording_error(self, exc: Exception) -> None:
+        self._recording = False
+        if self._live is not None:
+            self._live.cancel()
+            self._live = None
+        try:
+            self._recorder.cancel()
+        except Exception:
+            pass
+        self.on_state(f"error: microphone {type(exc).__name__}: {str(exc)[:180]}")
 
     def _begin(self) -> None:
         if not self._recording:
+            try:
+                self.on_state("starting")
+                if self.use_live:
+                    self._live = LiveTranscriber()
+                    self._live.on_partial = lambda t: self.on_state(f"partial: {t}")
+                    self._live.open(self.vocabulary)
+                    self._recorder.on_chunk = self._live.feed
+                else:
+                    self._recorder.on_chunk = None
+                self._recorder.start()
+            except Exception as exc:
+                self._recording_error(exc)
+                return
             self._recording = True
             self.on_state("recording")
-            if self.use_live:
-                self._live = LiveTranscriber()
-                self._live.on_partial = lambda t: self.on_state(f"partial: {t}")  # words appear as they are said
-                self._live.open(self.vocabulary)  # session + socket come up while the user starts talking
-                self._recorder.on_chunk = self._live.feed
-            else:
-                self._recorder.on_chunk = None
-            self._recorder.start()
 
     def _end(self) -> None:
         if self._recording:
             self._recording = False
-            path = self._recorder.stop()
+            try:
+                path = self._recorder.stop()
+            except Exception as exc:
+                self._recording_error(exc)
+                return
             live, self._live = self._live, None
             if not path:
                 if live:
@@ -563,10 +627,14 @@ class PushToTalk:
         self._hub.set_combo(key_name)
 
     def start(self) -> None:
+        if self._worker is None or not self._worker.is_alive():
+            self._worker = threading.Thread(target=self._run_commands, name="push-to-talk-audio", daemon=True)
+            self._worker.start()
         self._hub.subscribe(self._on_event)
 
     def stop(self) -> None:
         self._hub.unsubscribe(self._on_event)
+        self._commands.put("stop")
 
     def pause(self) -> None:
         self.paused = True

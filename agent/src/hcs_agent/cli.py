@@ -16,12 +16,14 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from pathlib import Path
 
 from .backend import make_backend
 from .contract import AgentEvent, ApproveCommand, InterventionRequest, Mode, NextCommand, State, StopCommand
 from .procedures import ProcedureRegistry
 from .runner import Intervention
+from .desktop_feedback import DesktopFeedback, RunJournal
 
 
 _LAST_LOOKUP_AT = 0.0
@@ -88,12 +90,17 @@ def _prefetch_voice(request: InterventionRequest) -> None:
 
 
 _CONTROL: dict = {"server": None, "command": None, "backend": None, "since": None}
-_TEST_SENTENCE = "Hi, I'm your H Companion. Hold Command H and tell me what you need."
+_FEEDBACK = DesktopFeedback()
+_RUN_FINISHED_HOOK = None  # optional launcher callback(directory: Path, report: dict); no automatic H calls
+_GUIDE_REPLY_LOCK = threading.Lock()
+_TEST_SENTENCE = "Hello, I am H Companion. I can now read the guidance aloud."
 
 
 def _set_autonomy(level: int) -> None:
     """One place for every source (Magnet click, desktop app): default for next tasks + the running one."""
     level = max(0, min(2, int(level)))
+    if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1":
+        level = 0
     _MAGNET["level"] = level
     if _MAGNET.get("widget") is not None:
         _MAGNET["widget"].set_level(level)
@@ -130,26 +137,81 @@ def _control_status() -> dict:
     backend = _CONTROL.get("backend")
     return {
         "agent": {"command": _CONTROL["command"], "pid": os.getpid(), "since": _CONTROL["since"],
-                  "simulated": bool(getattr(backend, "simulated", False))},
+                  "simulated": bool(getattr(backend, "simulated", False)),
+                  "observe_only": os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1"},
         "autonomy": _MAGNET["level"],
         "voice": {"state": _VOICE.get("state"), "last_text": _VOICE.get("last_text"),
                   "ptt_key": getattr(ptt, "key_name", None)},
         "speech": {"available": sp is not None, "enabled": bool(sp is not None and not sp.muted),
-                   "voice": os.environ.get("HCS_TTS_VOICE") or "EXAVITQu4vr4xnSDxMaL",
-                   "speed": float(os.environ.get("HCS_TTS_SPEED") or 1.0),
+                   "provider": getattr(sp, "provider", None),
+                   "voice": getattr(sp, "voice", None) or os.environ.get("HCS_TTS_VOICE") or "EXAVITQu4vr4xnSDxMaL",
+                   "speed": getattr(sp, "speed", None) or float(os.environ.get("HCS_TTS_SPEED") or 1.0),
                    "speaking": bool(sp is not None and sp.speaking)},
         "current": cur,
     }
 
 
-def _control_stop() -> bool:
+def _control_stop(reason: str = "Stop pressed in the desktop app", *, intervention=None) -> bool:
     _hush()
-    it = _MAGNET["current"]
+    it = intervention if intervention is not None else _MAGNET["current"]
     if it is None or it.state.terminal:
         return False
-    print("\n>> stop requested from the desktop app", flush=True)
-    it.stop(StopCommand(reason="Stop pressed in the desktop app"))
+    if it.state is State.stopping:
+        return True  # already accepted; preserve the original stop timestamp
+    print("\n>> stop requested by the user", flush=True)
+    it.stop(StopCommand(reason=reason))
     return True
+
+
+
+def _is_stop_utterance(text: str) -> bool:
+    """Exact local commands only; a question mentioning Stop remains an ordinary request."""
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    normalized = " ".join(folded.strip(" \t\r\n.!?…").split())
+    return normalized in {"stop", "stop task", "stop the task", "arrete", "arrete la tache"}
+
+
+def _consume_talk_control(text: str, ov=None) -> bool:
+    """An explicitly armed feedback dictation wins, including a comment consisting of 'stop'."""
+    if _FEEDBACK.consume_transcript(text):
+        _flash(ov, "Feedback transcribed. Review it and choose your labels in the app.", "question")
+        return True
+    if not _is_stop_utterance(text):
+        return False
+    accepted = _control_stop(reason="Exact spoken Stop command")
+    message = "Stop requested. No new task started." if accepted else "Stop received. No new task started."
+    print(f"  {message}", flush=True)
+    if ov is not None:
+        ov.hide()
+        ov.badge(message)
+    return True
+
+
+def _submit_guidance(it, step_index: int, *, done: bool, note: str) -> bool:
+    """Accept one observation/confirmation for this exact step; never label it successful."""
+    with _GUIDE_REPLY_LOCK:
+        if (it is None or it.state is not State.awaiting_user or not it.guidance
+                or it.guidance[-1].index != step_index
+                or getattr(it, "_user_event", None) is not None and it._user_event.is_set()):
+            return False
+        _hush()
+        try:
+            it.next(NextCommand(done=done, note=note))
+        except RuntimeError:  # Stop or a worker state change won the race.
+            return False
+        return True
+
+
+def _control_next(session_id: str, step_index: int, done: bool) -> bool:
+    """Explicit desktop response, bound to the currently shown intervention and step."""
+    it = _MAGNET.get("current")
+    if (it is None or it.request.session_id != session_id or type(step_index) is not int
+            or type(done) is not bool):
+        return False
+    report = "the step was attempted" if done else "being blocked on the step"
+    return _submit_guidance(it, step_index, done=done,
+                           note=f"User explicitly reported {report} in desktop app; result not verified.")
 
 
 def _control_voice(opts: dict) -> dict:
@@ -223,8 +285,8 @@ def _start_control(runs_dir: Path, command: str, backend) -> None:
     _CONTROL.update(command=command, backend=backend, since=time.strftime("%Y-%m-%dT%H:%M:%S"))
     _speaker()  # the app's Voice page can set and test the voice even before the first note is shown
     ctl = Controller(runs_dir, status=_control_status, set_autonomy=_set_autonomy, stop=_control_stop,
-                     set_voice=_control_voice, test_voice=_control_test_voice, set_ptt_key=_control_ptt,
-                     on_app_presence=_app_presence)
+                     set_voice=_control_voice, test_voice=_control_test_voice, set_ptt_key=_control_ptt, on_app_presence=_app_presence,
+                     feedback=_FEEDBACK, next_step=_control_next)
     try:
         port = int(os.environ.get("HCS_CONTROL_PORT", DEFAULT_PORT))
         _CONTROL["server"] = ControlServer(ctl, port).start()
@@ -238,10 +300,15 @@ def _new_request_pending() -> bool:
     return ptt is not None and not ptt.transcripts.empty()
 
 
-def _ensure_magnet():
+def _ensure_magnet(ov=None):
     """Bottom-left autonomy slider; clicks change the running intervention and the default for the next ones."""
-    if _MAGNET["widget"] is not None or sys.platform != "darwin":
+    if _MAGNET["widget"] is not None:
+        if ov is not None:
+            _MAGNET["widget"].on_compact_changed = ov.set_compact
+            ov.set_compact(_MAGNET["widget"].compact)
         return _MAGNET["widget"]
+    if sys.platform != "darwin":
+        return None
     try:
         from .overlay import AUTONOMY_LABELS, MagnetWidget
 
@@ -249,7 +316,9 @@ def _ensure_magnet():
             print(f"\n  [magnet] {AUTONOMY_LABELS[level]}", flush=True)
             _set_autonomy(level)
 
-        _MAGNET["widget"] = MagnetWidget(_MAGNET["level"], on_change)
+        _MAGNET["widget"] = MagnetWidget(_MAGNET["level"], on_change,
+                                         on_compact_changed=ov.set_compact if ov is not None else None,
+                                         shortcut=os.environ.get("HCS_PTT_KEY", "ctrl+shift+h"))
         srv = _CONTROL.get("server")
         if srv is not None and srv.ctl.app_present:
             _MAGNET["widget"].hide()  # the desktop app is already open and holds the setting
@@ -321,18 +390,21 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
              overlay: bool = True, ov=None) -> int:
     """Run one intervention from the terminal: plan, approval, execution, report."""
     # The Magnet is the authority: 0 = show only, 1 = guide + takeover when stuck, 2 = the agent does it.
-    request.autonomy = _MAGNET["level"]
+    request.autonomy = 0 if os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1" else _MAGNET["level"]
     request.mode = Mode.act if request.autonomy >= 2 else Mode.guide
-    it = Intervention(request, backend, ProcedureRegistry(), _print_event, runs_dir)
+    journal = RunJournal(runs_dir, request, _print_event, simulated=backend.simulated)
+    it = Intervention(request, backend, ProcedureRegistry(), journal, runs_dir)
+    _FEEDBACK.register(it)
     _MAGNET["current"] = it
     if ov is not None:
-        _ensure_magnet()
+        _ensure_magnet(ov)
     print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, "
           f"mode: {request.mode.value}, autonomy: {request.autonomy})")
     if ov is not None:
         _prefetch_voice(request)
     it.start()
     if it.state.terminal:
+        _notify_run_finished(it)
         return 1
     if auto_approve:
         print(">> auto-approving (--yes)")
@@ -343,6 +415,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         if answer != "y":
             it.approve(ApproveCommand(approved=False))
             it.wait()
+            _notify_run_finished(it)
             return 2
     it.approve(ApproveCommand(approved=True, scope_note=scope_note))
 
@@ -370,6 +443,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
         it.uplink.flush(10)
         print(f"support backend: {it.uplink.sent} sent, {it.uplink.failed} failed ({it.uplink.url})")
     if it.report:
+        _notify_run_finished(it)
         print(f"\nreport: {it.runs_dir / 'report.json'}")
         print(json.dumps(it.report.to_support_summary(), indent=2))
         if it.report.timings.stop_latency_s is not None:
@@ -378,6 +452,40 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
             _show_outcome(ov, it)
         return 0 if it.report.status.value == "resolved" else 3
     return 1
+
+
+def _notify_run_finished(it) -> None:
+    """Allow a private launcher to export completed H archives without delaying the desktop UI."""
+    callback = _RUN_FINISHED_HOOK
+    if callback is None or it.report is None:
+        return
+    report = it.report.model_dump(mode="json")
+    def call():
+        try:
+            callback(it.runs_dir, report)
+        except Exception:  # an exporter failure must never relaunch or corrupt the intervention
+            print("(run archive export failed; local report and events retained)", flush=True)
+    threading.Thread(target=call, name=f"run-export-{it.request.session_id}", daemon=True).start()
+
+
+_COACHING_SOFTWARE = {
+    "hcompany": ("h-company", "hcompany_general_guide", ["H Company", "Holo", "H Companion"]),
+    "cognition": ("cognition", "cognition_general_guide", ["Cognition", "Devin", "H Companion"]),
+    "devin": ("cognition", "cognition_general_guide", ["Cognition", "Devin", "H Companion"]),
+}
+
+
+def _coaching_request(text: str, software: str, context: str = "") -> InterventionRequest:
+    """Keep free-form questions verbatim; never route a sponsor question into an Odoo task."""
+    if not text.strip():
+        raise ValueError("Please say a question")
+    site, procedure, _ = _COACHING_SOFTWARE[software]
+    return InterventionRequest(software=site, goal=text, procedure_id=procedure,
+                               parameters={"question": text, "context": context}, mode=Mode.guide, autonomy=0)
+
+
+def _hcompany_request(text: str, context: str = "") -> InterventionRequest:
+    return _coaching_request(text, "hcompany", context)
 
 
 def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
@@ -433,7 +541,7 @@ def _answer_from_docs(ov, backend, question: str, seconds: float = 9.0) -> bool:
         ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
     except KeyboardInterrupt:
         ov.hide()
-    ov.badge("⌘H: new request")
+    ov.badge(f"{_key_label(getattr(_VOICE.get('ptt'), 'key_name', None))}: new request")
     return True
 
 
@@ -461,7 +569,7 @@ def _point_at(ov, backend, element: str, seconds: float = 6.0) -> bool:
         ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
     except KeyboardInterrupt:
         ov.hide()
-    ov.badge("⌘H: new request")
+    ov.badge(f"{_key_label(getattr(_VOICE.get('ptt'), 'key_name', None))}: new request")
     return True
 
 
@@ -500,12 +608,15 @@ def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: flo
     ov.show_scene(Scene(text=text, why=why, doodle=doodle))
     t0 = time.time()
     ov.run_until(lambda: time.time() - t0 > seconds, None, 0.1)
-    ptt = _VOICE.get("ptt")
-    ov.badge(f"{_key_label(getattr(ptt, 'key_name', None))}: new request")
+    ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
 
 
 def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
-    """Closing note on screen: what happened, in one line, then back to listening."""
+    """Show the final guidance with its actual verification status, then resume listening.
+
+    A last=True answer does not enter awaiting_user, so the normal guide loop may
+    never draw it. This terminal scene must replace, not preserve, an older mark.
+    """
     from .overlay import Scene
 
     r = it.report
@@ -518,13 +629,29 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         text = "I could not verify the result"
         why = (r.escalation.blocked_on if r.escalation else "") or "Case handed over to support."
         doodle = "question"
+    final = (it.guidance[-1] if r.mode is Mode.guide and it.guidance and it.guidance[-1].last
+             and r.status.value != "abandoned" else None)
     ov.badge(None)
-    _say(text, why[:120])
-    ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
+    if final is not None:
+        # The model's explanation is useful even when verification is inconclusive;
+        # keep that distinction both visible and spoken. Never change the report.
+        _say(text, final.instruction)
+        ov.show_scene(Scene(text=final.instruction, target=final.pointer, target_box=final.box,
+                            why=text, step=final.index, doodle=doodle))
+    else:
+        _say(text, why[:120])
+        ov.show_scene(Scene(text=text, why=why[:120], doodle=doodle))
     t0 = time.time()
     hold = 2.5 if r.status.value == "abandoned" else seconds
     try:
-        ov.run_until(lambda: time.time() - t0 > hold, None, 0.1)
+        def finished():
+            if _new_request_pending():
+                return True
+            elapsed = time.time() - t0
+            speaker = _SPEECH["speaker"]
+            speaking = final is not None and speaker is not None and speaker.speaking
+            return elapsed > hold and (not speaking or elapsed > max(hold, 30))
+        ov.run_until(finished, None, 0.1)
     except KeyboardInterrupt:
         ov.hide()
 
@@ -534,8 +661,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
     from .voice import IntentRouter, PushToTalk, intent_to_request
 
     registry = ProcedureRegistry()
+    coaching_software = getattr(args, "software", None)
+    coaching = coaching_software in _COACHING_SOFTWARE
+    if coaching:
+        registry.get(_COACHING_SOFTWARE[coaching_software][1])  # fail before opening devices if the fixture is missing
+        _set_autonomy(0)
     # Proper nouns only: common words in the vocabulary made Gladia swap real words for them.
-    vocab = ["Acme Demo", "Acme Corp", "Odoo"]
+    vocab = _COACHING_SOFTWARE[coaching_software][2] if coaching else ["Acme Demo", "Acme Corp", "Odoo"]
     ov = None
     if not args.no_overlay and sys.platform == "darwin":
         from .overlay import Overlay
@@ -551,11 +683,13 @@ def cmd_talk(args: argparse.Namespace) -> int:
         voice_state["s"] = s
         _VOICE["state"] = s
         print(f"  [voice] {s}", flush=True)
-        if s == "recording":
+        if s in {"starting", "recording"}:
             _hush()  # the user speaks: we stop talking (and the mic does not hear us)
         if ov is None:
             return
-        if s == "recording":
+        if s == "starting":
+            ov.badge("Opening microphone…", pulsing=True)
+        elif s == "recording":
             ov.badge("Listening…", pulsing=True)
         elif s == "transcribing":
             ov.badge("Transcribing…")
@@ -563,7 +697,7 @@ def cmd_talk(args: argparse.Namespace) -> int:
             ov.badge(None)
 
     if ov is not None:
-        _ensure_magnet()
+        _ensure_magnet(ov)
         _voice_for(ov)
         if _SPEECH["speaker"] is not None:
             _SPEECH["speaker"].prefetch(list(_COMMON_LINES))
@@ -577,22 +711,26 @@ def cmd_talk(args: argparse.Namespace) -> int:
     try:
         from . import a11y
 
-        if a11y.available():
+        if not args.mock and a11y.available():
             n = a11y.warm_up()
             from . import sitemap
 
             info = a11y.page()
-            if info is not None:
+            if info is not None and os.environ.get("HCS_GUIDE_OBSERVE_ONLY") != "1":
                 sitemap.remember(info)
-            print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
+            if a11y.native_target():
+                detail = (f"ready, {n} controls in the focused native window" if n > 1 else
+                          "waiting for the selected native app in front; no browser or screenshot fallback")
+                print(f"  native accessibility tree: {detail}")
+            else:
+                print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
     except Exception as exc:  # noqa: BLE001
         print(f"  (accessibility tree unavailable: {exc})")
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
     _VOICE["ptt"] = ptt
-    router = IntentRouter(registry)
+    router = None if coaching else IntentRouter(registry)
     ptt.start()
-    print(f"Hold [{ptt.key_name}] and tell me what you need (e.g. \"montre-moi comment planifier une relance sur "
-          f"Acme Demo pour vendredi\"). Release to send. Ctrl+C to quit.")
+    print(f"Hold [{ptt.key_name}] and tell me what you need. Release to send. Responses are in English. Ctrl+C to quit.")
     if ov is not None:
         ov.badge(f"Hold {_key_label(ptt.key_name)} and say what you need")
 
@@ -618,9 +756,20 @@ def cmd_talk(args: argparse.Namespace) -> int:
     try:
         while True:
             text = next_transcript()
+            if not text.strip():
+                # A short key press, silence or a transcription failure can yield an empty final.
+                # Keep the microphone/control server alive; do not consume an armed feedback draft,
+                # construct a task, or turn a retry into an implied label.
+                message = "I didn't catch a question. Hold the talk key, speak, then release to try again."
+                print(f"  {message}", flush=True)
+                _flash(ov, message, "question")
+                continue
             _VOICE["last_text"] = text
             print(f"\nYou said: \"{text}\"")
-            if last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
+            if _consume_talk_control(text, ov):
+                history.clear()
+                continue
+            if not coaching and last_request is not None and re.match(r"^\W*(reprends|reprise|continue|recommence|encore)\b", text.strip(), re.I):
                 request = InterventionRequest(**last_request.model_dump(exclude={"session_id"}))
                 print(f"  -> resuming {request.procedure_id} from the current screen")
                 try:
@@ -634,104 +783,107 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             if ov is not None:
                 ov.badge("Thinking…", pulsing=True)
-            history.append(f"User: {text}")
-            try:
-                intent = router.route(text, history[:-1])
-            except Exception as exc:  # noqa: BLE001
-                print(f"  could not understand the request ({exc}); try again.")
-                _flash(ov, "I did not get that, please rephrase", "question")
-                continue
-            if intent.ask and not intent.procedure_id:
-                if _answer_from_docs(ov, backend, intent.ask):
-                    history.clear()
+            if coaching:
+                context = ""
+                if last_request is not None:
+                    context = "Previous request (historical context, not a new authorization): " + last_request.goal
+                    previous = _MAGNET.get("current")
+                    if previous is not None and previous.guidance:
+                        context += "\nLast guidance shown: " + previous.guidance[-1].instruction
+                request = _coaching_request(text, coaching_software, context)
+            else:
+                history.append(f"User: {text}")
+                try:
+                    intent = router.route(text, history[:-1])
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  could not understand the request ({exc}); try again.")
+                    _flash(ov, "I did not get that, please rephrase", "question")
                     continue
-                intent.task = f"Show where to see: {intent.ask}"  # not in the docs: look for it in the software
-            if intent.point_at and not intent.procedure_id and not intent.task:
-                if not _point_at(ov, backend, intent.point_at):
-                    intent.task = f"Show where to find {intent.point_at}"  # not on this screen: navigate to it
-                else:
-                    history.clear()
-                    continue
-            if intent.task and not intent.procedure_id:
-                # No script for this: the general agent works from the screen, with the vendor docs as context.
-                from .voice import generic_request
+                if intent.ask and not intent.procedure_id:
+                    if _answer_from_docs(ov, backend, intent.ask):
+                        history.clear()
+                        continue
+                    intent.task = f"Show where to see: {intent.ask}"  # not in the docs: look for it in the software
+                if intent.point_at and not intent.procedure_id and not intent.task:
+                    if not _point_at(ov, backend, intent.point_at):
+                        intent.task = f"Show where to find {intent.point_at}"  # not on this screen: navigate to it
+                    else:
+                        history.clear()
+                        continue
+                if intent.task and not intent.procedure_id:
+                    # No script for this: the general agent works from the screen, with the vendor docs as context.
+                    from .voice import generic_request
 
-                from . import sitemap
-
-                software = intent.software or "hcompany"
-                doc = sitemap.context_for(software, intent.task) or None  # local: hub map + pages seen, ~0.3 s
-                if doc:
-                    print(f"  [site] {len(doc)} chars of local context (documentation map, pages seen)")
-                else:
-                    try:  # nothing local: one web lookup
-                        ans = backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
-                                                    software=software, depth="fast")
-                        doc = ans.as_text(2) if ans and ans.answer else None
+                    from . import sitemap
+                    software = intent.software or "hcompany"
+                    doc = sitemap.context_for(software, intent.task) or None
+                    try:
+                        ans = None if doc else backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
+                                                    software=intent.software or "hcompany", depth="fast")
+                        doc = ans.as_text(2) if ans and ans.answer else doc
                         if ans:
                             print(f"  [docs] {ans.answer[:120]}")
                     except Exception:  # noqa: BLE001
                         pass
-                request = generic_request(intent, doc)
-                last_request = request
+                    request = generic_request(intent, doc)
+                    last_request = request
+                    history.clear()
+                    print(f"  -> no script for this; general agent | {request.software} | mode {request.mode.value} | {request.goal}")
+                    _say("No script for this one, I will work it out from the screen.")
+                    try:
+                        code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                                        overlay=not args.no_overlay, ov=ov)
+                    except Exception:  # noqa: BLE001
+                        import traceback
+
+                        traceback.print_exc()
+                    if args.once:
+                        return 0
+                    if ov is not None and not _new_request_pending():
+                        ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+                    continue
+                asked_before = any(h.startswith("Assistant:") for h in history)
+                if not intent.procedure_id and not intent.missing and asked_before and (intent.goal or text):
+                    # One question was already asked: do not keep interrogating, work from the screen instead.
+                    intent.task = intent.goal or text
+                    from .voice import generic_request
+
+                    request = generic_request(intent, None)
+                    last_request = request
+                    history.clear()
+                    print(f"  -> no script for this; general agent | {request.software} | {request.goal}")
+                    _say("I will work it out from the screen.")
+                    try:
+                        _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                                 overlay=not args.no_overlay, ov=ov)
+                    except Exception:  # noqa: BLE001
+                        import traceback
+
+                        traceback.print_exc()
+                    if ov is not None and not _new_request_pending():
+                        ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+                    continue
+                if not intent.procedure_id or intent.missing:
+                    # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
+                    q = intent.question or "What exactly should I help with?"
+                    print(f"  ? {q}")
+                    history.append(f"Assistant: {q}")
+                    if len([h for h in history if h.startswith("Assistant:")]) >= 4:
+                        history.clear()  # too many rounds: start fresh rather than loop
+                    _say(q)
+                    _flash(ov, q, "question", seconds=6.0)
+                    continue
                 history.clear()
-                print(f"  -> unscripted task: planning from the page and the documentation | {request.software} | "
-                      f"mode {request.mode.value} | {request.goal}")
-                _say("Let me work this out from the page.")
-                try:
-                    code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                                    overlay=not args.no_overlay, ov=ov)
-                except Exception:  # noqa: BLE001
-                    import traceback
-
-                    traceback.print_exc()
-                if args.once:
-                    return 0
-                if ov is not None and not _new_request_pending():
-                    ov.badge("⌘H: new request")
-                continue
-            asked_before = any(h.startswith("Assistant:") for h in history)
-            if not intent.procedure_id and not intent.missing and asked_before and (intent.goal or text):
-                # One question was already asked: do not keep interrogating, work from the screen instead.
-                intent.task = intent.goal or text
-                from .voice import generic_request
-
-                request = generic_request(intent, None)
-                last_request = request
-                history.clear()
-                print(f"  -> no script for this; general agent | {request.software} | {request.goal}")
-                _say("I will work it out from the screen.")
-                try:
-                    _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
-                             overlay=not args.no_overlay, ov=ov)
-                except Exception:  # noqa: BLE001
-                    import traceback
-
-                    traceback.print_exc()
-                if ov is not None and not _new_request_pending():
-                    ov.badge("⌘H: new request")
-                continue
-            if not intent.procedure_id or intent.missing:
-                # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
-                q = intent.question or "What exactly should I help with?"
-                print(f"  ? {q}")
-                history.append(f"Assistant: {q}")
-                if len([h for h in history if h.startswith("Assistant:")]) >= 4:
-                    history.clear()  # too many rounds: start fresh rather than loop
-                _say(q)
-                _flash(ov, q, "question", seconds=6.0)
-                continue
-            history.clear()
-            request = intent_to_request(intent)
-            if request.procedure_id == "hcompany_hub_find_documentation" and request.parameters.get("topic") \
-                    and not request.parameters.get("page_title"):
-                from . import sitemap
-
-                pages = sitemap.find_doc_pages(request.parameters["topic"], k=1)
-                if pages:  # the hub map names the page: the guide can wait for exactly that title
-                    request.parameters["page_title"] = pages[0]["title"]
-                    print(f"  [site] documentation page: {pages[0]['title']} ({pages[0]['url']})")
+                request = intent_to_request(intent)
+                if request.procedure_id == "hcompany_hub_find_documentation" and request.parameters.get("topic") \
+                        and not request.parameters.get("page_title"):
+                    from . import sitemap
+                    pages = sitemap.find_doc_pages(request.parameters["topic"], k=1)
+                    if pages:
+                        request.parameters["page_title"] = pages[0]["title"]
             last_request = request
-            history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
+            if not coaching:
+                history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
             try:
                 code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
@@ -870,69 +1022,172 @@ class _TargetTracker:
 
 
 class _InputWatcher:
-    """Knows what the user actually did since the step was shown: clicks, typed keys, Enter/Tab, Escape.
-    Reads the process-wide InputHub (one event tap for the whole program)."""
+    """Observe interactions with the suggested target; never infer a completed task from a click.
 
-    def __init__(self) -> None:
+    Positions are logical screen points, like GuidanceStep.box/pointer. Keyboard contents are not retained.
+    The foreground application check is local and optional; it does not request Accessibility permission.
+    """
+
+    POINTER_TOLERANCE = 28.0
+    BOX_TOLERANCE = 8.0
+
+    def __init__(self, *, hub=None, keyboard=None, clock=None, focus_probe=None) -> None:
+        self._clock = clock or time.monotonic
+        self._focus_probe = focus_probe or self._frontmost_app
         self.armed_at = 0.0
         self.last_click = 0.0
-        self.last_click_xy: tuple[float, float] | None = None
+        self.last_click_xy = None
         self.typed = 0
-        self.last_submit = 0.0  # Enter or Tab
-        self.last_key = 0.0  # Escape
-        self._hub = None
+        self.last_submit = 0.0
+        self._kind = "click"
+        self._target = None
+        self._target_click = False
+        self._field_focused = False
+        self._expected_app = None
+        self._hub, self._kb = None, keyboard
         try:
-            from pynput import keyboard
-
-            from .inputs import InputHub
-
-            self._kb = keyboard
-            self._hub = InputHub.get()
+            if self._kb is None:
+                from pynput import keyboard as native_keyboard
+                self._kb = native_keyboard
+            if hub is None:
+                from .inputs import InputHub
+                hub = InputHub.get()
+            self._hub = hub
             self._hub.subscribe(self._on_event)
-        except Exception as exc:  # noqa: BLE001 - no input monitoring: screen watcher only
-            print(f"(input watcher unavailable: {exc})")
+        except Exception as exc:  # input unavailable: require explicit confirmation, never a screen-only shortcut
+            print(f"(input watcher unavailable: {exc}; explicit confirmation required)")
+
+    @staticmethod
+    def _frontmost_app():
+        if sys.platform != "darwin":
+            return None
+        try:
+            import AppKit
+            app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+            pid = int(app.processIdentifier()) if app is not None else None
+            return pid if pid != os.getpid() else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _finite(values, count):
+        import math
+        return (isinstance(values, (tuple, list)) and len(values) == count
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in values))
+
+    def _inside_target(self, point) -> bool:
+        if self._target is None or not self._finite(point, 2):
+            return False
+        kind, values = self._target
+        px, py = point
+        if kind == "box":
+            x, y, w, h = values
+            margin = self.BOX_TOLERANCE
+            return x - margin <= px <= x + w + margin and y - margin <= py <= y + h + margin
+        x, y = values
+        return (px - x) ** 2 + (py - y) ** 2 <= self.POINTER_TOLERANCE ** 2
+
+    def _invalidate(self) -> None:
+        # A coordinate from a previous page/focus is no longer evidence. Only a new step re-arms it.
+        self._target = None
+        self._target_click = self._field_focused = False
+        self.typed, self.last_submit = 0, 0.0
+
+    def _same_app(self) -> bool:
+        if self._expected_app is not None and self._focus_probe() != self._expected_app:
+            self._invalidate()
+            return False
+        return True
 
     def _on_event(self, event: str, payload) -> None:
-        now = time.time()
+        now = self._clock()
+        if event in ("scroll", "combo_down"):
+            self._invalidate()
+            return
+        if not self._same_app():
+            return
         if event == "click":
+            if not self._finite(payload, 2):
+                return
             magnet = _MAGNET.get("widget")
-            if magnet is not None and payload and magnet.contains(*payload):
-                return  # changing the Magnet level is not the user doing the step
-            srv = _CONTROL.get("server")
-            if srv is not None and payload and srv.ctl.app_contains(*payload):
-                return  # same for a click in the desktop app (autonomy, Stop, voice...)
-            self.last_click = now
-            self.last_click_xy = tuple(payload) if payload else None
-        elif event == "key_down":
+            if magnet is not None and magnet.contains(*payload):
+                return
+            server = _CONTROL.get("server")
+            if server is not None and server.ctl.app_contains(*payload):
+                return  # desktop controls are not interactions with the guided site
+            self.last_click, self.last_click_xy = now, tuple(payload)
+            if now <= self.armed_at + 0.3:
+                return  # ignore the click that may have opened/revealed the step
+            relevant = self._inside_target(payload)
+            if not relevant:
+                self._invalidate()
+                return
+            self._target_click = True
+            self._field_focused = self._kind == "type"
+            self.typed, self.last_submit = 0, 0.0
+        elif event == "key_down" and self._kb is not None:
+            navigation_keys = ("cmd", "cmd_l", "cmd_r", "ctrl", "ctrl_l", "ctrl_r",
+                               "alt", "alt_l", "alt_r", "page_up", "page_down", "home", "end", "esc",
+                               "up", "down", "left", "right")
+            if any(payload == getattr(self._kb.Key, name, None) for name in navigation_keys):
+                self._invalidate()
+                return
+            if not self._field_focused and (getattr(payload, "char", None)
+                    or payload in (self._kb.Key.enter, self._kb.Key.tab, self._kb.Key.space, self._kb.Key.backspace)):
+                self._invalidate()
+                return
             if payload in (self._kb.Key.enter, self._kb.Key.tab):
-                self.last_submit = now
-            elif payload == self._kb.Key.esc:
-                self.last_key = now
-            elif getattr(payload, "char", None) or payload in (self._kb.Key.space, self._kb.Key.backspace):
+                if self._field_focused and self.typed:
+                    self.last_submit = now
+            elif self._field_focused and (getattr(payload, "char", None)
+                    or payload in (self._kb.Key.space, self._kb.Key.backspace)):
                 self.typed += 1
 
-    read_time_s: float = 12.0
+    def arm(self, guidance) -> None:
+        self.armed_at = self._clock()
+        self._kind = getattr(guidance, "kind", "click")
+        self.typed, self.last_submit = 0, 0.0
+        self._target_click = self._field_focused = False
+        self._expected_app = self._focus_probe()
+        self._target = None
+        box, pointer = getattr(guidance, "box", None), getattr(guidance, "pointer", None)
+        if self._finite(box, 4) and box[2] > 0 and box[3] > 0:
+            self._target = ("box", tuple(box))
+        elif self._finite(pointer, 2):
+            self._target = ("point", tuple(pointer))
 
-    def arm(self, text: str = "") -> None:
-        self.armed_at = time.time()
-        self.typed = 0
-        self.read_time_s = min(20.0, max(10.0, 5.0 + 0.09 * len(text)))  # ~ reading speed, 10-20 s
+    def update_target_box(self, box) -> None:
+        """Follow an AX box without resurrecting a target invalidated by scroll/navigation."""
+        if self._target is None:
+            return
+        if self._target_click and (self._kind == "click" or self.last_submit > self.armed_at):
+            return  # the control may disappear because a valid interaction just happened; H must check it
+        if not self._finite(box, 4) or box[2] <= 0 or box[3] <= 0:
+            self._invalidate()
+            return
+        target = ("box", tuple(box))
+        if target != self._target:
+            self._target = target
+            self._target_click = self._field_focused = False
+            self.typed, self.last_submit = 0, 0.0
 
     def acted(self, kind: str, settle_s: float = 0.5) -> bool:
-        now = time.time()
-        if kind == "wait":  # the agent itself decides when to move on (screen polling)
+        if self._target is None or kind not in ("click", "type"):
+            return False  # no target, informational text or unspecified key: explicit confirmation only
+        if not self._same_app():
             return False
-        if kind == "key":  # Escape (or a click outside, which also closes menus)
-            return (self.last_key > self.armed_at or self.last_click > self.armed_at + 0.3) and \
-                now - max(self.last_key, self.last_click) >= settle_s
-        if kind == "info":  # read it; any click or Enter moves on, or enough reading time passes
-            return self.last_click > self.armed_at + 0.3 or self.last_submit > self.armed_at or \
-                now - self.armed_at > self.read_time_s
+        now = self._clock()
         if kind == "type":
-            if self.last_submit > self.armed_at and now - self.last_submit >= settle_s:
-                return True
-            return self.typed > 0 and self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
-        return self.last_click > self.armed_at + 0.3 and now - self.last_click >= settle_s
+            return bool(self._field_focused and self.typed and self.last_submit > self.armed_at
+                        and now - self.last_submit >= settle_s)
+        return self._target_click and now - self.last_click >= settle_s
+
+    def observation_note(self, kind: str) -> str:
+        if kind == "type":
+            detail = "typing and Enter/Tab after a click inside the suggested field"
+        else:
+            detail = f"click inside the suggested target at screen point {self.last_click_xy}"
+        return f"Observed interaction: {detail}. Result not verified; inspect the current screen."
 
     def stop(self) -> None:
         if self._hub is not None:
@@ -953,27 +1208,19 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     if ov is not None and ov.hold_reveal is None:  # `run`: the overlay (and its voice) start here
         _voice_for(ov)
         _prefetch_voice(it.request)
-    shown_step: tuple | None = None
-    prompted = False
-    watcher = _ScreenWatcher()
-    inputs = _InputWatcher()
+    shown_step = 0
+    shown_key = None
+    shown = {"scene": None, "box": None, "hidden": False, "text": None}
     tracker = _TargetTracker()
-    shown: dict = {"scene": None, "box": None, "hidden": False, "text": None}  # what is on screen for this step
-    off_target: dict = {"count": 0}
-    # The pixel-diff watcher is a fallback for when clicks cannot be observed (Input Monitoring denied):
-    # with real input events available, hover effects and animations must never count as "you acted".
-    pixel_fallback = getattr(inputs, "_hub", None) is None
+    prompted = False
+    guidance_scene_shown = False
+    inputs = _InputWatcher()
 
-    def advance(done: bool = True, note: str | None = None) -> None:
-        _hush()  # the user did the step: the sentence about it is over
-        if ov:
+    def advance(done: bool = True, note: str = "") -> None:
+        nonlocal guidance_scene_shown
+        if _submit_guidance(it, shown_step, done=done, note=note) and ov:
             ov.hide()
-        if it.state is not State.awaiting_user:
-            return  # stopped or moved on in the meantime: nothing to answer
-        try:
-            it.next(NextCommand(done=done, note=note))
-        except RuntimeError:
-            pass
+            guidance_scene_shown = False
 
     def status_badge() -> None:
         if ov is None:
@@ -985,7 +1232,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif time.time() - _LAST_LOOKUP_AT < 4:
             ov.badge("Searching the web…", pulsing=True)
         elif it.state is State.running:
-            ov.badge("Looking at the screen…", pulsing=True)
+            ov.badge("Holo is preparing guidance…", pulsing=True)
         elif it.state is State.verifying:
             ov.badge("Checking the result…", pulsing=True)
         elif it.state.terminal:
@@ -1017,38 +1264,43 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     interrupted = {"done": False}
 
     def tick() -> None:
-        nonlocal shown_step, prompted
+        nonlocal shown_step, shown_key, prompted, guidance_scene_shown
         if not interrupted["done"] and _new_request_pending() and not it.state.terminal:
             interrupted["done"] = True
-            print("\n>> new voice request: stopping the current task", flush=True)
-            _hush()
+            print("\n>> voice received: stopping the current task before routing", flush=True)
             if ov:
                 ov.hide()
-                ov.badge("New request…", pulsing=True)
-            it.stop(StopCommand(reason="replaced by a new voice request"))
+                ov.badge("Voice received…", pulsing=True)
+            _control_stop(reason="Voice input received; stopped before routing", intervention=it)
             return
         if interrupted["done"]:
-            return  # stopping: nothing more to show or read until the report lands
+            return
+        if guidance_scene_shown and it.state is not State.awaiting_user:
+            ov.hide()  # desktop Next runs on another thread; clear its old marker on the UI thread
+            guidance_scene_shown = False
         status_badge()
         if getattr(it, "takeover", False) and it.state in (State.running, State.verifying):
             narrate()
         if it.state is State.awaiting_user and it.guidance:
             g = it.guidance[-1]
+            if getattr(it, "_user_event", None) is not None and it._user_event.is_set():
+                if ov and guidance_scene_shown:
+                    ov.hide()
+                    guidance_scene_shown = False
+                return  # desktop confirmation already consumed this step; do not replay it
             key = (g.index, g.shown_at.isoformat() if g.shown_at else None)
-            if key != shown_step:
-                same_step = shown_step and shown_step[0] == g.index and shown["text"] == g.instruction
-                shown_step = key
+            if key != shown_key:
+                same_step = shown_step == g.index and shown["text"] == g.instruction
+                shown_step, shown_key = g.index, key
                 prompted = False
-                watcher.arm()
-                inputs.arm(f"{g.instruction} {g.why if g.kind in ('info', 'wait') else ''}")
-                off_target["count"] = 0
+                inputs.arm(g)
                 if ov:
                     from .overlay import Mark, Scene
 
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     if not same_step:
-                        _say(g.instruction, _short(why, 90))  # a step shown again is drawn again, not repeated aloud
+                        _say(g.instruction, _short(why, 90))
                     shown["text"] = g.instruction
                     scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
@@ -1058,57 +1310,45 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                                for a in g.annotations if a.pointer])
                     ov.show_scene(scene)
                     shown.update(scene=scene, box=g.box, hidden=False)
-                # Follow the control while the user acts (exact boxes only: a vision estimate has no live source).
+                    guidance_scene_shown = True
                 tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None, g.box)
+                speaker = _SPEECH.get("speaker")
+                if speaker is not None:
+                    speaker.prefetch(list(getattr(g, "prepared_speech", [])), replace=True)
             if ov and shown["scene"] is not None and tracker.step == g.index and tracker.description:
                 _follow_target(ov, shown, tracker)
+                inputs.update_target_box(tracker.box)
             if auto:
                 time.sleep(0.3)
-                advance()
+                advance(note="Observed interaction: automated test advance; no human action observed. Result not verified.")
                 return
             if not prompted:
-                print(f"\n  step {g.index}: {g.instruction}  [{g.kind}] (I continue when you act; q = stop) ",
+                print(f"\n  step {g.index}: {g.instruction}  [{g.kind}] (target interaction or Enter to continue; q = stop) ",
                       end="", flush=True)
                 prompted = True
             g = it.guidance[-1]
-            acted = inputs.acted(g.kind, settle_s=0.7)
-            if g.kind != "wait" and (acted or (pixel_fallback and g.kind == "click" and watcher.changed_and_settled())):
-                box = shown["box"] if shown.get("box") else g.box
-                target_gone = tracker.step == g.index and tracker.description and tracker.box is None
-                if g.kind == "click" and g.box_exact and box and inputs.last_click_xy and acted \
-                        and not target_gone and not _inside(inputs.last_click_xy, box, margin=36):
-                    # Clicked somewhere else while the control is still there: a quiet visual hint first,
-                    # a spoken one only if it happens again; never a screen check for an obvious miss.
-                    off_target["count"] += 1
-                    print("\n  click outside the target; keeping the step", flush=True)
-                    inputs.arm()
-                    watcher.arm()
-                    if off_target["count"] >= 2:
-                        _say("Not that one — here.")
-                    if ov and shown["scene"] is not None:
-                        from dataclasses import replace
-
-                        ov.show_scene(replace(shown["scene"], why="Here" if off_target["count"] < 2 else "Not that one — here"),
-                                      animate=True)
-                    return
-                print(f"\n  {'input' if acted else 'screen'} detected, next…", flush=True)
-                advance()
+            if inputs.acted(g.kind):
+                print("\n  target interaction observed; asking H to check the result…", flush=True)
+                advance(note=inputs.observation_note(g.kind))
                 return
             try:
                 ready, _, _ = select.select([sys.stdin], [], [], 0)
-            except (OSError, ValueError, io.UnsupportedOperation):  # no real stdin (tests, launchers)
+            except (OSError, ValueError, io.UnsupportedOperation):
                 ready = []
             if ready:
-                ans = sys.stdin.readline().strip()
+                line = sys.stdin.readline()
+                if not line:
+                    return  # EOF (normal in the desktop launcher) is not a human pressing Enter
+                ans = line.strip()
                 if ans.lower() == "q":
                     _hush()
                     if ov:
                         ov.hide()
                     it.stop(StopCommand(reason="user quit"))
                 else:
-                    advance(done=ans == "", note=ans or None)
-        elif ov and it.state.terminal and it.guidance and it.guidance[-1].last and it.guidance[-1].pointer:
-            pass  # keep the last annotation until exit
+                    advance(done=ans == "", note=ans or "User explicitly requested to continue; verify the outcome on screen.")
+        # Final guidance is drawn by _show_outcome after the report is available.
+        # It must not reuse the previous step's annotation here.
 
     def finished() -> bool:
         if it.state.terminal and it.report is not None:
@@ -1249,6 +1489,7 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(fn=cmd_run)
 
     talk = sub.add_parser("talk", help="Push-to-talk: hold a key, say what you need, release")
+    talk.add_argument("--software", choices=list(_COACHING_SOFTWARE), help="Open-ended H Company or Cognition coaching; responses in English")
     talk.add_argument("--key", help="key or combo, e.g. cmd+h, f9, alt_r (default: HCS_PTT_KEY or cmd+h)")
     talk.add_argument("--confirm", action="store_true", help="Ask for approval before running (default: the spoken request is the approval)")
     talk.add_argument("--once", action="store_true", help="Exit after the first request")

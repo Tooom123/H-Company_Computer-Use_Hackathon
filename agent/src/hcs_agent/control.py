@@ -9,8 +9,12 @@ usage and costs. This module is the only bridge: plain HTTP on 127.0.0.1, stdlib
     GET  /usage      sessions this month, H spend and concurrency, ElevenLabs characters, keys configured
     POST /autonomy   {"level": 0|1|2}
     POST /stop       stop the current task (local gate first, as everywhere)
+    POST /next       {"session_id": ..., "step_index": ..., "done": bool} explicit user report, not verification
     POST /voice      {"enabled"?: bool, "voice"?: id, "speed"?: float}
     POST /voice/test say a sample sentence
+    GET  /feedback   current completed-session feedback draft
+    POST /feedback/dictate {"session_id": ...} arm the next transcript as feedback
+    POST /feedback  explicit human labels, bound to a finished session
     POST /rate       {"id": run folder, "useful": true | false | null} the user's verdict on a finished task
     POST /ptt        {"key": "cmd+h" | "cmd+j" | "alt_r" | "f9"} push-to-talk key, live
 
@@ -31,6 +35,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Callable
 
+from .desktop_feedback import DesktopFeedback, FeedbackError
+
 DEFAULT_PORT = 8768
 APP_HEADER = "X-HCS-App"
 APP_TIMEOUT_S = 6.0  # the app polls every second; silent longer than this = closed, the Magnet comes back
@@ -49,6 +55,7 @@ VOICES = (  # premade ElevenLabs voices (every account has them), all with a pla
 )
 # Push-to-talk keys the InputHub handles on macOS (combo = swallowed, plain key = held alone).
 PTT_KEYS = (
+    {"key": "ctrl+shift+h", "label": "⌃⇧H"},
     {"key": "cmd+h", "label": "⌘H"},
     {"key": "cmd+j", "label": "⌘J"},
     {"key": "alt_r", "label": "Right ⌥"},
@@ -208,11 +215,16 @@ class Controller:
                  set_voice: Callable[[dict[str, Any]], dict[str, Any]], test_voice: Callable[[], bool],
                  set_ptt_key: Callable[[str], bool] = lambda _k: False,
                  on_app_presence: Callable[[bool], None] | None = None,
+                 feedback: DesktopFeedback | None = None,
+                 next_step: Callable[[str, int, bool], bool] | None = None,
                  quota: Callable[[], Any] = h_quota, tts_usage: Callable[[], Any] = elevenlabs_usage) -> None:
         self.runs_dir = runs_dir
         self._status, self._set_autonomy, self._stop = status, set_autonomy, stop
         self._set_voice, self._test_voice, self._set_ptt = set_voice, test_voice, set_ptt_key
         self._on_presence = on_app_presence
+        self._feedback = feedback or DesktopFeedback()
+        self._next_step = next_step
+        self._next_lock = threading.Lock()
         self._quota, self._tts = _Cached(quota), _Cached(tts_usage)
         self.app_seen = 0.0
         self.app_present = False
@@ -223,8 +235,7 @@ class Controller:
     def seen(self, bounds: tuple[float, float, float, float] | None = None) -> None:
         with self._lock:
             self.app_seen = time.time()
-            if bounds is not None:
-                self.app_bounds = bounds
+            self.app_bounds = bounds  # hidden app keeps polling without bounds; its old rectangle must not consume clicks
             changed = not self.app_present
             self.app_present = True
         if changed and self._on_presence:
@@ -266,6 +277,17 @@ class Controller:
 
     def handle(self, method: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         path = path.split("?", 1)[0].rstrip("/") or "/"
+        if path in ("/feedback", "/feedback/dictate"):
+            try:
+                if method == "GET" and path == "/feedback":
+                    return 200, self._feedback.status()
+                if method == "POST" and path == "/feedback/dictate":
+                    return 200, self._feedback.arm(body)
+                if method == "POST" and path == "/feedback":
+                    return 200, self._feedback.save(body)
+            except FeedbackError as exc:
+                return exc.status, {"error": str(exc)}
+            return 405, {"error": "Method not allowed"}
         if method == "GET" and path == "/status":
             return 200, self.status()
         if method == "GET" and path == "/sessions":
@@ -276,10 +298,21 @@ class Controller:
             level = body.get("level")
             if not isinstance(level, int) or isinstance(level, bool) or level not in (0, 1, 2):
                 return 400, {"error": "level must be 0, 1 or 2"}
+            if level != 0 and os.environ.get("HCS_GUIDE_OBSERVE_ONLY") == "1":
+                return 403, {"error": "This coaching session only observes; autonomous control is disabled"}
             self._set_autonomy(level)
             return 200, self.status()
         if method == "POST" and path == "/stop":
             return 200, {"stopped": self._stop()}
+        if method == "POST" and path == "/next":
+            sid, index, done = body.get("session_id"), body.get("step_index"), body.get("done")
+            if (not isinstance(sid, str) or not sid or len(sid) > 128
+                    or type(index) is not int or index < 1 or type(done) is not bool):
+                return 400, {"error": "session_id, positive step_index and boolean done are required"}
+            with self._next_lock:
+                if self._next_step is None or not self._next_step(sid, index, done):
+                    return 409, {"error": "This step is no longer awaiting your response"}
+            return 200, {"accepted": True, "verified": False}
         if method == "POST" and path == "/voice":
             allowed = {k: body[k] for k in ("enabled", "voice", "speed") if k in body}
             if "enabled" in allowed and not isinstance(allowed["enabled"], bool):

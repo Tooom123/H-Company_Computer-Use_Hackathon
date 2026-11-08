@@ -282,6 +282,256 @@ La reprise sans feedback ne soumet aucun label ni approbation. Validation : suit
 du pilote hors ligne passée (62 tests, puis un test additionnel de rapport
 terminal passé), quatre tests UI, TypeScript et build de production réussis.
 
+### Reprise du scénario 03 — 7 novembre 2026, 21:17–21:18 Europe/Paris
+
+Après redémarrage avec `pilot-bridge-health-v1`, le parcours fournisseur se termine
+en **52,12 s**, statut `resolved`, trois critères vérifiés. La fiche du fournisseur
+de démonstration est ouverte et son adresse fictive retrouvée. L’export est complet.
+Le retour confirmé est **réussite / utile**, commentaire « nickel ». L’autorisation
+d’entraînement est distincte de la revue : `reviewed=false` et
+`include_for_training=false` restent en place.
+
+Ce passage confirme une exécution réussie avec l’adaptateur après redémarrage ;
+il ne démontre pas encore la récupération automatique d’un futur canal périmé
+sans redémarrer le serveur.
+
+### Préparation de la démo enrichie — 7 novembre 2026, 21:28–21:32 Europe/Paris
+
+Le handoff Odoo actualisé et le contrôleur Netcup confirment la démo
+`holo_hackathon_rich`, fixture `20261107-v2.1`, sur le tunnel local 18091. La société
+est **Holo — Déjà Bu Démo · DONNÉES FICTIVES**. Les compteurs et l’empreinte métier
+correspondent au baseline : 252 fiches du catalogue importées (176 actives),
+36 achats, 48 ventes, 74 opérations de stock, 36 opportunités, 12 factures.
+Aucun passage réservé, une session web connectée. Aucun reset effectué.
+
+Nouvelle campagne `rich`, dix cas **R01–R10** de lecture et diagnostic, avec
+procédures explicites adaptées à cette société et origine. Aucun ancien ID de
+fiche n’est réutilisé. Le serveur, les demandes archivées et les épisodes portent
+l’identité de démo et les révisions. Dossier `voice-pilot-rich`, profil Electron
+`rich`, indépendants des essais historiques. Les mutations métier du tutoriel
+05–10 ne font pas partie de ce premier lot enrichi.
+
+Moteur mis à jour de `343e393` à **`b59ef01`**, backend Tom **`bd3b2ca`** conservé,
+modèle **`holo4-35b-a3b`**, mode `act`, images plein écran. Les nouveaux overlays
+de la CLI Matteo ne sont pas chargés par le runner du pilote Electron. La nouvelle
+narration française peut modifier durée et usage : ne pas agréger les versions
+comme des répétitions à configuration identique.
+
+Validation hors ligne : **71 tests Python passés, un sauté**, cinq tests UI
+passés, TypeScript et build réussis. Les dix YAML ont été chargés et liés aux
+classes réelles du moteur ; ces contrôles ne constituent pas des succès Odoo.
+Le serveur et le client ont été relancés ; l’utilisateur a démarré R01 sur le CRM.
+
+### Premier R01 enrichi — 7 novembre 2026, 21:32–21:33 Europe/Paris
+
+Demande saisie sans audio associé, approuvée depuis l’app à 21:32:25. Fin à
+21:33:58, environ **93 s**. L’acteur retrouve l’opportunité Maison Aube, annonce
+Premier contact, 350 EUR et une activité en retard de trois jours. Il ne donne
+pas de date absolue pour cette activité. Le vérificateur confirme origine/société,
+fiche et étape, mais pas le montant ni l’échéance exacte, non lisibles dans ses
+observations. Statut **`escalated`**, trois critères vrais sur cinq ; ne pas
+transformer ce résultat en réussite automatique parce que le résumé semble bon.
+
+L’archive action/vérification est **complète**. Le contrôle Netcup après passage
+retrouve les mêmes compteurs et la même empreinte que le baseline riche : aucune
+altération détectée par ce contrôle. Le feedback utilisateur est encore à
+recueillir au moment de cette entrée. Une revue des images et de la navigation
+du vérificateur est nécessaire avant de qualifier un éventuel faux négatif.
+
+Lors du changement de campagne, l’ancienne fenêtre du pilote était restée ouverte.
+Elle a été fermée après la fin de R01. Un correctif préventif réserve désormais
+le raccourci d’arrêt avant d’exposer l’IPC d’approbation ; si une autre instance
+possède ce raccourci, la nouvelle ne peut pas démarrer un passage. Deux tests
+simulés passent. Aucun conflit effectif du raccourci pendant R01 n’est établi.
+
+### Intégration navigateur isolé — 7 novembre 2026, 23:08–23:23 Europe/Paris
+
+Moteur Matteo `0ffda3f`, stockage support `e46f9ee`, Holo4 hébergé chez H,
+Chrome headless privé, images du viewport 1280 × 832 et mode `act`. Playwright
+prépare la connexion ; les actions du parcours sont choisies par Holo. Aucun
+pilotage du bureau macOS. Ce sont des essais d’intégration, pas le benchmark final.
+
+| Essai | Durée après approbation | Résultat vérifié |
+| --- | --- | --- |
+| R01, `sess_50ff5a5d980c`, v1 | 59,5 s | Partiel ; fiche trouvée, défilement mal typé et activité non chargée. Erreur de confirmation d’arrêt local également diagnostiquée |
+| R01, `sess_d67f2ecd714a`, v2 | 102,6 s | Partiel ; client, étape et revenu corrects. Le filtre réseau bloque le lot qui charge l’activité ; l’acteur conclut à tort qu’il n’y en a pas. Le vérificateur conserve ce critère faux |
+| R02, `sess_833726b1b07c`, v2, worker 2 | 198,4 s | Réussite métier selon la revue IA : trois tâches, dates et étapes exactes, liste complète du projet. Deux tentatives interdites de lecture source (`web_fetch`, `view-source`) échouent ; parcours non retenu comme exemple SFT positif |
+
+Les trois exports H sont complets et les contrôles métier avant/après correspondent
+au baseline. Les revues indépendantes inspectent uniquement des captures Odoo du
+viewport ; aucun feedback humain n’a été inventé. Pour R01 v2 et R02, `lookup_docs`
+était disponible mais n’a pas été appelé : ces essais ne démontrent pas un gain
+documentaire. Les identifiants et images restent dans les archives privées.
+
+Corrections préparées pour v3 : défilement typé, attente de confirmation terminale,
+requêtes Odoo mieux délimitées, contexte documentaire injecté automatiquement et
+interdiction explicite de lecture source. La lecture du chatter autorise désormais
+la mise à jour des notifications lues du compte fictif, toujours sans écriture
+métier. Le contrôle Playwright local affiche maintenant l’activité attendue ; il
+ne compte pas comme une réussite du modèle. Les anciens essais restent inchangés.
+
+### Campagne isolée v3 et retests v4 — 7 novembre 2026, 23:25–23:44 Europe/Paris
+
+Deux workers headless indépendants, moteur `0ffda3f`, support `e46f9ee`, Holo4,
+viewport 1280 × 832, même fixture Odoo et même corpus Markdown. Révision v3
+`e127f4e`, puis correctif de navigation v4 `fab4527`. Le script de campagne
+`a9583f0` sérialise les contrôles du gestionnaire de fixture ; le premier lancement
+du worker 1 avait échoué avant toute session H sur un contrôle concurrent. Aucun
+reset ni changement de données n’a été réalisé. Les contrôles avant/après des
+campagnes terminées concordent avec le baseline (15 contrôles, champs suivis seulement).
+
+| Version / cas | Session pilote | Durée approuvée | Moteur | Revue IA métier / périmètre |
+| --- | --- | ---: | --- | --- |
+| v3 R01 | `sess_b012b0404b9d` | 62,4 s | Escaladé | Partiel / conforme |
+| v3 R02 | `sess_76adfc806abd` | 153,4 s | Escaladé | Échec / conforme |
+| v3 R03 | `sess_7daa9a17c39f` | 147,4 s | Résolu | Réussi / conforme |
+| v3 R04 | `sess_86103d46b2b8` | 363,2 s | Escaladé | Partiel / non conforme |
+| v3 R05 | `sess_f6f70f7a3c07` | 51,8 s | Résolu | Réussi / conforme |
+| v3 R06 | `sess_c6b329463d72` | 246,8 s | Escaladé | Partiel / conforme |
+| v3 R07 | `sess_fd32ecb04d30` | 154,8 s | Escaladé | Échec / conforme |
+| v3 R08 | `sess_cae82c4ab532` | 177,3 s | Escaladé | Échec / conforme |
+| v3 R09 | `sess_9022e6eddc68` | 53,6 s | Résolu | Réussi / conforme |
+| v3 R10 | `sess_6b41798ac4b0` | 101,0 s | Escaladé | Échec / conforme |
+| v4 R04 | `sess_f1702caf852a` | 61,2 s | Résolu | Partiel / conforme |
+| v4 R07 | `sess_ece21d30a456` | 252,7 s | Escaladé | Partiel / conforme |
+
+Les 12 archives H et revues IA sont complètes. Les extraits documentaires sont
+effectivement transmis avant les actions ; aucun lookup volontaire de l’acteur
+n’a été observé dans ces passages. Aucun feedback humain ni consentement
+d’entraînement n’a été fabriqué. La revue R04 v3 constate une tentative `web_fetch`
+interdite, rejetée ; le reste des observations reste dans le viewport Odoo.
+
+V4 permet d’ouvrir le reliquat, mais l’acteur omet les noms des produits ; le
+vérificateur le valide trop largement. R07 v4 retrouve des données dans une liste
+sans ouvrir la facture ni prouver le lien à la vente. Les résultats ne sont pas
+remplacés par ceux des retests. **500 tests automatisés passent**, et les trois
+pages de la console ont été vérifiées dans un navigateur séparé.
+
+Voir le [bilan complet](bilan-isolation-et-portail-2026-11-07.md) pour les erreurs
+observées, l’usage H, les limites de revue et les prochaines tâches. Les métriques,
+images, documents de contexte, réponses et labels détaillés restent hors Git.
+
+## 2026-11-08 — H cloud natif, console live et baseline documentaire
+
+Six tickets synthétiques HC01–HC06 exécutés dans des navigateurs H indépendants,
+sans contrôle du Mac, avec plafond local de six et quota fournisseur vérifié.
+Modèle `holo4-35b-a3b`, viewport 1280 × 832, 32 étapes / 240 secondes maximum,
+aucun profil ni vault pour cette baseline. Les réponses attendues du catalogue
+restent exclusivement chez le juge. Aucun correctif humain pendant les essais.
+
+| Cas | Épisode local | Durée H* | Usage rapporté USD* | Revue IA métier / périmètre |
+| --- | --- | ---: | ---: | --- |
+| HC01 réseau local/cloud | `cloud_331d5e2f98284fe0` | 83,5 s | 0,03380 | Partiel / conforme |
+| HC02 quota et relances | `cloud_9e949b82e6014524` | 114,3 s | 0,05493 | Partiel / conforme |
+| HC03 connexion et profils | `cloud_8f3c0e3df7584a08` | 88,2 s | 0,03425 | Partiel / conforme |
+| HC04 statut et preuves | `cloud_d9617906ea874f7a` | 68,6 s | 0,02762 | Partiel / conforme |
+| HC05 export des traces | `cloud_39196b879ebf40e5` | 146,6 s | 0,07516 | Partiel / conforme |
+| HC06 reproductibilité | `cloud_d9553be1849a4358` | 80,8 s | 0,03600 | Partiel / conforme |
+
+\* Temps `started_at` → `finished_at`, non temps utilisateur. Total fournisseur :
+0,26176124 USD, 112 étapes. Ce n'est pas une facture et aucune économie de tokens
+n'est déduite des pixels. Les six archives sont complètes ; 72 images d'archive
+ont leurs empreintes vérifiées. Le nombre d'aperçus publiés peut être inférieur.
+
+Les limites sont concrètes : configuration inventée en HC01, réserve de quota
+mal conservée en HC02, confusion sur profils/cookies en HC03, règle de succès
+incorrecte en HC04, export et labels incomplets en HC05, candidate non figée
+en HC06. Aucun de ces résultats partiels n'est une démonstration positive prête
+pour SFT. Les secondes revues HC03/04/06 conservent les premières au lieu de les
+remplacer. Aucun retour humain, consentement d'entraînement ou utilité n'est inféré.
+
+Les sessions répondent puis restent `idle` ; le runner annule seulement ses
+propres sessions via l'API v2 et confirme leur fin pour libérer le quota.
+`interrupted` est donc conservé comme statut H avec
+`completion_reason=answered_then_cancelled_for_terminal_confirmation`. Il ne
+signifie pas que l'utilisateur a interrompu la tâche ni que la réponse est correcte.
+
+Le test authentifié HC07 (`cloud_57200aead27b460f`) atteint la vérification
+d'accès puis la page de connexion : le profil préparé n'était pas connecté.
+L'archive est complète, mais le résultat métier n'a pas pu être observé.
+Ses anciens aperçus sont retirés de la publication après revue, sans modifier
+l'archive privée. HC08–HC10 attendent une connexion distante effectivement validée.
+Les sessions de préparation SSO sont exclues du benchmark.
+
+Deux comparaisons avec recherche lexicale BM25 sur onze pages officielles H
+sont conservées séparément : HC01 `cloud_4544bd4f4b1049ef`, HC04
+`cloud_60a3a704caf34f71`. Même demande, modèle et limites ; passages et empreintes
+conservés dans chaque requête. Leurs archives sont complètes. Une seule paire
+par cas ne démontre pas un gain généralisable.
+
+Les deux retests restent **partiels**. HC01 corrige les champs de configuration,
+mais sa recommandation finale revient à l'environnement local en contradiction
+avec le besoin d'isolation. HC04 corrige les valeurs `outcome`, mais garde une
+règle de succès fondée sur la déclaration et invente un endpoint d'outils.
+Les mesures brutes vont dans des directions différentes : HC01 15 → 12 étapes,
+198 599 → 176 104 tokens d'entrée ; HC04 12 → 20 étapes, 152 890 → 323 098 tokens
+d'entrée. Les tokens en cache et de sortie sont conservés séparément. Ce n'est
+pas une mesure de latence du modèle isolée ni une preuve d'économie générale.
+
+La tour de contrôle est vérifiée en navigateur headless séparé : navigation,
+images autorisées, zoom, détail, refresh, mobile et desktop. Aucun écran du Mac
+n'est utilisé. Les sources récupérées Matteo `6f166d1` / main `8066ddf` passent
+la suite de compatibilité. Le contrôle visuel rapide qui acceptait une erreur
+comme succès est court-circuité dans nos adaptateurs ; le vérificateur complet
+prend le relais. **627 tests hors réseau passent.** Ce contrôle n'est pas encore
+une validation de l'expérience GUIDE avec un participant.
+
+Voir le [mode d'emploi cloud](native-cloud-pilot.md), le
+[catalogue H](scenarios/h-company-cloud-scenarios.md) et le
+[protocole de test humain](field-test-coaching.md).
+
+## 2026-11-08 — Profil Google/SSO réduit et quatre essais H connectés
+
+Connexion Google effectuée par le propriétaire dans un Chromium Linux dédié
+150.0.7871.124. Une base neuve conserve uniquement cinq cookies H ; 43 cookies
+Google/YouTube, les stockages locaux, l'historique et les préférences sont omis.
+Une copie du profil minimal rouvre la session HC01, puis un import natif H et
+la frame 000002 de HC07 confirment la reprise dans le cloud. Le profil reste
+explicite et en lecture seule pour les lecteurs parallèles. Les navigateurs de
+préparation locaux sont ensuite arrêtés ; aucun secret ni profil n'est dans Git.
+
+Après HC07 seul, HC08–HC10 sont lancés dans trois navigateurs H simultanés, sans
+utiliser le bureau. Même modèle et protocole visual ; aucune documentation
+additionnelle injectée (`use_knowledge=false`). HC09 compare désormais les deux
+essais de la même carte HC01 : baseline puis retest avec recherche documentaire.
+HC08 examine la réponse terminée puis fermée de HC02 ; ce n'est pas une fixture
+de panne technique avérée. Une absence d'erreur visible doit rester telle quelle.
+
+| Cas | Épisode | Temps H* | Étapes | Revue IA métier / périmètre | Archive |
+| --- | --- | ---: | ---: | --- | --- |
+| HC07 preuves | `cloud_feacd88328844147` | 19,28 s | 2 | Partiel / conforme | Complète |
+| HC08 diagnostic | `cloud_d39a6b22b26a4353` | 47,86 s | 6 | Partiel / non conforme | Partielle |
+| HC09 comparaison | `cloud_336235632c974a85` | 33,27 s | 5 | Partiel / conforme | Complète |
+| HC10 reproductibilité | `cloud_2a92c3c65b204d18` | 136,49 s | 32 | Partiel / non conforme | Complète |
+
+\* `started_at` → `finished_at` fournisseur, pas un compteur affiché dans la page.
+La connexion fonctionne dans les quatre cas ; cela ne rend pas les réponses
+correctes. Revues IA, preuves et retours humains restent distincts. Aucun retour
+humain ni consentement d'entraînement n'a été déduit de ces exécutions.
+
+Erreurs observées : HC07/HC10 prennent l'heure de création pour une durée ;
+HC09 extrapole vitesse et tokens depuis des compteurs non qualifiés sans établir
+la qualité métier des réponses. HC08 avance une cause d'interruption non prouvée
+et utilise `web_search` / `web_fetch` malgré leur exclusion du protocole. Son
+résultat de recherche est tronqué en amont (événement 14), donc son archive reste
+explicitement partielle. HC10 ouvre une autre session et des pages de catalogue,
+suppose `h/browser` au lieu de l'environnement inline `companion-cloud`, et
+consomme 18 appels de défilement avec un `scroll_element` de type incorrect.
+
+HC08 et HC10 sont masqués du portail par un marqueur de quarantaine issu de la
+revue, sans modifier leurs événements ou archives d'origine. Le contrôle actuel
+des origines n'interdit pas tous les chemins d'une même origine et les règles
+d'outils restent des instructions : ces essais démontrent cette limite. Avant
+la prochaine campagne connectée, renforcer le contrôle des chemins/actions,
+préciser le format objet de `scroll_element` et distinguer heures, durée et
+preuves métier dans le contexte fourni à l'agent. Ces quatre traces ne sont
+pas des démonstrations de réussite prêtes pour SFT.
+
+Les helpers de reconstruction et d'import passent **74 tests hors réseau** :
+domaines exacts, base SQLite reconstruite, ZIP borné, métadonnées parasites
+refusées et journal d'upload sans réessai aveugle. La validation locale du profil
+et sa reprise cloud restent deux vérifications réelles supplémentaires.
+
 ## Procedure audits (no H run, not counted above)
 
 ### 2026-11-07, Matteo + Claude Code: Odoo 20 label audit and Holo grounding check
@@ -310,3 +560,359 @@ user actually sees when clicking Won. Standard Odoo lets a salesperson mark thei
 block may need a record owned by another salesperson or a custom rule; confirm before relying on it on stage.
 Also worth doing on the demo database: finish or dismiss the Odoo onboarding tour (its pin covers the "New"
 button and column title).
+
+## 2026-11-08 — Coaching H humain : intégration et préparation locale
+
+Le dernier `origin/main` de l'équipe (`1f35eef`) est intégré à notre branche
+par le commit de fusion `b4ad15e`. Le code du parcours humain H est commité
+dans `4626800`. Ces nouveaux commits ne sont pas encore poussés et la PR n°4
+n'est pas fusionnée ; cet état local ne vaut pas validation de la PR distante.
+
+Le runtime réel est lancé avec le contrôle sur `127.0.0.1:8780` et le backend
+sur `127.0.0.1:8781` : mode GUIDE, `observe_only=true`, autonomie zéro,
+Holo4 et onze documents H chargés. Gladia est configuré pour transcrire la
+voix. ElevenLabs n'est pas configuré : pas de synthèse vocale dans cette
+session. Le mode d'emploi est le
+[parcours humain H](scenarios/h-company-human-session.md).
+
+Validation technique : **75 tests ciblés et six tests desktop passent**.
+Une vérification de l'interface avec réponses simulées n'a relevé aucune erreur
+JavaScript. Le total historique de 838 tests ne couvre pas à lui seul ce nouveau
+parcours ; les contrôles ciblés et l'essai simulé restent distincts d'un test
+humain de bout en bout.
+
+**À réaliser : la première demande orale guidée et le feedback réel de la
+personne.** Aucun succès GUIDE, bénéfice utilisateur ni label humain n'est
+déduit du démarrage de l'app ou des tests simulés. Après l'essai, contrôler la
+trace d'observation, les instructions affichées, l'attente des actions humaines
+et l'enregistrement explicite du retour et des labels.
+
+Premier blocage signalé par l'utilisateur pendant la dictée : `⌘H` masque la
+fenêtre active sur macOS et l'enregistrement est resté bloqué. Le défaut du
+lanceur humain est remplacé par **Ctrl+Maj+H** (`--key ctrl+shift+h`) ; le CLI
+direct conserve son ancien défaut `⌘H`. Le redémarrage et la validation vocale
+après correction restent à effectuer. Les tests indiqués ci-dessus précèdent
+cette correction et ne prouvent pas sa réussite en conditions réelles.
+
+Correctif supplémentaire : démarrage/arrêt audio sérialisés hors du callback
+clavier, erreurs de périphérique visibles, relâchement des modificateurs macOS
+reconnu. Les 42 tests ciblés voix/observation et les sept tests desktop passent.
+La vérification directe du modèle conserve ses observations sans ajouter un
+faux identifiant de session H dans l'archive. Les logs du lanceur humain suivent
+désormais le même dossier privé que les épisodes. Aucun nouvel essai H ni retour
+humain n'a été fabriqué pour ces contrôles.
+
+## 2026-11-08 — Positionnement, voix locale et encombrement du coaching
+
+Retour humain dans le chat : consignes claires, repères mal placés. Ce retour
+ne fournit pas de label de réussite ou d'utilité pour chaque essai.
+
+Dans l'essai privé `sess_218da7c4dd91`, le premier guidage arrive 12,53 s après
+le début de l'essai ; les cinq suivants arrivent entre 5,78 et 6,96 s après
+reprise, médiane 6,37 s. Entre réception d'une observation et émission de la
+consigne : 4,90 à 6,04 s. Ces temps comprennent la boucle API et la restitution,
+pas uniquement l'inférence. Le temps de lecture/action humaine est exclu de ces
+intervalles ; le temps total de séance ne mesure pas la latence du modèle.
+
+Correctifs préparés : contrat de coordonnées GUIDE explicite 0–1000, échelles
+X/Y indépendantes, cibles invalides ou ambiguës masquées ; Magnet repliable et
+badge de raccourci masqué en mode compact, états actifs conservés ; voix macOS
+locale Thomas quand le pilote humain est lancé sans fournisseur vocal externe.
+La transcription Gladia et la synthèse vocale sont des composants distincts.
+La synthèse Thomas a produit un WAV valide hors sandbox, sans lecture audio
+pendant ce contrôle. Aucun gain de latence H ni précision réelle après correctif
+n'est encore établi par ces tests techniques.
+
+Intégration : `1d0b1d9` contient les corrections ; `7e7ef88` intègre le nouveau
+`main` de Matteo (`6cfe7a3`) dans la branche de travail, sans fusionner notre PR
+sur main. Après résolution du conflit de routage CLI : **961 tests Python et
+sept tests desktop passent**. Les huit tests nécessitant un serveur local ont
+d'abord été bloqués par le sandbox ; la suite complète hors sandbox passe.
+
+Le pilote humain redémarré expose `speech.provider=macos`, `voice=Thomas`,
+`enabled=true`, tout en conservant `observe_only=true` et autonomie zéro.
+La page Voice réelle affiche ces paramètres et la commande de test vocal a été
+acceptée. Audibilité et précision du cercle restent à confirmer par l'utilisateur.
+Les sept anciennes traces sont conservées ; elles n'avaient pas de fichier de
+labels humains au moment du redémarrage. Le test de voix ne crée pas de succès H.
+
+Premier passage après redémarrage : demande « Montre-moi où lire les réponses
+de cet essai », `sess_0037fb139a9b`. Une consigne, cible logique (1057, 523),
+18,7 s pour la séance complète, coût H déclaré 0,0041307 USD. Le vérificateur
+visuel valide ses deux critères et le rapport est resolved. Ce résultat technique
+ne confirme ni l'audibilité, ni le placement perçu du cercle, ni l'utilité : retour
+humain encore attendu. Pas de comparaison de vitesse avec les essais différents.
+
+## 2026-11-08 — Activation ElevenLabs et retour visuel
+
+Retour humain reçu dans le chat : voix locale audible, repère encore décalé.
+Ce retour n'est pas converti automatiquement en labels de réussite/utilité.
+La clé ElevenLabs fournie est conservée hors dépôt, dans `speech.env` privé
+(mode 0600) ; le lanceur charge uniquement les variables vocales autorisées.
+Test réel de synthèse français : succès, 147 456 octets PCM, durée audio 3,34 s,
+requête 0,92 s avec le modèle flash configuré. Ce temps concerne la synthèse
+vocale uniquement, pas Holo ni une tâche utilisateur.
+
+L'essai en attente `sess_e9749b5ceb6b` a été arrêté proprement pour recharger la
+voix. Rapport et événements locaux conservés ; export H signalé partiel.
+L'audit de `sess_0037fb139a9b` confirme une conversion normalisée cohérente et
+un point situé dans le panneau demandé, sans preuve de nouveau décalage Retina.
+Un défaut distinct de restitution est identifié : la dernière consigne peut
+arriver sans état `awaiting_user` et ne pas dessiner sa nouvelle cible.
+
+Correctif de restitution finale : l'écran de clôture affiche maintenant la vraie
+consigne finale avec sa cible et son verdict, même si aucune attente utilisateur
+n'a précédé cette étape. Les cas non vérifiés restent présentés comme tels ; un
+abandon ne réutilise pas une ancienne cible. Tests ciblés de clôture, voix et
+coordonnées exécutés hors réseau ; précision perçue à retester sur une page H.
+
+## 2026-11-08 — Clic ciblé et préparation des phrases GUIDE
+
+Audit : le watcher desktop acceptait un clic quelconque ou un changement global
+de l’écran et le backend le traduisait en « I did it ». Une réponse groupée pouvait
+alors afficher une cible devenue périmée. Ces signaux n’étaient pas une preuve
+de réussite.
+
+Correction : le signal automatique est limité à la cible géométrique proposée,
+avec garde sur l’application active ; la saisie nécessite un champ ciblé, de la
+saisie puis Enter/Tab. Le changement d’écran seul ne valide plus l’étape. Les
+coordonnées deviennent invalides après défilement ou interaction susceptible de
+changer le contexte. Un repère absent ou imprécis permet toujours une déclaration
+explicite dans Home : « J’ai fait l’étape » / « Je suis bloqué ». Ces boutons sont
+liés à la session et au numéro d’étape ; une commande périmée est refusée.
+
+Le backend conserve la différence entre interaction observée et déclaration
+humaine. Après chaque réponse, il demande à H une nouvelle observation et le
+contrôle de l’état attendu. Une seule étape est affichée par tour. Il ne certifie
+pas indépendamment la fraîcheur du screenshot ni la bonne identité DOM du bouton :
+l’extension devra apporter cette preuve supplémentaire.
+
+Deux instructions suivantes au maximum sont préparées pour la synthèse vocale.
+Elles ne déclenchent ni lecture ni affichage ; leur texte devra être confirmé par
+le nouveau tour. La phrase en cours a priorité, les préparations en attente sont
+remplacées si le plan change et annulées à Stop. Une synthèse déjà partie peut
+finir silencieusement dans le cache. Aucun appel H spéculatif supplémentaire.
+
+Tests techniques hors modèle : mauvais clic, point périmé, app/scroll, saisie,
+arrêt, confirmation explicite, lot de consignes invalidé, cache vocal, priorité
+audio, annulation et compatibilité des schémas. Aucun score humain ni gain de
+latence réelle n’est déduit de ces tests. Un parcours humain H reste nécessaire.
+
+Validation finale : **1 038 tests Python passent** (agent, backend, pilote et
+import/minimisation de profils), ainsi que les sept tests desktop existants.
+La recette renderer en Chrome headless couvre sept groupes de vérifications
+avec un serveur simulé local : confirmations exactes, double clic, conflit 409,
+états masqués, voix et feedback ; zéro erreur JavaScript. Elle ne mesure pas
+l’audio réel, H, ni le masquage natif Electron.
+
+## 2026-11-08 — Microbenchmark réel Holo4 : DGX et fenêtre
+
+26 appels Models API au total : 13 cloud et 13 DGX, dont 20 mesures retenues,
+quatre échauffements et deux préflights. Localisation d’un bouton de documentation
+H publique, bureau synthétique, sans données personnelles ni interaction réelle.
+Le centre prédit est dans la cible DOM pour 20/20 réponses mesurées. Ce score
+géométrique ne constitue ni une tâche réussie ni un label humain.
+
+Médianes TTFT reçu / JSON complet : cloud image complète 1,442 / 1,714 s ;
+DGX complète 0,600 / 1,705 s ; cloud fenêtre 1,376 / 1,568 s ; DGX fenêtre
+0,512 / 1,617 s. Tokens d’entrée : 1816 → 1286, soit −29,19 %. Une page
+fixe, cinq répétitions par condition et cache partiellement réutilisé ; ce n’est
+pas un A/B du coaching. Les images ont une échelle commune et restent hors Git.
+
+Relais DGX temporaire, tunnel et jeton fermés après mesure ; aucune modification
+des serveurs de modèles existants. Résultats et fixtures archivés dans le dossier
+privé HCompanionResearch/benchmarks. Protocole et limites dans
+[le rapport](holo4-latency-window-benchmark-2026-11-08.md). L’application utilise
+toujours son moteur précédent ; crop et DGX ne sont pas activés en production.
+
+## 2026-11-08 — Intégration accessibilité, coach Devin et préparation du pitch
+
+Intégration de `origin/main` à `954c0ca` : catalogue de contrôles macOS du navigateur,
+guidage textuel par Holo4 avec coordonnées AX, transcription Gladia en direct,
+nouvelle interface desktop de Tom. Nos retours vocaux/labels privés, confirmations
+liées à la session et à l'étape, mode observation seule et raccourci Ctrl+Maj+H sont
+conservés. Le cadre d'une app masquée ne filtre plus les clics dans son ancien rectangle.
+
+Nouveau `--software cognition` : procédure de guidage ouverte, réponses anglaises,
+documentation publique dédiée et traces séparées des essais H. Aucun lancement,
+message, commentaire ou merge Devin n'est autorisé par cette procédure de lecture.
+Le corpus local conserve ses citations versionnées et n'est pas une observation du compte.
+
+Validation hors ligne après résolution des conflits : **1 043 tests Python**, **11 tests
+desktop**, contrats régénérés ; contrôle headless de Home/retour/voix, y compris
+780 px de large. Les tests du microphone ne démarrent pas d'enregistrement réel.
+
+Un **appel réel Models API Holo4** sur un catalogue de trois contrôles préparés
+(`Agent`, `Ask`, `Prompt`) a reçu une question française : il a sélectionné `Ask`
+et produit une instruction et une explication anglaises. Durée client **3,222 s**.
+Il s'agit d'un test de raccordement sur fixture, sans capture ni clic dans le compte,
+sans label humain, pas d'une mesure de performance du parcours utilisateur. Résultat
+conservé hors Git dans le dossier privé `human-cognition/cognition-planner-probe.json`.
+
+Compte Devin ouvert : l'utilisateur a ajouté des crédits par coupon, et la bannière
+d'épuisement a disparu après actualisation. L'espace ne montre encore aucune session.
+Le clonage vocal autorisé a abouti chez ElevenLabs après ajout du droit de création à
+la clé par l'utilisateur ; aperçu anglais généré. Échantillon, identifiant de voix et
+clé restent privés. La qualité perçue de cette voix et le guidage live restent à noter
+par un humain. Aucun essai H actif n'a été arrêté pour ces vérifications.
+
+Préparation éditoriale : [dix scénarios Devin](scenarios/cognition-human-session.md),
+[conducteur 120 secondes](pitch-video-2min.md). Ce sont des plans de recette/tournage,
+pas des vidéos réalisées ni dix réussites acquises.
+
+## 2026-11-08 — Arrêt utilisateur et raccord natif Devin Desktop
+
+L'ancien essai H a été arrêté sur demande explicite de l'utilisateur. Son état
+terminal `stopped`, son rapport, son journal et l'archive complète de sa session H
+ont été vérifiés dans le stockage privé avant l'arrêt de l'ancien serveur.
+Aucun feedback humain ni label de réussite n'a été ajouté à cet essai.
+
+Le bouton **Stop task** est maintenant accessible pendant une tâche depuis tous
+les onglets du compagnon. Une erreur d'arrêt reste visible et permet une nouvelle
+tentative. Les commandes vocales exactes « Stop task » et « Arrête la tâche »
+sont reconnues après transcription, sans lancer de nouvelle tâche. Une dictée
+explicitement destinée au feedback reste un feedback.
+
+Le lanceur accepte `--software cognition --native-devin`. La collecte AX cible
+uniquement la fenêtre focalisée de Devin Desktop (`com.exafunction.windsurf`),
+revérifie le premier plan après la collecte et la planification, et exclut les
+valeurs et descendants des champs de saisie. Pas de repli navigateur ni de capture
+du bureau dans ce pilote natif. Si AX manque, le coach annonce le blocage ;
+l'identité de l'application ne constitue pas une preuve de réussite métier.
+
+Devin Desktop **3.12.28** est installé et son arbre natif expose notamment
+`Switch mode`, `Cloud` et `Local`. La lecture du pilote lorsque Codex était au
+premier plan a correctement renvoyé une cible indisponible. Cela ne valide pas
+encore le guidage vocal ni le placement des annotations dans un essai humain.
+
+Validation après intégration : **1 104 tests Python** et **13 tests desktop**
+passent. Les tests couvrent le changement de fenêtre, l'exclusion des champs et
+de leurs descendants, l'arrêt vocal, le bouton global et le refus d'une requête
+d'arrêt. La recette hors ligne ne produit pas de label humain ou de gain de latence.
+
+## 2026-11-08 — Dictée vide, barre de menus et relance autonome
+
+L'utilisateur signalait une app disparue. Le processus Electron tournait encore,
+mais le moteur vocal avait quitté avec `ValueError: Please say a question` après
+une transcription vide. Ce n'était pas un échec de Holo ni de l'accès à Devin.
+Une transcription vide affiche désormais une invitation à réessayer et conserve
+le listener ; elle ne crée pas de tâche, ne consomme pas un feedback armé et ne
+produit pas de label.
+
+La barre de menus macOS reprend le visage du compagnon : ouverture du panneau,
+arrêt de tâche et relance du pilote Devin. La croix masque la fenêtre ; une nouvelle
+ouverture réutilise la même instance. Le panneau masqué n'envoie plus de heartbeat
+qui maintiendrait le Magnet caché. Quitter l'interface reste distinct d'arrêter le
+moteur vocal indépendant ; aucun service au démarrage de macOS n'est installé.
+
+Le lanceur `Launch H Companion.command` démarre le moteur détaché, vérifie sa
+disponibilité et réutilise uniquement un pilote natif Devin identifié par son PID
+et ses métadonnées. Il refuse les ports occupés par un autre moteur et ne tue aucun
+processus existant. Les logs et la configuration de l'interpréteur restent privés.
+
+Validation : **1 114 tests Python**, **26 tests du lanceur** et **19 tests desktop**
+passent. Sur le Mac, le lancement détaché a réussi ; une seconde ouverture a gardé
+le même PID moteur et un seul processus principal desktop. L'interface affiche
+le raccourci choisi par l'utilisateur, **Option droite**, et le moteur rapporte
+ElevenLabs disponible et activé. Aucun scénario Devin n'a été lancé par cette
+recette ; aucun label humain de guidage n'a été ajouté. La visibilité du menu dans
+la barre macOS a été soumise à vérification de l'utilisateur.
+
+L'utilisateur a confirmé avoir vu l'icône avant de la fermer. À sa demande,
+un lanceur natif **`/Applications/H Companion.app`** a ensuite été compilé,
+signé localement et installé avec le même visage. Son ouverture a recréé une
+seule interface Electron et réutilisé le moteur prêt ; le panneau natif affiche
+**Right ⌥: new request**. La vérification de signature passe. Ce bundle est un
+raccourci vers le checkout et l'environnement du Mac, sans secret embarqué,
+pas encore une distribution autonome destinée aux autres équipes.
+
+## 2026-11-08 — Diagnostic du blocage natif Devin
+
+Deux essais humains se terminaient par « Native accessibility guidance is
+unavailable ». Leurs journaux montrent pourtant trois plans successifs chacun,
+avec des contrôles AX natifs nommés et positionnés, en environ 1 à 1,7 seconde
+par plan. Le vrai déclencheur était la répétition d'une consigne, suivie d'un
+message de repli trop général. Ces observations ne prouvent pas une permission
+macOS manquante ni un arbre inaccessible.
+
+Le moteur distingue désormais répétition, absence de catalogue, perte du premier
+plan, réponse de planification invalide et blocage signalé par l'utilisateur. Il
+demande ce qui a changé plutôt que d'attribuer toute absence de progression à AX.
+**112 tests ciblés passent**, dont sept nouvelles régressions. Aucun repli vers
+Chrome ou une capture globale n'a été introduit. La cause exacte de la répétition
+après les gestes humains et la qualité du guidage restent à mesurer sur un nouvel
+essai ; aucun de ces essais n'a été labellisé réussi automatiquement.
+
+L'inspection native suivante a établi un défaut reproductible : le menu
+« Devin Settings » expose un `AXMenu` frère de `AXWebArea`, alors que le collecteur
+ne parcourait que ce dernier. La lecture couvre désormais la fenêtre native
+focalisée entière, menus compris, en conservant le ciblage du bundle/PID,
+la revérification du focus et l'exclusion des valeurs et descendants des champs.
+Les autres fenêtres ne sont pas parcourues. **121 tests AX, cognition et guidage
+passent**, avec des régressions sur l'apparition et la fermeture du menu. Aucun
+réglage Devin n'a été modifié pendant l'inspection. Cette correction explique
+une répétition possible ; elle ne constitue pas encore une réussite humaine
+de bout en bout du scénario.
+
+## 2026-11-08 — Homepage publique et redémarrage immédiat
+
+La homepage de Tom est publiée sur **https://hcompanion.help/**. Le domaine
+principal répond 200 en HTTPS et `www` redirige vers celui-ci avec un certificat
+valide. Les sept fichiers statiques publiés ont été comparés à la release locale.
+Les tests visuels desktop/mobile n'ont trouvé ni débordement ni erreur JavaScript.
+Les cinq tests de la démo passent ; les anciens liens de paiement ne déclenchent
+plus de requête vers localhost et ne prétendent plus confirmer un paiement.
+Le texte présente le parcours de coaching actuel et les prix comme illustratifs.
+Les contrôles des services déjà hébergés et les 19 identifiants de conteneurs
+restent inchangés. Détails : [déploiement](landing-deployment-2026-11-08.md).
+
+Pendant le redémarrage du pilote Devin, les sockets TCP récemment fermées
+étaient prises pour un serveur encore actif. Le contrôle des ports utilise
+désormais la même réutilisation d'adresse que le serveur : un listener actif
+reste refusé, un port en TIME_WAIT peut être repris. **27 tests du lanceur**
+passent, dont une régression avec de vraies connexions TCP. Le moteur a ensuite
+redémarré et annoncé son état prêt ; aucune trace n'a été effacée.
+
+## 2026-11-08 — Dictée mixte et progression native Devin
+
+Les essais humains récents ont exposé trois défauts distincts. Gladia était
+configuré en français seul et a mal transcrit le mot anglais « redeem ». Les
+consignes du coach restaient anglaises. Deux essais coupon se sont arrêtés lors
+de nouvelles dictées, sans crash ; une consigne informative non terminale pouvait
+attendre indéfiniment une interaction. Un parcours d'introduction avec plusieurs
+boutons « Next » successifs pouvait déclencher le garde-fou de répétition, même
+si la page avait changé. Une autre trace avait un catalogue vide ; son origine
+ne peut pas être attribuée à la notification lecteur d'écran sans autre preuve.
+
+Le lanceur Devin utilise désormais `fr-en` : Gladia accepte les deux langues,
+y compris dans une phrase, en direct comme en repli préenregistré. Le texte
+transcrit n'est pas artificiellement traduit ; les réponses restent anglaises.
+Un blocage explicitement déclaré par le planificateur termine le guidage sans
+attendre un clic ni devenir une réussite. La répétition est maintenant évaluée
+sur l'instruction et l'état observé de la page. Les autres garde-fous demeurent.
+
+**180 tests ciblés passent** (guidage Cognition/natif, progression, arrêt final,
+observation seule, voix et lanceur). Les tests Gladia utilisent des requêtes
+simulées, sans micro ni appel payant : la qualité réelle de transcription et de
+guidage reste à mesurer après relance. Les anciens épisodes et leurs labels
+ne sont pas réécrits. Le corpus de scénarios contient maintenant six demandes
+spécifiques à Desktop et distingue le coupon comme test de limite du pilote.
+
+## 2026-11-08 — Intégration pour reprise par Tom
+
+À la demande d'Edouard, intégration de la branche de travail avec les trois
+derniers commits de `main` (jusqu'à `76519cd`). Les conflits du routeur, du moteur
+de guidage et des tests AX ont été résolus en conservant les deux contributions :
+réponses documentaires et parcours dynamiques de Matteo, coaching natif, feedback,
+dictée bilingue et diagnostics de progression. L'intégration a été réalisée dans
+un worktree séparé ; aucun pilote en cours n'a été redémarré pour cette fusion.
+
+Validation de l'ensemble intégré : **1 250 tests Python passent, 3 sont ignorés,
+14 sous-tests passent** ; **19 tests desktop**, **109 tests Vision Lab** et **5
+tests landing** passent. Le typecheck TypeScript passe. La régénération des dix
+contrats ne produit aucun changement. Ces contrôles sont hors ligne et ne
+remplacent pas la recette humaine des scénarios Devin/Odoo.
+
+L'historique est conservé par fusion, sans squash : certains lanceurs extraient
+des révisions épinglées. Le lanceur macOS reste dépendant du checkout et de son
+environnement local. Les secrets et épisodes privés ne sont pas inclus.

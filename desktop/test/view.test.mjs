@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { duration, isBusy, keyLabel, procedureName, readyBadge, taskLine } from "../renderer/view.js";
+import { duration, isBusy, keyLabel, procedureName, readyBadge, safePttPreference, taskLine } from "../renderer/view.js";
 import { circlePoints, paperPoints, rng, wobble } from "../renderer/sketch.js";
 
 test("ready badge: the on-screen words, Listening only while the key is held", () => {
   assert.deepEqual(readyBadge({ voice: { ptt_key: "cmd+h" } }), { text: "⌘H: new request", pulse: false });
   assert.equal(readyBadge({ voice: { ptt_key: "alt_r" } }).text, "Right ⌥: new request");
   assert.deepEqual(readyBadge({ voice: { state: "recording" } }), { text: "Listening…", pulse: true });
-  assert.equal(readyBadge({ voice: { state: "transcribed" } }).text, "⌘H: new request");
-  assert.equal(readyBadge(null).text, "⌘H: new request");
+  assert.equal(readyBadge({ voice: { state: "transcribed" } }).text, "⌃⇧H: new request");
+  assert.equal(readyBadge(null).text, "⌃⇧H: new request");
 });
 
 test("task line says plainly who does what", () => {
@@ -69,4 +69,13 @@ test("the stick figure's waving hand never passes over its head", async () => {
       assert.ok(!(rx > box.x0 && rx < box.x1 && ry > box.y0 && ry < box.y1), `arm over the head at ${a}° (t=${t.toFixed(2)})`);
     }
   }
+});
+
+test("microphone states remain visible and unsafe stored shortcut is ignored", () => {
+  assert.equal(readyBadge({voice: {state: "starting"}}).text, "Opening microphone…");
+  assert.match(readyBadge({voice: {state: "error: permission denied"}}).sub, /permission denied/);
+  assert.match(readyBadge({voice: {state: "too_short"}}).sub, /⌃⇧H/);
+  assert.equal(safePttPreference("cmd+h"), null);
+  assert.equal(safePttPreference("unknown"), null);
+  assert.equal(safePttPreference("ctrl+shift+h"), "ctrl+shift+h");
 });

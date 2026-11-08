@@ -12,6 +12,7 @@ optional main note and a secondary "why" note.
 from __future__ import annotations
 
 import math
+import os
 import random
 import threading
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ import AppKit
 import Foundation
 import objc
 from Quartz import CGEventCreate, CGEventGetLocation
+
+from .overlay_layout import is_idle_badge, magnet_hit, magnet_rect, magnet_size, shortcut_label
 
 GRAPHITE = (0.86, 0.17, 0.12, 0.92)  # red pencil: readable on light and dark backgrounds
 PAPER = (1.0, 1.0, 0.985, 0.93)
@@ -315,6 +318,7 @@ class _SketchView(AppKit.NSView):
         self.scene = None  # Scene with AppKit coords (bottom-left origin)
         self.seed = 1
         self.badge = None  # (text, pulsing) or None: the "listening" indicator
+        self.compact_idle = False
         self.progress = 1.0  # 0..1 reveal of the current scene
         self.stroke_total = 40
         self.held = False  # True while the voice has not started: the scene waits, the badge still shows
@@ -432,6 +436,8 @@ class _SketchView(AppKit.NSView):
         import time
 
         text, pulsing = self.badge
+        if self.compact_idle and is_idle_badge(text, pulsing):
+            return
         bounds = self.bounds()
         rnd = random.Random(11)
         attrs, s, tw, th = _measure(text, 15, 600)
@@ -540,6 +546,13 @@ class Overlay:
     def redraw(self) -> None:
         _on_main(lambda: self.view.setNeedsDisplay_(True))
 
+    def set_compact(self, compact: bool) -> None:
+        """Fold the idle shortcut reminder only; recording, errors and stopping remain visible."""
+        def apply() -> None:
+            self.view.compact_idle = bool(compact)
+            self.view.setNeedsDisplay_(True)
+        _on_main(apply)
+
     # ------------------------------------------------------------------ main loop
 
     def run_until(self, done: Callable[[], bool], tick: Callable[[], None] | None = None, interval: float = 0.2,
@@ -577,19 +590,28 @@ class _MagnetView(AppKit.NSView):
             return None
         self.level = 1
         self.on_change = None
+        self.on_toggle = None
+        self.compact = False
+        self.shortcut = "⌃⇧H"
         return self
 
     def isOpaque(self):
         return False
 
+    def acceptsFirstMouse_(self, event):
+        return True
+
     def mouseDown_(self, event):
-        x = self.convertPoint_fromView_(event.locationInWindow(), None).x
-        seg = int(max(0, min(2, (x - 12) / ((self.bounds().size.width - 24) / 3))))
-        if seg != self.level:
-            self.level = seg
+        point = self.convertPoint_fromView_(event.locationInWindow(), None)
+        action = magnet_hit(point.x, point.y, self.compact)
+        if action in ("collapse", "expand"):
+            if self.on_toggle:
+                self.on_toggle(action == "collapse")
+        elif isinstance(action, int) and action != self.level:
+            self.level = action
             self.setNeedsDisplay_(True)
             if self.on_change:
-                self.on_change(seg)
+                self.on_change(action)
 
     def drawRect_(self, rect):
         rnd = random.Random(7)
@@ -598,6 +620,17 @@ class _MagnetView(AppKit.NSView):
         _REVEAL["progress"], _REVEAL["index"], _REVEAL["total"] = 1.0, 0, 10_000  # draw everything, no reveal
         _draw_paper(6, 6, W - 12, H - 12, rnd)
         _ink().setStroke()
+        attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
+        if self.compact:
+            Foundation.NSString.stringWithString_(AUTONOMY_LABELS[self.level]).drawInRect_withAttributes_(
+                ((14, 23), (W - 46, 20)), attrs)
+            small = {**attrs, AppKit.NSFontAttributeName: _hand_font(11)}
+            Foundation.NSString.stringWithString_(f"{self.shortcut} · new request").drawInRect_withAttributes_(
+                ((14, 7), (W - 28, 18)), small)
+            _stroke([(W - 24, 25), (W - 18, 31), (W - 24, 37)], rnd, 1.4, 0.4)
+            return
+        # The collapse handle is separate from the autonomy rail.
+        _stroke([(W - 28, H - 20), (W - 16, H - 20)], rnd, 1.5, 0.4)
         # Rail with three notches; the active one gets a scribbled knob.
         y = 22
         _stroke([(16, y), (W - 16, y)], rnd, 1.6, 1.0)
@@ -611,18 +644,23 @@ class _MagnetView(AppKit.NSView):
                 AppKit.NSBezierPath.bezierPathWithOvalInRect_(((cx - 7, y - 7), (14, 14))).fill()
                 for k in range(2):
                     _circle(cx, y, rnd, 11 - k * 2, 10 - k * 2)
-        attrs = {AppKit.NSFontAttributeName: _hand_font(13), AppKit.NSForegroundColorAttributeName: _ink()}
         Foundation.NSString.stringWithString_(f"Magnet: {AUTONOMY_LABELS[self.level]}").drawInRect_withAttributes_(
-            ((14, H - 40), (W - 28, 28)), attrs)
+            ((14, H - 40), (W - 54, 28)), attrs)
 
 
 class MagnetWidget:
     """Clickable autonomy slider, bottom-left. Visible to the user, hidden from screen capture."""
 
-    def __init__(self, level: int, on_change: Callable[[int], None]) -> None:
-        w, h = 330.0, 80.0
-        self.window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            ((18, 18), (w, h)), AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False)
+    def __init__(self, level: int, on_change: Callable[[int], None],
+                 on_compact_changed: Callable[[bool], None] | None = None, shortcut: str | None = None) -> None:
+        self.compact = False
+        self.on_compact_changed = on_compact_changed
+        w, h = magnet_size(self.compact)
+        self.window = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            ((18, 18), (w, h)), AppKit.NSWindowStyleMaskBorderless | AppKit.NSWindowStyleMaskNonactivatingPanel,
+            AppKit.NSBackingStoreBuffered, False)
+        self.window.setBecomesKeyOnlyIfNeeded_(True)
+        self.window.setHidesOnDeactivate_(False)
         self.window.setOpaque_(False)
         self.window.setBackgroundColor_(AppKit.NSColor.clearColor())
         self.window.setLevel_(AppKit.NSScreenSaverWindowLevel)
@@ -632,18 +670,34 @@ class MagnetWidget:
         self.view = _MagnetView.alloc().initWithFrame_(((0, 0), (w, h)))
         self.view.level = level
         self.view.on_change = on_change
+        self.view.on_toggle = self.set_compact
+        self.view.shortcut = shortcut_label(shortcut or os.environ.get("HCS_PTT_KEY", "ctrl+shift+h"))
+        self.view.setToolTip_("Réduire avec − ; cliquer la poignée pour réouvrir les réglages.")
         self.window.setContentView_(self.view)
         self.window.orderFrontRegardless()
         self.visible = True
         # Rect in top-left screen points (pynput's frame), to tell Magnet clicks apart from clicks in the app.
-        screen_h = AppKit.NSScreen.screens()[0].frame().size.height
-        self.rect = (18.0, screen_h - 18.0 - h, w, h)
+        self._screen_h = AppKit.NSScreen.screens()[0].frame().size.height
+        self.rect = magnet_rect(self._screen_h, self.compact)
 
     def contains(self, x: float, y: float) -> bool:
         if not self.visible:
             return False  # hidden (the desktop app holds the setting): a click there is a click in the app below
         rx, ry, rw, rh = self.rect
-        return rx <= x <= rx + rw and ry <= y <= ry + rh
+        return rx <= x < rx + rw and ry <= y < ry + rh
+
+    def set_compact(self, compact: bool) -> None:
+        def apply() -> None:
+            self.compact = self.view.compact = bool(compact)
+            w, h = magnet_size(self.compact)
+            # Resize the native window as well as its view: the invisible old rail must not eat clicks.
+            self.window.setFrame_display_(((18.0, 18.0), (w, h)), True)
+            self.view.setFrame_(((0.0, 0.0), (w, h)))
+            self.rect = magnet_rect(self._screen_h, self.compact)
+            self.view.setNeedsDisplay_(True)
+            if self.on_compact_changed:
+                self.on_compact_changed(self.compact)
+        _on_main(apply)
 
     def set_level(self, level: int) -> None:
         def apply() -> None:
