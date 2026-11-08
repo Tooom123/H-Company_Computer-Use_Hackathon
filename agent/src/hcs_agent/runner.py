@@ -87,6 +87,14 @@ def _label_matches(label: str, name: str) -> bool:
 _TEXT_ROLES = ("AXHeading", "AXStaticText")
 
 
+def _platform_knowledge(software: str) -> str:
+    """Reference knowledge about the whole site, for every task on it (not only the scripted ones)."""
+    try:
+        return (Path(__file__).parent / "data" / f"{software}-platform-knowledge.md").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def _actionable(target, items, page_elements=None):
     """A label or title chosen as the target -> the control it names, the nearest one (else unchanged).
     Falls back to the whole page read (page_elements): the visibility hit-test can drop a field while keeping
@@ -621,7 +629,7 @@ class Intervention:
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="done", summary="User completed the scripted steps.", steps_taken=done_steps))
 
-    def _dynamic_guide(self, bound: BoundProcedure, max_steps: int = 14, history: list[str] | None = None,
+    def _dynamic_guide(self, bound: BoundProcedure, max_steps: int | None = None, history: list[str] | None = None,
                        hints: list[str] | None = None) -> AttemptResult | None:
         """Guide without a script: each step is planned from the controls actually on the page (accessibility
         tree) and the local site knowledge, in one text-only model call; the box is exact. None = could not
@@ -654,7 +662,11 @@ class Intervention:
             sw, sh = screen_size_points()
         except Exception:  # noqa: BLE001
             sw, sh = 1512.0, 982.0
+        if max_steps is None:  # a wizard + its result page needs more than 14 steps (procedure says up to 40)
+            max_steps = max(14, min(40, int(getattr(bound.procedure, "max_steps_per_attempt", 14) or 14)))
         context = bound.guide_instructions
+        if (bound.request.software or "").lower() in ("hcompany", "h-company"):
+            context += "\n\n" + _platform_knowledge("hcompany")
         public_queries = {
             "h-company": ("H Company official documentation sessions review profiles skills usage", {"hub.hcompany.ai"}),
             "cognition": ("Devin official documentation session review playbooks knowledge", {

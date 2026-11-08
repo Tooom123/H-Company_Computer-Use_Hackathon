@@ -306,6 +306,11 @@ _STEP_HELP = re.compile(
     r"je fais quoi|on fait quoi|et (là|la|maintenant)|aide|je comprends pas|je suis bloqu|répète|repete)\b", re.I)
 
 
+def _reading_time(*texts: str) -> float:
+    """Seconds to say these texts aloud (about 14 characters per second), at least 4 s."""
+    return max(4.0, sum(len(t or "") for t in texts) / 14.0 + 1.0)
+
+
 def _take_step_question() -> str | None:
     """A pending utterance that asks about the step on screen ("and here, what should I do?"): consume and return
     it. Anything else (a new task) is left for the router, which stops the current task first."""
@@ -1416,7 +1421,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                                     None, a.box)
                                for a in g.annotations if a.pointer])
                     ov.show_scene(scene)
-                    shown.update(scene=scene, box=g.box, hidden=False)
+                    shown.update(scene=scene, box=g.box, hidden=False, since=time.time())
                     guidance_scene_shown = True
                 tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None, g.box)
                 speaker = _SPEECH.get("speaker")
@@ -1437,6 +1442,11 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
             if inputs.acted(g.kind):
                 print("\n  target interaction observed; asking H to check the result…", flush=True)
                 advance(note=inputs.observation_note(g.kind))
+                return
+            if g.kind == "info" and not g.last and g.pointer and shown.get("since") and \
+                    time.time() - shown["since"] >= _reading_time(g.instruction, g.why):
+                # A tour step ("this panel shows the agent's screen"): nothing to click, move on once it is said.
+                advance(note="Explained this part of the page (nothing to click); moved on after the explanation.")
                 return
             if g.kind == "click" and tracker.step == g.index and tracker.page_changed():
                 print("\n  the page changed; next step…", flush=True)

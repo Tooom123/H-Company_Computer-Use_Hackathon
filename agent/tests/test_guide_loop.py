@@ -207,3 +207,33 @@ def test_label_target_finds_a_field_the_hit_test_dropped(guide):
     guide.backend.plan_step = lambda *a: next(plans)
     guide.it._dynamic_guide(guide.bound)
     assert guide.shown[0].where == "Name *" and guide.shown[0].pointer == (560, 100)
+
+
+def test_every_hcompany_task_gets_the_platform_knowledge(tmp_path, monkeypatch):
+    """Not only the two wizard procedures: an unscripted request on the site explains from the same knowledge."""
+    from hcs_agent.contract import InterventionRequest, Mode
+
+    req = InterventionRequest(software="hcompany", goal="How do I pause a running session?", mode=Mode.guide,
+                              procedure_id="generic")
+    backend = MockBackend()
+    it = Intervention(req, backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    info = SimpleNamespace(is_front=True, title="H Platform", url="https://platform.hcompany.ai/sessions")
+    backend.page_catalogue = lambda _: (info, [ctl("AXButton", "Pause", 300)])
+    calls = []
+    backend.plan_step = lambda *a: calls.append(a) or {"done": True, "summary": "ok"}
+    monkeypatch.setattr(it, "_on_guidance", lambda step: (True, None))
+    monkeypatch.setattr("hcs_agent.overlay.screen_size_points", lambda: (1512, 982))
+    it._dynamic_guide(bound)
+    context = calls[0][1]
+    assert "Agent View" in context and "Subagents" in context and "pause / resume" in context
+
+
+def test_step_limit_follows_the_procedure(guide):
+    seen = []
+    guide.backend.plan_step = lambda *a: seen.append(1) or {"done": False, "instruction": f"Click Next {len(seen)}",
+                                                              "kind": "click", "target": 0}
+    guide.page.items = [ctl("AXButton", "Next", 1040)]
+    guide.it._wait_page_change = lambda *a: None
+    guide.it._dynamic_guide(guide.bound)
+    assert len(seen) > 14  # the wizard + result page tour no longer cut at 14 steps

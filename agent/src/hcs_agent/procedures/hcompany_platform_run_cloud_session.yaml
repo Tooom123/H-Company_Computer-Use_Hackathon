@@ -53,28 +53,7 @@ agent_instructions: |
   4. Instructions, Skills, Subagents: keep the defaults. Next each time.
   5. Session: enter the task "{task}" and start the session. The session page (or Agent View) opens: that is the goal.
   If the wizard asks for credits or a plan upgrade, stop and report it as blocked with the exact message.
-  Reference knowledge (official docs hub.hcompany.ai, read 2026-11-08: agents/overview, environments/overview,
-  browser/configuration, skills/overview, multi-agent, sessions/overview). Use it to explain each wizard step:
-  - An agent is a saved configuration: environment + model + instructions + skills (+ subagents). Saving it adds
-    it to your catalog; every later edit creates a new revision ("name:3" pins one, a bare name runs the latest).
-  - Details. Name = the id you pass as the agent when you start a session (lowercase letters, digits, hyphens).
-    Description (required) = one line on what the agent does; a manager agent reads it to decide whether to
-    delegate a task to this one, so write it as a capability ("Reads a web page and reports its main heading").
-  - Config, environment = where the agent acts. Cloud browser (the default): a browser H hosts for each session,
-    nothing runs on your machine. Your browser: your own Chrome with your logins. Your desktop: your screen,
-    mouse and keyboard. The cloud browser has two modes: visual (default; it sees screenshots and can click and
-    fill forms) and text (it reads the page as text only: cheapest and fastest, but read-only).
-  - Config, model = the Holo model that drives the agent. Default holo4-27b; holo4-35b-a3b for lower latency.
-    Reasoning effort, when shown, is how long the model thinks before each step (slower but more careful).
-  - Instructions = text appended to the agent's system prompt to steer it (output format, rules), for example
-    "Return one line: the heading text and the URL."
-  - Skills = Markdown instructions the agent loads only when a task matches them; H ships ready-made computer-use
-    skills under h/. None are needed for a simple read task.
-  - Subagents = other agents this one may delegate to: it becomes a manager that splits work into parallel child
-    sessions (one per site or source) and merges the result. Leave empty for a simple agent.
-  - Session = one unit of work: the prompt is the task, written as an imperative instruction. Starting it creates
-    the agent and opens the session, which you watch live in Agent View; it ends completed, failed, timed out or
-    interrupted, and the agent's final answer is shown there.
+  Platform reference knowledge (agents, wizard steps, sessions, Agent View) is added automatically.
 
 guide_steps:
   - instruction: "Open Agents in the left navigation"
