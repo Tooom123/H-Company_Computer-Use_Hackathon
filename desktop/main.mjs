@@ -23,7 +23,7 @@ const agentCache = new Map();
 
 const smoke = process.argv.includes("--smoke");
 // Linux: native Wayland gives no "always on top"; through XWayland the gaze honeycomb stays above every app.
-if (process.platform === "linux" && !process.env.HCS_OZONE_NATIVE) app.commandLine.appendSwitch("ozone-platform", "x11");
+if (process.platform === "linux" && !process.env.HCS_OZONE_NATIVE) app.commandLine?.appendSwitch("ozone-platform", "x11");
 // A smoke run gets its own profile: it must not share the GPU cache with an open app, nor write the user's
 // preferences (voice, key) when it clicks around.
 if (smoke) app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "hcs-app-smoke-")));
