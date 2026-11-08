@@ -11,6 +11,14 @@ Plain Electron, no build step. It steers the agent that runs on this Mac (`hcs-a
 | Voice | Spoken notes on/off, voice (Sarah, Jessica, Lily, Alice), speed, test; push-to-talk key. |
 | Vision | Opens Édouard's Vision Lab (`app/`). |
 
+**Window**: frameless on Linux and Windows with its own bar: drag it to move the window, minimise / maximise /
+close on the right, Ctrl+W closes, Ctrl+M minimises (GNOME on Wayland gave the window no title bar at all).
+macOS keeps its native traffic lights.
+
+**Autonomy slider**: three stops, drag the thumb, click a stop or a label, or use the arrow keys (1/2/3 too).
+It snaps on release and says when the change hit the running task ("Taking over the current task now").
+Labels and hints come from the agent's `/status` when present, so they match the Magnet.
+
 **Autonomy moved into the app**: while the app is open, the Magnet slider leaves the screen; close the app and
 it comes back. Changing the level mid-task applies at once ("Do it, I watch" during a guide = takeover).
 

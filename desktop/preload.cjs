@@ -12,5 +12,11 @@ contextBridge.exposeInMainWorld("hcs", {
     start: () => ipcRenderer.invoke("vision:start"),
     stop: () => ipcRenderer.invoke("vision:stop"),
   },
+  window: {
+    minimize: () => ipcRenderer.send("win", "minimize"),
+    maximize: () => ipcRenderer.send("win", "maximize"),
+    close: () => ipcRenderer.send("win", "close"),
+    onState: (fn) => ipcRenderer.on("win:state", (_e, state) => fn(state)),
+  },
   platform: process.platform,
 });

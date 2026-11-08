@@ -45,49 +45,120 @@ function go(name) {
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 
 // home ------------------------------------------------------------------------------------------
+// Autonomy is a real slider with three stops: drag the thumb, click a stop or a label, or use the arrow keys.
+// It snaps on release and applies at once (to the running task too). Labels and hints come from the agent
+// when it sends them (one source of truth with the Magnet), the constants above are the fallback.
 const ROUGH = [
   "M17 4 C 7 3, 2 10, 4 18 C 6 26, 16 30, 25 27 C 33 24, 35 14, 30 8 C 27 4, 22 3, 15 5",
   "M16 3 C 6 4, 1 12, 5 20 C 9 28, 20 30, 28 25 C 34 20, 34 10, 27 5 C 23 2, 18 2, 13 4",
   "M18 5 C 8 2, 1 9, 3 17 C 5 25, 14 30, 24 28 C 33 26, 36 16, 31 9 C 28 5, 23 3, 16 4",
 ];
-function buildRail() {
-  const rail = $("rail");
-  LABELS.forEach((label, i) => {
-    const b = el("button", "notch");
-    b.setAttribute("role", "radio");
+const STOPS = 3;
+let drag = null; // {pos} while the thumb is held: continuous position 0..1
+let autMsgTimer = 0;
+
+const labels = () => (status && Array.isArray(status.autonomy_labels) && status.autonomy_labels.length === STOPS ? status.autonomy_labels : LABELS);
+const hints = () => (status && Array.isArray(status.autonomy_hints) && status.autonomy_hints.length === STOPS ? status.autonomy_hints : HINTS);
+
+function buildSlider() {
+  const box = $("sLabels");
+  for (let i = 0; i < STOPS; i++) {
+    const b = el("button", "s-label");
     b.dataset.level = String(i);
-    b.append(el("b", null, label));
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 34 32");
-    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("d", ROUGH[i]);
-    svg.append(p);
-    b.append(svg);
+    b.tabIndex = -1; // the slider itself takes the focus; labels are click targets
     b.addEventListener("click", () => setAutonomy(i));
-    rail.append(b);
+    box.append(b);
+  }
+  const slider = $("slider");
+  const posAt = (x) => {
+    const r = slider.getBoundingClientRect();
+    const left = r.left + r.width / (2 * STOPS); // first stop, centred over its label column
+    const span = (r.width * (STOPS - 1)) / STOPS;
+    return Math.max(0, Math.min(1, (x - left) / span));
+  };
+  slider.addEventListener("pointerdown", (e) => {
+    if (!status || e.button !== 0) return;
+    try {
+      slider.setPointerCapture(e.pointerId); // keep following the pointer outside the slider
+    } catch {}
+    slider.focus();
+    drag = { pos: posAt(e.clientX) };
+    renderAutonomy();
   });
+  slider.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    drag.pos = posAt(e.clientX);
+    renderAutonomy();
+  });
+  const release = () => {
+    if (!drag) return;
+    const level = Math.round(drag.pos * (STOPS - 1));
+    drag = null;
+    setAutonomy(level);
+  };
+  slider.addEventListener("pointerup", release);
+  slider.addEventListener("pointercancel", () => ((drag = null), renderAutonomy()));
+  slider.addEventListener("keydown", (e) => {
+    if (!status) return;
+    const cur = pendingAutonomy ?? status.autonomy ?? 0;
+    const next = { ArrowLeft: cur - 1, ArrowDown: cur - 1, ArrowRight: cur + 1, ArrowUp: cur + 1, Home: 0, End: STOPS - 1, 1: 0, 2: 1, 3: 2 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    setAutonomy(Math.max(0, Math.min(STOPS - 1, next)));
+  });
+}
+
+function sayAutonomy(text) {
+  $("autMsg").textContent = text;
+  clearTimeout(autMsgTimer);
+  if (text) autMsgTimer = setTimeout(() => ($("autMsg").textContent = ""), 4000);
 }
 
 async function setAutonomy(level) {
   if (!status) return;
+  const before = status.autonomy;
+  if (level === before && pendingAutonomy === null) return renderAutonomy();
+  const busy = isBusy(status);
+  const guiding = busy && status.current.mode !== "act" && !status.current.takeover;
   pendingAutonomy = level;
   renderAutonomy();
   const r = await api.agent("POST", "/autonomy", { level });
   pendingAutonomy = null;
-  if (r.ok && r.data) status = r.data;
+  if (r.ok && r.data) {
+    status = r.data;
+    if (guiding && level === STOPS - 1) sayAutonomy("Taking over the current task now.");
+    else if (busy) sayAutonomy("Applied to the current task.");
+    else sayAutonomy("");
+  } else {
+    sayAutonomy("The agent did not answer: the setting is unchanged.");
+  }
   renderAutonomy();
 }
 
 function renderAutonomy() {
-  const level = pendingAutonomy ?? (status ? status.autonomy : null);
-  document.querySelectorAll(".notch").forEach((b) => {
-    const on = Number(b.dataset.level) === level;
-    b.classList.toggle("on", on);
-    b.setAttribute("aria-checked", String(on));
-    b.querySelector("svg").style.visibility = on ? "visible" : "hidden";
+  const level = pendingAutonomy ?? (status && Number.isInteger(status.autonomy) ? status.autonomy : null);
+  const pos = drag ? drag.pos : level === null ? 0 : level / (STOPS - 1);
+  const shown = drag ? Math.round(drag.pos * (STOPS - 1)) : level; // the stop the thumb would land on
+  const slider = $("slider");
+  slider.classList.toggle("off", !status);
+  slider.classList.toggle("dragging", Boolean(drag));
+  slider.style.setProperty("--pos", String(pos));
+  slider.setAttribute("aria-disabled", String(!status));
+  const names = labels();
+  if (shown !== null) {
+    slider.setAttribute("aria-valuenow", String(shown));
+    slider.setAttribute("aria-valuetext", names[shown]);
+  }
+  document.querySelectorAll(".s-tick").forEach((t) => t.classList.toggle("past", shown !== null && Number(t.dataset.level) <= shown));
+  document.querySelectorAll(".s-label").forEach((b) => {
+    const i = Number(b.dataset.level);
+    b.textContent = names[i];
+    b.classList.toggle("on", i === shown);
     b.disabled = !status;
   });
-  $("autHint").textContent = level === null ? "Start the agent to choose." : HINTS[level];
+  $("sRing").setAttribute("d", ROUGH[shown ?? 0]);
+  $("sThumb").hidden = level === null && !drag;
+  $("autHint").textContent = shown === null ? "Start the agent to choose." : hints()[shown];
 }
 
 function renderHome() {
@@ -376,7 +447,18 @@ async function poll() {
   }
 }
 
-buildRail();
+// window bar ------------------------------------------------------------------------------------
+if (api.platform === "darwin") document.body.classList.add("mac"); // native traffic lights, no buttons
+$("tbMin").addEventListener("click", () => api.window.minimize());
+$("tbMax").addEventListener("click", () => api.window.maximize());
+$("tbClose").addEventListener("click", () => api.window.close());
+api.window.onState(({ maximized }) => {
+  document.body.classList.toggle("maximized", maximized);
+  $("tbMax").title = maximized ? "Restore" : "Maximise";
+  $("tbMax").setAttribute("aria-label", $("tbMax").title);
+});
+
+buildSlider();
 go(["home", "activity", "usage", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
 document.querySelector('nav button[data-go="voice"]').addEventListener("click", renderVoice);
 poll();

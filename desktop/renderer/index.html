@@ -11,6 +11,24 @@
     <script type="module" src="app.js"></script>
   </head>
   <body>
+    <!-- Window bar: drag anywhere on it to move the window; minimise / maximise / close on the right.
+         The window is frameless (Wayland and Windows draw no usable title bar otherwise); macOS keeps its own lights. -->
+    <header class="titlebar" id="titlebar">
+      <span class="tb-title">H Companion</span>
+      <div class="tb-buttons" id="tbButtons">
+        <button class="tb" id="tbMin" title="Minimise" aria-label="Minimise">
+          <svg viewBox="0 0 10 10"><path d="M1 5h8" /></svg>
+        </button>
+        <button class="tb" id="tbMax" title="Maximise" aria-label="Maximise">
+          <svg class="i-max" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" /></svg>
+          <svg class="i-restore" viewBox="0 0 10 10"><rect x="1" y="3" width="6" height="6" /><path d="M3 3V1h6v6H7" /></svg>
+        </button>
+        <button class="tb close" id="tbClose" title="Close" aria-label="Close">
+          <svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" /></svg>
+        </button>
+      </div>
+    </header>
+
     <aside class="side">
       <div class="drag"></div>
       <div class="brand">
@@ -56,10 +74,19 @@
             <h2>Autonomy</h2>
             <span class="muted small">How much I do for you · applies right away, even mid-task</span>
           </div>
-          <div class="rail" id="rail" role="radiogroup" aria-label="Autonomy">
-            <span class="track"></span>
+          <div class="slider" id="slider" role="slider" tabindex="0" aria-label="Autonomy"
+               aria-valuemin="0" aria-valuemax="2" aria-orientation="horizontal">
+            <div class="s-track"><span class="s-fill" id="sFill"></span></div>
+            <span class="s-tick" data-level="0"></span>
+            <span class="s-tick" data-level="1"></span>
+            <span class="s-tick" data-level="2"></span>
+            <span class="s-thumb" id="sThumb">
+              <svg viewBox="0 0 34 32"><path id="sRing" /></svg>
+            </span>
           </div>
+          <div class="s-labels" id="sLabels"></div>
           <p class="hand hint" id="autHint"></p>
+          <p class="muted small aut-msg" id="autMsg" role="status"></p>
         </div>
 
         <div class="stats">
