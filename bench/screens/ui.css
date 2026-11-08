@@ -1,0 +1,15 @@
+/* Shared look for the synthetic benchmark screens: an Odoo-like back office, dense on purpose. */
+*{box-sizing:border-box}
+html,body{margin:0;width:1440px;height:900px;overflow:hidden;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#212529;background:#f4f5f7}
+button,.btn{font:inherit;border:1px solid #d0d4da;background:#fff;border-radius:4px;padding:5px 10px;color:#212529;cursor:pointer}
+.primary{background:#714b67;border-color:#714b67;color:#fff}
+.nav{height:46px;background:#714b67;color:#fff;display:flex;align-items:center;gap:18px;padding:0 14px}
+.nav b{font-size:15px}.nav span{opacity:.9}.nav .right{margin-left:auto;display:flex;gap:14px;align-items:center}
+.icon{width:28px;height:28px;padding:0;display:inline-grid;place-items:center;border:0;background:none;color:inherit;font-size:15px}
+.avatar{width:26px;height:26px;border-radius:50%;background:#e9a03b;display:inline-grid;place-items:center;font-weight:700;color:#fff;font-size:11px}
+.cp{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#fff;border-bottom:1px solid #e3e5e8}
+.cp h2{margin:0 8px 0 0;font-size:18px;font-weight:500}
+.search{flex:0 0 420px;border:1px solid #d0d4da;border-radius:4px;padding:6px 10px;color:#868e96;background:#fff}
+.views{margin-left:auto;display:flex;gap:2px}
+.views .icon{border:1px solid #d0d4da;border-radius:4px;background:#fff;color:#495057;width:32px}
+.pager{color:#6c757d;margin-left:12px}

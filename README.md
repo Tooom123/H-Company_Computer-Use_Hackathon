@@ -38,10 +38,13 @@ computer-use hackathon.
 - **Desktop app.** A small window (Electron) next to your work: live status and Stop, the autonomy slider, your
   task history with a ✓ / ✗ verdict per task (sent back with the report), voice and push-to-talk settings, and
   gaze calibration.
-- **Vision (research).** A webcam gaze tracker (WebGazer + MediaPipe, entirely local: no face image leaves the
-  computer) and a "honeycomb" heatmap that turns the noisy gaze plus the clickable elements on screen into a
-  probability of where the user is about to act. Goal: send the model a crop around where the user looks instead
-  of the whole screen, with a fallback to the full screen.
+- **Vision: gaze-assisted grounding (opt-in).** With one switch in the desktop app, a webcam gaze tracker running
+  entirely on the computer (no face image ever leaves it) tells the agent where the user is looking. Instead of the
+  whole screen, the agent sends H's Holo model a **smaller screenshot**, cropped around the gaze, the clickable
+  controls and what the user asked, and falls back to the full screen when the control is not there. Benchmarked
+  on 7,000+ real Holo calls: **same accuracy with 43 % fewer pixels and ~64 % fewer image tokens**, and **75 % →
+  85 % success** on vague, user-style requests. A red "honeycomb" shows the user what is tracked, over every app.
+  Details in [Vision: gaze-assisted grounding](#vision-gaze-assisted-grounding).
 
 Demo software: Odoo CRM (create an opportunity, schedule a follow-up, log a note, qualify an opportunity, and a
 deliberately blocked action caused by user rights) and the H Company platform (find documentation, create an API
@@ -61,16 +64,70 @@ the general agent working from the live page.
                         desktop app ◄── control point 127.0.0.1:8768 (status, autonomy, stop, voice, rating)
 ```
 
+## Vision: gaze-assisted grounding
+
+Every guided step asks Holo to find one control on a screenshot. The user is usually already looking at it, so
+H Companion can send **only the part of the screen that matters**: a smaller image to the H Models API, and a
+model that is not distracted by look-alike controls elsewhere on the screen.
+
+**How it works.**
+
+1. **Opt-in.** Vision is off by default. The user turns it on in the desktop app's Vision tab and calibrates once
+   (9 dots, 3 clicks each, then 4 dots only looked at, ~30 s); the accuracy is measured and shown.
+2. **On-device gaze tracking.** A background tracker reads the webcam locally (MediaPipe face and iris landmarks,
+   ridge regression calibrated on the user) and streams only screen coordinates to the agent's local control
+   point. No image of the face is stored or sent. The user sees their gaze as a red honeycomb over every app
+   (it can be hidden; the overlay is excluded from screen capture, so Holo never sees it).
+3. **Gaze × controls × intent.** At each step the agent scores every clickable control on screen (accessibility
+   tree on macOS) by how close it is to the gaze and how well its label matches the request (local, free, FR/EN),
+   and crops the screenshot around the most probable controls, at least 768×480
+   ([`gaze_crop.py`](agent/src/hcs_agent/gaze_crop.py)).
+4. **Safe fallback.** Holo can answer "not here"; the agent then asks again on the full screen. Strict screen
+   checks (verification) always use the full screen.
+
+**Benchmarks** (real H Models API calls, `holo4-35b-a3b`, the agent's own grounding request; method, data, raw
+calls and statistics in [`bench/`](bench/README.md)). We iterated in three rounds: an exploration run (5,206
+calls, 3 Holo models, 12 real websites and 3 Odoo-like screens), a **confirmation run on a fresh dataset**
+(2,018 calls, 112 tasks) so that the chosen setting is not judged on the data it was tuned on, and an ablation of
+each signal (gaze, controls, intent) on user-style requests (1,236 images).
+
+| Finding | Full screen (before) | Gaze crop (now) |
+| --- | --- | --- |
+| Pixels sent per screenshot | 655,360 | **368,640 (−43 %)** |
+| Image tokens per call | 581 | **207 (−64 %)** |
+| Success when the task names the control | 95 % | **94–97 %** (no significant difference) |
+| Success on vague, user-style requests (good / fair webcam) | 75 % | **86 % / 85 %** with the gaze crop, 84 % / 82 % with all three signals (p < 0.01–0.02) |
+| Gaze × controls × intent, realistic mix (10 % of steps looking elsewhere) | 75 % | **82 %**, for +6 % cost |
+| User looking elsewhere | — | Holo says "not here" 94 % of the time; fallback recovers |
+
+What we learned along the way:
+
+- **Smaller screenshots, same answers.** A crop of at least 768×480 around the gaze is as accurate as the full
+  screen while sending 43 % fewer pixels; per call, the bill drops ~7 % and latency 5–10 %, because the fixed
+  prompt and tool schema (~540 tokens) dominate. A lighter tool schema would multiply the saving.
+- **When users speak like users, the gaze makes Holo right more often.** "I want to revoke my key" is vague; the full
+  screen keeps every look-alike, the crop around the gaze does not: +10 points.
+- **Too tight hurts.** Crops of 512×320 lost accuracy among dense links (84–87 %); the 768×480 floor fixed it.
+- **The gaze is what makes a crop work.** The same crop at the screen centre falls back 79 % of the time and costs
+  more.
+- **Combining the three signals is the robust choice.** Gaze alone is fragile when the user looks away; adding the
+  request and the on-screen controls keeps the crop on the right control and is the most stable setting.
+
+Honest limits: the gaze in the benchmark is simulated from measured webcam error (60 / 120 / 200 px), and the
+screens are public websites and Odoo-like mock-ups; the next step is the same protocol with recorded gaze on real
+customer software.
+
 ## Repository layout
 
 | Path | What it is | Stack |
 | --- | --- | --- |
 | [`agent/`](agent/) | The assistant: procedures, routing, guide and act modes, verification, report, push-to-talk, overlay, voice, local control point (`hcs-agent`) | Python 3.12, `hai-agents`, AppKit (macOS) |
 | [`backend/`](backend/) | Support backend: case ingestion, dashboard, grouping, metrics, escalation file, Devin auto-fix, Stripe test checkout (`hcs-backend`) | Python 3.12, FastAPI, SQLite |
-| [`desktop/`](desktop/) | Desktop app (status, autonomy, activity and verdicts, voice, vision), macOS menu-bar companion and Finder launcher | Electron, plain JS |
+| [`desktop/`](desktop/) | Desktop app (status, autonomy, activity and verdicts, voice, vision opt-in), background gaze tracker, macOS menu-bar companion and Finder launcher | Electron, plain JS, Python (MediaPipe) |
 | [`app/`](app/) | Vision Lab (local gaze tracking, calibration, region of interest, clean screen capture, Holo analysis) and the voice pilot UI | Electron, React, Vite, TypeScript |
 | [`pilot/`](pilot/) | Voice pilot server and isolated headless-browser pilot | Python |
-| [`heatmap/`](heatmap/) | Gaze "honeycomb" heatmap module and its test page | JS (no dependency) |
+| [`heatmap/`](heatmap/) | Gaze "honeycomb" heatmap, calibration, webcam vision page and the full-screen gaze overlay | JS (no dependency) |
+| [`bench/`](bench/) | Gaze-assisted grounding benchmark: datasets, scripts, raw Holo calls and reports | Python, Electron |
 | [`landing/`](landing/) | The public website (landing page) | Static HTML/CSS/JS, three.js |
 | [`contracts/`](contracts/) | JSON Schemas shared by every component, generated from `agent/src/hcs_agent/contract.py` | JSON Schema |
 | [`scripts/`](scripts/) | Contract export, demo data reset (Odoo), procedure drafting, launchers, benchmarks | Python |
@@ -161,7 +218,16 @@ Details: [desktop/README.md](desktop/README.md).
 
 API, grouping rules and the escalation file: [backend/README.md](backend/README.md).
 
-### 4. Vision Lab and gaze heatmap
+### 4. Vision: gaze tracking, Vision Lab and heatmap
+
+In the desktop app: **Vision** tab → turn on "Use my gaze" → **Recalibrate**. The background tracker needs a
+one-time setup (see [desktop/tracker/README.md](desktop/tracker/README.md)):
+
+```bash
+python3 -m venv desktop/tracker/.venv && desktop/tracker/.venv/bin/pip install -r desktop/tracker/requirements.txt
+```
+
+The Vision Lab (macOS) and the heatmap test page:
 
 ```bash
 cp app/.env.example app/.env && npm run dev --prefix app      # Vision Lab: calibration, gaze region, Holo analysis
@@ -190,6 +256,7 @@ uv run pytest                          # agent + backend (simulated backend, no 
 npm test --prefix desktop              # desktop app UI logic
 npm test --prefix app                  # Vision Lab (vitest)
 npm test --prefix heatmap              # heatmap maths
+uv run pytest bench                    # benchmark helpers (no call; real runs: bench/README.md)
 ```
 
 Tests never need an H key: they run against the simulated backend.
@@ -205,8 +272,9 @@ postcondition and carries `category`, `status`, `escalation`, `evidence`, `timin
 
 ## Privacy
 
-- Gaze tracking runs locally in the browser engine; no image of the user's face is sent anywhere. Only screen
-  regions go to the model.
+- Vision is opt-in and off by default. Gaze tracking runs locally (background tracker or browser engine); no image
+  of the user's face is stored or sent anywhere. Only screen coordinates reach the agent, and only screen regions
+  go to the model.
 - The overlay and the desktop app are excluded from screen capture.
 - Screenshots reach support only when the evidence is marked shareable and the user allowed it.
 - Keys stay in git-ignored `.env` files and are never sent to the desktop app's interface.

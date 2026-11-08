@@ -1,0 +1,16 @@
+# name  url   (real public pages, logged out; captured once into bench/data, the runs replay the capture)
+wikipedia     https://en.wikipedia.org/wiki/Main_Page
+wikipedia-fr  https://fr.wikipedia.org/wiki/Wikip%C3%A9dia:Accueil_principal
+hackernews    https://news.ycombinator.com/
+python        https://www.python.org/
+mdn           https://developer.mozilla.org/en-US/
+govuk         https://www.gov.uk/
+odoo          https://www.odoo.com/
+hcompany      https://hcompany.ai/
+github        https://github.com/hcompai
+archive       https://archive.org/
+npm           https://www.npmjs.com/
+stackoverflow https://stackoverflow.com/questions
+w3c           https://www.w3.org/
+lemonde       https://www.lemonde.fr/
+craigslist    https://sfbay.craigslist.org/

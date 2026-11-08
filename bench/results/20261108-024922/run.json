@@ -1,0 +1,45 @@
+{
+  "started_at": "2026-11-08 01:49 UTC",
+  "models": [
+    "holo4-35b-a3b",
+    "holo4-27b",
+    "holo3-1-35b-a3b"
+  ],
+  "workers": 4,
+  "f_repeats": 2,
+  "pricing": {
+    "holo3-1-35b-a3b": {
+      "prompt": 2.5e-07,
+      "completion": 1.8e-06
+    },
+    "holo3-122b-a10b": {
+      "prompt": 4e-07,
+      "completion": 3e-06
+    },
+    "holo4-27b": {
+      "prompt": 4e-07,
+      "completion": 3e-06
+    },
+    "holo4-35b-a3b": {
+      "prompt": 3e-07,
+      "completion": 2e-06
+    }
+  },
+  "variants": {
+    "plain": [
+      "gaze60",
+      "gaze120"
+    ],
+    "min768": [
+      "gaze60",
+      "gaze120"
+    ],
+    "up1024": [
+      "gaze120"
+    ],
+    "min768plain": [
+      "gaze60",
+      "gaze120"
+    ]
+  }
+}
