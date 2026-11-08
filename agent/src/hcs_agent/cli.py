@@ -1035,6 +1035,7 @@ class _InputWatcher:
 
     POINTER_TOLERANCE = 28.0
     BOX_TOLERANCE = 8.0
+    TYPING_IDLE_S = 2.0  # a field is filled when the user stops typing this long (nobody presses Tab in a textarea)
 
     def __init__(self, *, hub=None, keyboard=None, clock=None, focus_probe=None) -> None:
         self._clock = clock or time.monotonic
@@ -1044,6 +1045,7 @@ class _InputWatcher:
         self.last_click_xy = None
         self.typed = 0
         self.last_submit = 0.0
+        self.last_typed = 0.0
         self._kind = "click"
         self._target = None
         self._target_click = False
@@ -1125,6 +1127,9 @@ class _InputWatcher:
                 return  # ignore the click that may have opened/revealed the step
             relevant = self._inside_target(payload)
             if not relevant:
+                if self._field_focused and self.typed:
+                    self.last_submit = now  # typed in the field, then clicked on (e.g. Next): the field is done
+                    return
                 self._invalidate()
                 return
             self._target_click = True
@@ -1147,6 +1152,7 @@ class _InputWatcher:
             elif self._field_focused and (getattr(payload, "char", None)
                     or payload in (self._kb.Key.space, self._kb.Key.backspace)):
                 self.typed += 1
+                self.last_typed = now
 
     def arm(self, guidance) -> None:
         self.armed_at = self._clock()
@@ -1183,13 +1189,16 @@ class _InputWatcher:
             return False
         now = self._clock()
         if kind == "type":
-            return bool(self._field_focused and self.typed and self.last_submit > self.armed_at
-                        and now - self.last_submit >= settle_s)
+            if not (self._field_focused and self.typed):
+                return False
+            if self.last_submit > self.armed_at:
+                return now - self.last_submit >= settle_s
+            return now - self.last_typed >= self.TYPING_IDLE_S
         return self._target_click and now - self.last_click >= settle_s
 
     def observation_note(self, kind: str) -> str:
         if kind == "type":
-            detail = "typing and Enter/Tab after a click inside the suggested field"
+            detail = "typing inside the suggested field (then Enter/Tab, a pause or a click elsewhere)"
         else:
             detail = f"click inside the suggested target at screen point {self.last_click_xy}"
         return f"Observed interaction: {detail}. Result not verified; inspect the current screen."

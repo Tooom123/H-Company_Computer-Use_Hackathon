@@ -379,3 +379,25 @@ def test_input_hub_forwards_scroll_without_another_listener(monkeypatch):
     listeners[0].callbacks["on_scroll"](100, 200, 0, -3)
     assert events == [("scroll", (100, 200, 0, -3))]
     assert len(listeners) == 2  # existing mouse and keyboard listeners only
+
+
+def test_typing_in_a_textarea_counts_after_a_pause_without_enter_or_tab(rig):
+    """Live run 2026-11-08: Description field; the user clicked and typed, never pressed Tab: the guide waited forever."""
+    arm(rig, kind="type", box=(80, 80, 40, 40), pointer=None)
+    rig.w._on_event("click", (100, 100))
+    for ch in "Reads a page":
+        rig.clock[0] += 0.1
+        rig.w._on_event("key_down", SimpleNamespace(char=ch))
+    assert not rig.w.acted("type")  # still typing
+    rig.clock[0] += cli._InputWatcher.TYPING_IDLE_S
+    assert rig.w.acted("type")
+
+
+def test_typing_then_clicking_next_completes_the_field(rig):
+    arm(rig, kind="type", box=(80, 80, 40, 40), pointer=None)
+    rig.w._on_event("click", (100, 100))
+    rig.w._on_event("key_down", SimpleNamespace(char="x"))
+    rig.clock[0] += 0.2
+    rig.w._on_event("click", (900, 700))  # Next
+    rig.clock[0] += 0.6
+    assert rig.w.acted("type")

@@ -782,6 +782,8 @@ class Intervention:
             kind = plan.get("kind") if plan.get("kind") in ("click", "type", "info") else "click"
             target_index = plan.get("target")
             target = items[target_index] if type(target_index) is int and 0 <= target_index < len(items) else None
+            if kind == "click" and target is not None and target.role in ("AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"):
+                kind = "type"  # "click the field" means fill it: the user clicks and types (a click alone would stall)
             # The instruction and the box must name the same control: "Click 'Build'" framed on "Close" sent the
             # user into a loop (open the wizard, close it, open it...).
             problem = None
