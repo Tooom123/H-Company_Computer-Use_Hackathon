@@ -51,7 +51,8 @@ _spec.loader.exec_module(rb)
 W, H = 1440, 900
 MIN_W, MIN_H, MARGIN, MASS = 768, 480, 40, 0.8
 GAZE_FLOOR, INTENT_FLOOR = 0.02, 0.15
-STRATS = ["F", "G", "GC", "I", "GCI"]
+STRATS = ["F", "G", "GC", "I", "GCI", "GCIa"]
+AGREE_MIN = 0.5  # intent score needed for "the request clearly names a control"
 
 # --------------------------------------------------------------------------------------------- intent
 
@@ -162,8 +163,8 @@ def crop_for(strategy: str, elements: list, gaze: dict | None, sigma: float, req
     if strategy == "G":  # gaze alone: a box around the point, as wide as the uncertainty
         half = 1.3 * sigma
         return fit(gaze["x"] - half, gaze["y"] - half, gaze["x"] + half, gaze["y"] + half)
-    use_gaze = strategy in ("GC", "GCI")
-    use_intent = strategy in ("I", "GCI")
+    use_gaze = strategy in ("GC", "GCI", "GCIa")
+    use_intent = strategy in ("I", "GCI", "GCIa")
     scores = [intent_score(request, e["label"]) for e in elements] if use_intent else None
     if strategy == "I" and max(scores or [0]) == 0:
         return None  # the request matches no control: nothing to crop on, send the full screen
@@ -179,6 +180,21 @@ def crop_for(strategy: str, elements: list, gaze: dict | None, sigma: float, req
             p *= scores[i] + (INTENT_FLOOR if use_gaze else 0.0)
         probs.append(p)
     return fit(*mass_box(elements, probs))
+
+
+def agree(elements, gaze, request, crop, sigma) -> bool:
+    """Gaze and intent agree: the control the request names best (score ≥ AGREE_MIN) lies within 2σ of the gaze,
+    and inside the crop. Then Holo is asked to point, without the "not here" escape (no needless fallback)."""
+    if crop is None:
+        return False
+    sc = [intent_score(request, e["label"]) for e in elements]
+    i = max(range(len(elements)), key=lambda k: sc[k])
+    if sc[i] < AGREE_MIN:
+        return False
+    r = elements[i]["rect"]
+    cx, cy = r["x"] + r["width"] / 2, r["y"] + r["height"] / 2
+    within = lambda x, y: crop["x"] <= x <= crop["x"] + crop["width"] and crop["y"] <= y <= crop["y"] + crop["height"]  # noqa: E731
+    return within(cx, cy) and dist_to_rect(gaze["x"], gaze["y"], r) <= 2 * sigma
 
 
 def inside(r, c):
@@ -262,8 +278,14 @@ def main() -> int:
         t = tasks[tr["task"]]
         for s in STRATS[1:]:
             c = crop_for(s, screens[t["screen"]]["elements"], tr["gaze"], max(96, tr["error_px"]), t["intent"])
-            if c is not None:
-                plan.setdefault(f"{tr['task']}|{c['x']},{c['y']},{c['width']},{c['height']}", {"task": tr["task"], "crop": c})
+            if c is None:
+                continue
+            ck = f"{tr['task']}|{c['x']},{c['y']},{c['width']},{c['height']}"
+            if s == "GCIa":
+                if agree(screens[t["screen"]]["elements"], tr["gaze"], t["intent"], c, max(96, tr["error_px"])):
+                    plan.setdefault(ck + "|point", {"task": tr["task"], "crop": c, "point": True})
+            else:
+                plan.setdefault(ck, {"task": tr["task"], "crop": c})
     todo = [(k, v) for k, v in plan.items() if k not in done]
     random.Random(1).shuffle(todo)
     print(f"{len(ids)} tasks, {len(plan)} distinct images, {len(todo)} to ask -> {run_dir}", flush=True)
@@ -274,6 +296,11 @@ def main() -> int:
         if item["crop"] is None:
             sent = rb.full_image(img)
             region = {"x": 0, "y": 0, "width": W, "height": H}
+            r = holo.locate(a.model, rb.jpeg_b64(sent)[0], rb.prompt_for(t["intent"], False), [rb._POINT])
+            found = r["fn"] == "locate"
+        elif item.get("point"):  # signals agree: point, no escape (F's request on the crop)
+            sent = rb.crop_image(img, item["crop"])
+            region = item["crop"]
             r = holo.locate(a.model, rb.jpeg_b64(sent)[0], rb.prompt_for(t["intent"], False), [rb._POINT])
             found = r["fn"] == "locate"
         else:
@@ -326,7 +353,10 @@ def build(data, screens, tasks, ids, conditions, done, price, model) -> str:
             if c is None:
                 o = {"success": f["success"], "lat": f["latency_s"], "cost": cost(f), "px": f["pixels"], "fb": False, "in": True}
             else:
-                g = done.get(f"{tr['task']}|{c['x']},{c['y']},{c['width']},{c['height']}")
+                ck = f"{tr['task']}|{c['x']},{c['y']},{c['width']},{c['height']}"
+                if s == "GCIa" and agree(screens[t["screen"]]["elements"], tr["gaze"], t["intent"], c, max(96, tr["error_px"])):
+                    ck += "|point"
+                g = done.get(ck)
                 if g is None:
                     continue
                 if g["found"]:
@@ -338,7 +368,8 @@ def build(data, screens, tasks, ids, conditions, done, price, model) -> str:
             o.update(task=tr["task"], trial=tr["id"], verbatim=verbatim)
             res[(tr["condition"], s)].append(o)
     names = {"F": "F · full screen (today)", "G": "G · gaze only", "GC": "GC · gaze × controls",
-             "I": "I · intent × controls (no webcam)", "GCI": "GCI · gaze × controls × intent"}
+             "I": "I · intent × controls (no webcam)", "GCI": "GCI · gaze × controls × intent",
+             "GCIa": "GCIa · GCI, \"not here\" only when gaze and intent disagree"}
     L = [f"# Gaze × controls × intent → crop · `{model}`", "",
          f"{len(ids)} tasks with a user-style request, conditions {', '.join(conditions)}. "
          "Crop ≥ 768×480, F's prompt + \"not here\" → full-screen fallback (both calls paid). "
