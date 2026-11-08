@@ -1222,6 +1222,66 @@ def _setup_logging() -> None:
             pass
 
 
+def cmd_bench(args: argparse.Namespace) -> int:
+    """Run one procedure N times and print a reliability table: status, verified, duration, steps, median
+    seconds per guided step, cost. Mock by default (--real drives the real H backend: book the Mac first)."""
+    import statistics
+
+    registry = ProcedureRegistry()
+    proc = registry.get(args.procedure)
+    params = dict(kv.split("=", 1) for kv in (args.param or []))
+    backend = make_backend(not args.real)
+    rows = []
+    for i in range(args.runs):
+        request = InterventionRequest(software=proc.software, goal=f"bench {proc.id} #{i + 1}", procedure_id=proc.id,
+                                      parameters=params, mode=Mode(args.mode), autonomy=1 if args.mode == "guide" else 2)
+        events: list[AgentEvent] = []
+        it = Intervention(request, backend, registry, events.append, Path(args.runs_dir))
+        it.start()
+        if it.state.terminal:
+            rows.append((i + 1, "preflight", False, 0.0, 0, None, 0.0))
+            continue
+        it.approve(ApproveCommand(approved=True))
+        t0 = time.time()
+        if args.mode == "guide":
+            # mock / bench: each step is confirmed as soon as it is shown (a human bench runs `talk` instead)
+            while not it.state.terminal and time.time() - t0 < args.timeout:
+                if it.state is State.awaiting_user:
+                    try:
+                        it.next(NextCommand(done=True))
+                    except RuntimeError:
+                        pass
+                it.wait(0.05)
+        it.wait(args.timeout)
+        r = it.report
+        if r is None:
+            it.stop(StopCommand(reason="bench timeout"))
+            it.wait(10)
+            r = it.report
+        steps = [g for g in it.guidance if not g.last]
+        per_step = [g.done_s for g in steps if g.done_s is not None]
+        rows.append((i + 1, r.status.value if r else "none", bool(r and r.verification.satisfied),
+                     round(r.timings.duration_s or 0.0, 1) if r else 0.0, len(steps),
+                     round(statistics.median(per_step), 1) if per_step else None, r.cost_usd if r else 0.0))
+    ok = sum(1 for row in rows if row[1] == "resolved" and row[2])
+    print(f"\nbench {proc.id} | mode {args.mode} | {'MOCK' if not args.real else 'REAL H'} | {len(rows)} runs")
+    print("| run | status | verified | duration s | steps | median s/step | cost $ |")
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    for row in rows:
+        print("| " + " | ".join(str(x) if x is not None else "-" for x in row) + " |")
+    durations = [row[3] for row in rows if row[3]]
+    print(f"\nresolved & verified: {ok}/{len(rows)}  | median duration: "
+          f"{statistics.median(durations):.1f}s" if durations else f"\nresolved & verified: {ok}/{len(rows)}")
+    if args.log:
+        line = (f"| {time.strftime('%Y-%m-%d %H:%M')} | bench {proc.id} ({args.mode}, {'mock' if not args.real else 'real'}) | "
+                f"{len(rows)} runs | {ok}/{len(rows)} resolved+verified, median {statistics.median(durations) if durations else 0:.1f}s | "
+                f"{'simulated: not a validation of H' if not args.real else 'real H'} |\n")
+        with open("docs/test-log.md", "a", encoding="utf-8") as f:
+            f.write(line)
+        print("appended to docs/test-log.md")
+    return 0 if ok == len(rows) else 3
+
+
 def main(argv: list[str] | None = None) -> int:
     _load_env()
     _setup_logging()
@@ -1229,6 +1289,17 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("procedures", help="List available procedures").set_defaults(fn=cmd_procedures)
+
+    bench = sub.add_parser("bench", help="Run a procedure N times and print a reliability table")
+    bench.add_argument("--procedure", required=True)
+    bench.add_argument("--runs", type=int, default=3)
+    bench.add_argument("--mode", choices=["act", "guide"], default="guide")
+    bench.add_argument("--real", action="store_true", help="drive the real H backend (one operator on the Mac!)")
+    bench.add_argument("--timeout", type=float, default=600.0)
+    bench.add_argument("-p", "--param", action="append", metavar="KEY=VALUE")
+    bench.add_argument("--runs-dir", default="runs")
+    bench.add_argument("--log", action="store_true", help="append the summary line to docs/test-log.md")
+    bench.set_defaults(fn=cmd_bench)
 
     run = sub.add_parser("run", help="Run one intervention from the terminal")
     run.add_argument("--software", default="odoo")
