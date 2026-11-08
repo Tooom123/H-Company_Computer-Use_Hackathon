@@ -83,3 +83,11 @@ def test_doc_lookup_prefers_guides_and_limits_pages():
 
     assert sitemap.find_doc_pages("How many concurrent sessions can I run at once?", k=1)[0]["title"] == "Plans and limits"
     assert sitemap.find_doc_pages("What is a skill?", k=1)[0]["title"] == "Skills"
+
+
+def test_label_match_needs_whole_words():
+    els = [_el("AXCheckBox", "Agent", 10, 10, 60, 20), _el("AXLink", "Agents", 10, 40, 60, 20)]
+    best = match("the Agents entry in the left navigation menu of the platform", els)[0]
+    assert (best.role, best.name) == ("AXLink", "Agents")
+    ranked = match("the Agents entry in the left navigation menu", els)
+    assert ranked[0].name == "Agents" and ranked[0].score - ranked[1].score > 10  # no tie: a partial match is a weak hint
