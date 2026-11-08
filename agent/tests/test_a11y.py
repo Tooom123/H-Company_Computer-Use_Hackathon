@@ -57,3 +57,10 @@ def test_sitemap_doc_lookup_and_platform_memory(tmp_path, monkeypatch):
     assert len(pages) == 1 and pages[0].path == "/sessions/<id>" and pages[0].seen == 2
     assert "Create agent" in sitemap.platform_summary("hcompany") and "some text" not in sitemap.platform_summary("hcompany")
     assert "Share a session" in sitemap.context_for("hcompany", "share a session", with_doc=False)
+
+
+def test_doc_lookup_prefers_guides_and_limits_pages():
+    from hcs_agent import sitemap
+
+    assert sitemap.find_doc_pages("How many concurrent sessions can I run at once?", k=1)[0]["title"] == "Plans and limits"
+    assert sitemap.find_doc_pages("What is a skill?", k=1)[0]["title"] == "Skills"

@@ -35,18 +35,41 @@ def hub_pages() -> list[dict]:
 
 
 def _tokens(text: str) -> set[str]:
-    return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2 and t not in {"the", "and", "for", "with", "how", "your", "you"}}
+    """Lower-cased words, naively singularised (skills -> skill), without the usual filler."""
+    out = set()
+    for t in re.findall(r"[a-z0-9]+", text.lower()):
+        if len(t) <= 2 or t in {"the", "and", "for", "with", "how", "your", "you", "what", "can", "does"}:
+            continue
+        if len(t) > 4 and t.endswith("ies"):
+            t = t[:-3] + "y"
+        elif len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
+            t = t[:-1]
+        out.add(t)
+    return out
 
 
-def find_doc_pages(query: str, k: int = 4) -> list[dict]:
-    """Documentation pages whose title/description share the most words with the query."""
+_REFERENCE_VERBS = {"create", "list", "retrieve", "update", "patch", "delete", "get", "send", "pause", "resume",
+                    "cancel", "force", "download", "read", "write", "share", "restore"}
+_LIMITS_WORDS = {"many", "limit", "limits", "quota", "plan", "plans", "concurrent", "price", "pricing", "cost",
+                 "included", "free", "credits", "allowed", "maximum"}
+
+
+def find_doc_pages(query: str, k: int = 4, prefer_guides: bool = True) -> list[dict]:
+    """Documentation pages whose title/description share the most words with the query.
+    Guides rank above API-reference pages (Create/List/Retrieve…) for information questions; questions about
+    limits, quotas, plans or prices bring in 'Plans and limits'."""
     q = _tokens(query)
     scored = []
     for p in hub_pages():
         title = _tokens(p["title"])
         desc = _tokens(p["description"])
         score = 3 * len(q & title) + len(q & desc)
-        if score:
+        first = p["title"].split()[0].lower() if p["title"] else ""
+        if prefer_guides and first in _REFERENCE_VERBS:
+            score -= 2
+        if q & _LIMITS_WORDS and "limit" in title:
+            score += 6
+        if score > 0:
             scored.append((score, p))
     scored.sort(key=lambda t: -t[0])
     return [p for _, p in scored[:k]]

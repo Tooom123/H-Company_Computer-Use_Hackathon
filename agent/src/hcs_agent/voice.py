@@ -299,6 +299,9 @@ class Intent(BaseModel):
                                                            "screen, an English description of that element; else null.")
     task: str | None = Field(default=None, description="When the user clearly asks for a task that no known procedure "
                                                        "covers, that task as one imperative English sentence; else null.")
+    ask: str | None = Field(default=None, description="When the user asks an information question (how many, what is, "
+                                                      "can I, how does it work) that the documentation can answer, the "
+                                                      "question in English; else null.")
     software: str | None = Field(default=None, description="Software the request is about: 'odoo', 'hcompany' or null.")
     mode: str | None = Field(default="act", description="'guide' if the user wants to be shown/explained how, else 'act'.")
     parameters: dict[str, str | int | float | None] | None = Field(default_factory=dict)
@@ -311,6 +314,7 @@ class Intent(BaseModel):
         self.question = self.question or None
         self.point_at = (self.point_at or None) and str(self.point_at)
         self.task = (self.task or None) and str(self.task)
+        self.ask = (self.ask or None) and str(self.ask)
         self.software = (self.software or None) and str(self.software).lower()
         self.role = self.role or None
         self.mode = self.mode if self.mode in ("act", "guide") else "act"
@@ -357,9 +361,12 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         "agent will work them out on screen), "
         "software ('odoo', 'hcompany' when the request concerns the H Company platform, documentation, agents, "
         "sessions, API keys, credits; else null), "
-        "point_at (string or null: when the user asks WHERE something is on the screen in front of them — 'where is the "
-        "login button?', 'which field is the amount?' — give an English visual description of that element, e.g. 'the "
-        "Log in button', and set procedure_id null and question null), "
+        "ask (string or null: an information question — 'how many sessions can I run at once?', 'what is a skill?', "
+        "'does the free plan include X?' — restated in English; the answer comes from the documentation, not from "
+        "clicking; set procedure_id, task and point_at null), "
+        "point_at (string or null: ONLY when the user asks WHERE a specific control is on the screen in front of them — "
+        "'where is the login button?', 'which field is the amount?' — give an English visual description of that "
+        "element, e.g. 'the Log in button'; never for 'how can I see / find out' questions, those are ask or task), "
         "missing (required parameters the user did not give), question (string or null: when the request could "
         "match several procedures, or a required value is missing, or the sentence is too garbled, ONE short "
         "friendly English question that gets exactly the missing piece; null when everything is clear). No prose."
@@ -401,7 +408,7 @@ class IntentRouter:
             if intent.missing and not intent.question:
                 descs = [next(p.description for p in proc.parameters if p.name == n) for n in intent.missing]
                 intent.question = "Which " + " and which ".join(d.split(",")[0].lower() for d in descs) + "?"
-        elif not intent.question and not intent.point_at and not intent.task:
+        elif not intent.question and not intent.point_at and not intent.task and not intent.ask:
             intent.question = "I did not catch what you want to do. Which task should I help with?"
         return intent
 

@@ -185,6 +185,33 @@ class Grounder:
         args["target"] = t - 1 if 1 <= t <= len(candidates) else None
         return args
 
+    def answer(self, question: str, excerpts: list[tuple[str, str]]) -> dict:
+        """Answer an information question from documentation excerpts (text only, ~1 s).
+        Returns {"found": bool, "answer": str, "source": str}: found=false when the excerpts do not contain it."""
+        tool = {"type": "function", "function": {
+            "name": "reply", "description": "Answer from the documentation, or say it is not in it.",
+            "parameters": {"type": "object", "properties": {
+                "found": {"type": "boolean", "description": "true only if the excerpts contain the answer"},
+                "answer": {"type": "string", "description": "one or two short English sentences, concrete values included"},
+                "source": {"type": "string", "description": "title of the page the answer comes from"}},
+                "required": ["found", "answer", "source"]}}}
+        docs = "\n\n".join(f"### {title}\n{body[:2200]}" for title, body in excerpts[:3])
+        body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": f"Question: {question}\n\nDocumentation excerpts:\n{docs}\n\n"
+                                                     "Answer only from these excerpts."}],
+            "tools": [tool], "tool_choice": "required", "temperature": 0, "max_tokens": 200,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)
+        r.raise_for_status()
+        calls = (r.json()["choices"][0]["message"].get("tool_calls") or [])
+        if not calls:
+            return {"found": False, "answer": "", "source": ""}
+        import json as _json
+
+        return _json.loads(calls[0]["function"]["arguments"])
+
     def choose(self, description: str, options: list[str]) -> int | None:
         """Text-only pick among labelled candidates (no screenshot, ~0.6 s): which option is the control?
         Returns the index, or None when the model declines."""
