@@ -1,6 +1,6 @@
 // H Companion app — renderer. Polls the assistant once a second (that poll is also the app's heartbeat:
-// while it lasts, the on-screen Magnet stays hidden and the setting lives here).
-import { drawMagnet, paintBadge, paintRing } from "./sketch.js";
+// while it lasts, the on-screen autonomy slider stays hidden and the setting lives here).
+import { drawAutonomy, paintBadge, paintRing } from "./sketch.js";
 import { STATUS_LABEL, duration, isBusy, keyLabel, procedureName, readyBadge, taskLine, when } from "./view.js";
 
 const $ = (id) => document.getElementById(id);
@@ -88,9 +88,9 @@ function go(name) {
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 if (api.platform === "darwin") document.body.classList.add("mac");
 
-// home: autonomy = Matteo's Magnet, as drawn on screen ----------------------------------------------
-let drawnLevel; // what the Magnet shows (redrawn only on change, the knob loops drawn in like a pencil)
-function buildMagnet() {
+// home: autonomy, a pencil slider with the three levels written out -------------------------------
+let drawnLevel; // what the slider shows (redrawn only on change, the knob loops drawn in like a pencil)
+function buildAutonomy() {
   const hit = $("magnetHit");
   LABELS.forEach((label, i) => {
     const b = el("button", "hit");
@@ -114,7 +114,7 @@ async function setAutonomy(level) {
 function renderAutonomy() {
   const level = pendingAutonomy ?? (status ? status.autonomy : null);
   if (level !== drawnLevel) {
-    const xs = drawMagnet($("magnetSvg"), level, LABELS, { animate: drawnLevel !== undefined });
+    const xs = drawAutonomy($("magnetSvg"), level, LABELS, { animate: drawnLevel !== undefined });
     drawnLevel = level;
     $("magnetHit").querySelectorAll(".hit").forEach((b, i) => (b.style.left = `${xs[i] * 100}%`));
   }
@@ -350,7 +350,7 @@ async function poll() {
   }
 }
 
-buildMagnet();
+buildAutonomy();
 window.addEventListener("resize", () => renderHome());
 go(["home", "activity", "voice", "vision"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home");
 poll();

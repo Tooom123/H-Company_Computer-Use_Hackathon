@@ -150,16 +150,17 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px 34px 28px; }
 .badge-paper.big { padding: 13px 28px 13px 44px; cursor: default; }
 .badge-paper.big span { font-size: 27px; }
 
-/* autonomy: Matteo's Magnet, as on screen (sketch.js drawMagnet) */
-.magnet { position: relative; width: 100%; max-width: 400px; margin: 4px auto 0; } /* ~1.2x the on-screen widget */
+/* autonomy: wide pencil slider, the three levels written out (sketch.js drawAutonomy) */
+.magnet { position: relative; width: 100%; margin: 2px auto 0; }
 .magnet svg { display: block; width: 100%; height: auto; overflow: visible; }
-.magnet svg .paper { filter: drop-shadow(2px 3px 3px rgba(0, 0, 0, 0.3)); }
+.magnet svg .paper { filter: drop-shadow(2px 3px 3px rgba(0, 0, 0, 0.28)); }
 .magnet.off { opacity: 0.55; }
-.magnet-label { font-family: var(--hand); font-size: 19.5px; fill: var(--ink); }
+.level-label { font-family: var(--hand); font-size: 21px; fill: var(--grey-600); }
+.level-label.on { fill: var(--ink); }
 .magnet path.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.45s ease-out forwards; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 .magnet-hit { position: absolute; inset: 0; }
-.hit { position: absolute; top: 45%; height: 50%; width: 31%; transform: translateX(-50%); background: none; border: 0; border-radius: 10px; }
+.hit { position: absolute; top: 12%; height: 80%; width: 30%; transform: translateX(-50%); background: none; border: 0; border-radius: 10px; }
 .hit:disabled { cursor: default; }
 .hit:focus-visible { outline: 2px dashed var(--pencil); outline-offset: -4px; }
 

@@ -90,14 +90,13 @@ export function paintBadge(svg, w, h, { seed = 11, dot = "on", dotX = 19 } = {})
 }
 
 /**
- * Matteo's Magnet (overlay.py, _MagnetView.drawRect_), drawn exactly as on screen, bottom-left: a 330x80 paper
- * scrap, a red-pencil rail with three notches, the active notch a filled dot in two scribbled loops, and the
- * handwritten "Magnet: <level>". AppKit counts y from the bottom, so y here is H - y there.
- * Returns the x (0..1) of each notch centre, for the click zones.
+ * The autonomy slider, wide, in the overlay's style (overlay.py, _MagnetView): a paper scrap, a red-pencil rail
+ * from left to right with three notches, each level written under its notch, the chosen one a filled dot in two
+ * scribbled loops (same strokes and sizes as on screen). Returns the x (0..1) of each notch, for the click zones.
  */
-export function drawMagnet(svg, level, labels, { animate = false } = {}) {
-  const W = 330;
-  const H = 80;
+export function drawAutonomy(svg, level, labels, { animate = false } = {}) {
+  const W = 640;
+  const H = 104;
   svg.replaceChildren();
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const r = rng(7);
@@ -108,22 +107,23 @@ export function drawMagnet(svg, level, labels, { animate = false } = {}) {
       svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": width, "stroke-linecap": "round", "stroke-linejoin": "round", class: cls, pathLength: 1 }));
     }
   };
-  const y = H - 22; // rail
-  line([[16, y], [W - 16, y]], 1.6, 1.0);
-  const segW = (W - 24) / 3;
+  const y = 40; // rail
+  const left = 110; // room for the handwritten labels under the end notches
+  const right = W - 110;
+  line([[left - 40, y], [(left + right) / 2, y + 0.5], [right + 40, y]], 1.6, 1.0);
   const xs = [];
   for (let i = 0; i < 3; i++) {
-    const cx = 12 + segW * (i + 0.5);
+    const cx = left + ((right - left) * i) / 2;
     xs.push(cx / W);
     line([[cx, y - 6], [cx, y + 6]], 1.4, 0.8);
+    const t = node("text", { x: cx, y: y + 42, "text-anchor": "middle", class: `level-label${i === level ? " on" : ""}` });
+    t.textContent = labels[i];
+    svg.append(t);
     if (i === level) {
       svg.append(node("circle", { cx, cy: y, r: 7, fill: INK }));
       for (let k = 0; k < 2; k++) line(circlePoints(cx, y, 11 - k * 2, 10 - k * 2), 1.6, 1.8, animate ? "draw" : "");
     }
   }
-  const t = node("text", { x: 14, y: 30, class: "magnet-label" });
-  t.textContent = `Magnet: ${level === null || level === undefined ? "…" : labels[level]}`;
-  svg.append(t);
   return xs;
 }
 
