@@ -432,12 +432,14 @@ class Intervention:
                 resume = ([f"The guidance was ended too early: the screen check says the goal is not reached yet "
                            f"({previous_failure[:300]}). Continue from the current page, keep what is done."]
                           if attempt > 1 and previous_failure else None)
-                if attempt == 1 and not self._ensure_screen(bound):
-                    last_attempt = AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
-                else:
-                    if resume:
-                        self._trace("goal not visible yet: guiding on")
-                    last_attempt = self._dynamic_guide(bound, hints=hints, history=resume)
+                # No "show the expected screen first" wait here: the planner guides from whatever page is open
+                # (live 2026-11-08: on the platform, a docs question waited 40 checks for the docs site).
+                if bound.expected_screen and not resume:
+                    hints = [f"The task normally starts on: {bound.expected_screen}. If another page is open, "
+                             "first guide the person there (a link or menu on the current page)."] + hints
+                if resume:
+                    self._trace("goal not visible yet: guiding on")
+                last_attempt = self._dynamic_guide(bound, hints=hints, history=resume)
                 if last_attempt is None and self.autonomy == 0:
                     last_attempt = AttemptResult(None, "completed", DeclaredResult(
                         outcome="unclear", summary="Guided from the page without takeover; outcome to verify."))
@@ -1036,7 +1038,7 @@ class Intervention:
                 return True
             if not shown:
                 gs = GuidanceStep(index=len(self.guidance) + 1, kind="wait", pointer=None,
-                                  instruction=f"Bring {bound.request.software} (CRM pipeline) to the front",
+                                  instruction=f"Show {expected[:70]}" if expected else "Bring the software to the front",
                                   why=f"I see: {visible[:80]}")
                 self.guidance.append(gs)
                 self._set_state(State.awaiting_user, "Show the software first.")

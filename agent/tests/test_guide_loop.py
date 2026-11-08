@@ -294,3 +294,22 @@ def test_guidance_resumes_when_the_screen_says_the_goal_is_not_reached(tmp_path,
     it.start(); it.approve(ApproveCommand()); it.wait(5)
     assert len(runs) == 2 and runs[0] is None and "not reached yet" in runs[1][0]
     assert it.report.status is CaseStatus.resolved
+
+
+def test_docs_question_from_the_platform_is_guided_not_waiting_for_the_docs_site(tmp_path, monkeypatch):
+    """Live 2026-11-08: "How to build a skill?" on the platform waited 40 screen checks for hub.hcompany.ai,
+    showing "Bring hcompany (CRM pipeline) to the front"."""
+    from hcs_agent.contract import ApproveCommand, InterventionRequest, Mode
+    from hcs_agent.backend import AttemptResult
+    from hcs_agent.contract import DeclaredResult
+
+    req = InterventionRequest(software="hcompany", goal="How to build a skill?", mode=Mode.guide,
+                              procedure_id="hcompany_hub_find_documentation",
+                              parameters={"topic": "build a skill", "page_title": "Skills"})
+    it = Intervention(req, MockBackend(), ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    monkeypatch.setattr(it, "_ensure_screen", lambda b: pytest.fail("must not wait for the expected screen"))
+    seen = {}
+    monkeypatch.setattr(it, "_dynamic_guide", lambda b, hints=None, history=None, **k: seen.setdefault("hints", hints)
+                        and AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary="x", blocker="x")))
+    it.start(); it.approve(ApproveCommand()); it.wait(5)
+    assert "hub.hcompany.ai" in seen["hints"][0] and "first guide the person there" in seen["hints"][0]
