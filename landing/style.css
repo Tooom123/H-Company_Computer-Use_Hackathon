@@ -147,9 +147,14 @@ p{line-height:1.6}
 @media (max-width:700px){.title.corrected{transform:translateX(-.42em)}}
 
 /* example: a real-size Mac screen (1440x900) scaled to the page, cut out of paper and taped on */
-.cutout{position:relative;margin:48px auto 0;max-width:1080px;transform:rotate(-.8deg)}
-.screen{position:relative;overflow:hidden;height:calc(900px * var(--k,.75));background:#f6f6f6;
-  filter:drop-shadow(0 14px 18px rgba(4,4,5,.16));
+.cutout{position:relative;margin:48px auto 0;max-width:1080px;transform:rotate(-.8deg);
+  /* the paper's edge on the white page: a thin contact shadow all around (on the parent: the clip-path of
+     .screen would cut a shadow of its own) */
+  filter:drop-shadow(0 0 1px rgba(4,4,5,.22)) drop-shadow(0 3px 6px rgba(4,4,5,.10))}
+/* bottom-left corner lifting off the page (the taped top corners stay flat): a shadow that only peeks out there */
+.cutout::before{content:"";position:absolute;z-index:0;left:10px;bottom:14px;width:32%;height:24%;
+  box-shadow:-14px 20px 20px rgba(4,4,5,.42);transform:rotate(-5deg) skewX(-8deg);transform-origin:left bottom}
+.screen{position:relative;z-index:1;overflow:hidden;height:calc(900px * var(--k,.75));background:#f6f6f6;
   clip-path:polygon(0% 1%,6% 0%,14% .7%,23% .1%,31% .8%,42% 0%,51% .6%,60% .1%,71% .9%,80% 0%,89% .7%,100% .2%,
     99.5% 12%,100% 25%,99.4% 38%,99.9% 51%,99.3% 64%,100% 77%,99.5% 89%,99.8% 100%,
     90% 99.3%,79% 100%,68% 99.2%,57% 99.9%,46% 99.3%,35% 100%,24% 99.4%,13% 99.9%,4% 99.2%,0% 99.8%,
