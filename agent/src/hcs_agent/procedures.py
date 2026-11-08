@@ -28,6 +28,8 @@ RESPONSE_LANGUAGE_INSTRUCTIONS = (
 
 
 COACHING_ORIGINS = {
+    "comfyui": {"cloud.comfy.org", "docs.comfy.org"},
+    "capcut": {"www.capcut.com", "capcut.com"},
     "h-company": {"hub.hcompany.ai", "platform.hcompany.ai"},
     "cognition": {"app.devin.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"},
 }
@@ -61,7 +63,7 @@ def coaching_page_allowed(software: str, url: str, *, native: bool = False,
         path = unquote(parsed.path).lower()
         restricted = r"(?:^|/)(?:auth|login|signin|sign-in|credentials|secrets|vaults?|api-keys?|tokens?|billing|payments?|security)(?:/|$)"
         # Documentation may describe these features; account pages must never expose their values.
-        return parsed.hostname in {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com"} or not re.search(restricted, path)
+        return parsed.hostname in {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai", "cognition.com", "www.cognition.com", "docs.comfy.org"} or not re.search(restricted, path)
     except (TypeError, ValueError):
         return False
 

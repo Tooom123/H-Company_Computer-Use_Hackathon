@@ -19,6 +19,9 @@ def browser(url, **kw):
     ("https://holo-demo.62.83.79.254.sslip.io/odoo/crm", "odoo"),
     ("http://holo-rich.localhost:18091/odoo/crm", "odoo"),
     ("https://my426318.s4hana.cloud.sap/ui#PurchaseOrder", "sap"),
+    ("https://cloud.comfy.org/", "comfyui"),
+    ("https://docs.comfy.org/interface/overview", "comfyui"),
+    ("https://www.capcut.com/editor/demo", "capcut"),
 ])
 def test_profile_uses_observed_origin(url, software):
     assert profile_for_page(browser(url)).software == software
@@ -31,6 +34,8 @@ def test_profile_uses_observed_origin(url, software):
     "https://platform.hcompany.ai/auth/signin", "https://platform.hcompany.ai/api-keys",
     "https://holo-demo.62.83.79.254.sslip.io/web/login", "https://other.s4hana.cloud.sap/ui",
     "http://platform.hcompany.ai/", "file:///private/notes", "https://platform.hcompany.ai:bad/",
+    "https://cloud.comfy.org.evil.test/", "https://cloud.comfy.org/login",
+    "https://www.capcut.com/signin", "https://cloud.comfy.org/settings/api-keys",
 ])
 def test_unrecognized_or_private_login_page_cannot_start_a_request(url):
     assert profile_for_page(browser(url)) is None
@@ -73,6 +78,20 @@ def test_product_change_isolates_docs_goal_and_history():
     assert next_request.parameters["previous_goal"] == odoo.goal
     assert request_matches_page(odoo, browser("https://app.devin.ai/")) is False
     assert knowledge.ask("anything", software="unknown") is None
+
+
+def test_creative_products_get_their_own_context_and_cannot_switch_during_guidance():
+    knowledge = ProductKnowledge({s: Corpus(s) for s in ('comfyui', 'capcut', 'cognition')})
+    comfy, status = make_request('Explain this node', browser('https://cloud.comfy.org/'), knowledge)
+    capcut, _ = make_request('Correct a caption', browser('https://www.capcut.com/editor/demo'), knowledge, comfy)
+    assert status['sources'] == 1 and 'comfyui documentation' in comfy.parameters['doc_context']
+    assert 'capcut documentation' in capcut.parameters['doc_context']
+    assert 'comfyui documentation' not in capcut.parameters['doc_context']
+    assert capcut.parameters['previous_goal'] == ''
+    assert not request_matches_page(comfy, browser('https://www.capcut.com/editor/demo'))
+    from hcs_agent.procedures import coaching_page_allowed
+    assert not coaching_page_allowed('comfyui', 'https://cloud.comfy.org/billing')
+    assert not coaching_page_allowed('capcut', 'https://other.example/editor')
 
 
 def test_native_surface_does_not_reuse_browser_history_or_scope():

@@ -48,6 +48,17 @@ def client(roots):
     return result
 
 
+def test_shared_cloud_directory_preserves_each_product_identity(tmp_path):
+    folder = episode(tmp_path)
+    write(folder, 'episode.json', {'source': 'comfyui', 'state': 'interrupted',
+                                  'goal': 'Inspect node help', 'simulated': False})
+    write(folder, 'request.json', {'source': 'comfyui'})
+    c = client({'cloud': tmp_path})
+    result = c.get('/company/live/sessions/cloud/sess_live')
+    assert result.status_code == 200
+    assert result.json()['software'] == 'comfyui'
+
+
 @pytest.mark.parametrize('route', ['', '/data', '/sessions/cloud/sess_live', '/frames/cloud/sess_live/000001', '/assets/fonts/PlusJakartaSans.ttf'])
 def test_all_routes_require_company_auth(tmp_path, route):
     folder = episode(tmp_path)

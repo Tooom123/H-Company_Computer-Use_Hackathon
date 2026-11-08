@@ -115,6 +115,8 @@ def main():
             'odoo': ROOT/'docs/knowledge/odoo-rich.md',
             'sap': ROOT/'docs/knowledge/sap-trial-guide.md',
             'cognition': ROOT/'agent/src/hcs_agent/data/cognition-guide-knowledge.md',
+            'comfyui': ROOT/'docs/knowledge/comfy-cloud-guide.md',
+            'capcut': ROOT/'docs/knowledge/capcut-web-guide.md',
         }
         corpora = {}
         for product, source in seeds.items():

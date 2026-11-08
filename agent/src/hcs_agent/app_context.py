@@ -23,6 +23,8 @@ PROFILES = {
     "cognition": AppProfile("cognition", "Cognition / Devin"),
     "odoo": AppProfile("odoo", "Odoo · enriched demo"),
     "sap": AppProfile("sap", "SAP · Velotics trial"),
+    "comfyui": AppProfile("comfyui", "Comfy Cloud · experimental"),
+    "capcut": AppProfile("capcut", "CapCut Web · experimental"),
 }
 HOSTS = {
     "hub.hcompany.ai": "h-company", "platform.hcompany.ai": "h-company",
@@ -31,9 +33,11 @@ HOSTS = {
     "cognition.com": "cognition", "www.cognition.com": "cognition",
     "holo-demo.62.83.79.254.sslip.io": "odoo",
     "my426318.s4hana.cloud.sap": "sap",
+    "cloud.comfy.org": "comfyui", "docs.comfy.org": "comfyui",
+    "www.capcut.com": "capcut", "capcut.com": "capcut",
 }
 DOC_HOSTS = {"hub.hcompany.ai", "docs.devin.ai", "cognition.ai", "www.cognition.ai",
-             "cognition.com", "www.cognition.com"}
+             "cognition.com", "www.cognition.com", "docs.comfy.org"}
 NATIVE_BUNDLE = "com.exafunction.windsurf"
 
 
@@ -93,7 +97,7 @@ def request_matches_page(request: InterventionRequest, info) -> bool:
 def make_request(text: str, info, knowledge, previous: InterventionRequest | None = None):
     profile = profile_for_page(info)
     if profile is None:
-        raise ValueError("Open H Company, Odoo, SAP or Devin in front, finish signing in, then ask again.")
+        raise ValueError("Open H Company, Odoo, SAP, Devin, Comfy Cloud or CapCut Web in front, finish signing in, then ask again.")
     if not text.strip():
         raise ValueError("Please say a question.")
     try:

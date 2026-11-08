@@ -1110,3 +1110,37 @@ ambiguous request to confirm completion.
 Validation: 178 targeted tests passed, then an added tracker-loop regression
 passed with all 73 input/tracker tests. Tests use fake controls, not the user's
 Mac. A live user retry of this version remains pending.
+
+
+## 2026-11-08 — Creative documentation probes and Comfy preflight
+
+Five real Holo4 cloud episodes; three initial probes ran concurrently in separate
+browsers. Full private H archives retained for all five, including failed trials.
+No authenticated Comfy/CapCut workflow or GPU job was run. No human success,
+usefulness or training-consent label was synthesized.
+
+| Scenario / local episode | Evidence review | Limitation |
+| --- | --- | --- |
+| CF-DOC-01 / `cloud_81ae6960fa694ff7` | Yes, documentation only | Managed packs / unsupported nodes answer supported by official page and frame 000004 |
+| CF-DOC-02 / `cloud_4150bbe299bd458f` | Partial, documentation only | Queue modes and node help supported; added claim about default Run mode not established |
+| CC-DOC-01 / `cloud_1555d6de9d55437c` | Unknown, infrastructure blocked | Repeated `scroll_web.scroll_element` schema errors; quarantined |
+| CC-DOC-01 retry / `cloud_48ea9cb346ca4c89` | Unknown, infrastructure blocked | Explicit valid scroll example did not prevent recurrence; original failure preserved |
+| CF-PUBLIC-01 / `cloud_b915062116ae4813` | Unknown, authentication pending | Actor reports login wall; retained frame only shows loading, so not independently verified from that frame |
+
+Provider state `interrupted` on answered documentation trials is due to the runner
+cancelling its owned idle session after receiving the answer and draining events;
+see `completion_reason`. It is not a success label. Separate `agent-review.json`
+files record the evidence-based judgments, with human guidance explicitly unvalidated.
+
+Local inspection found Comfy Desktop v1.1.3 showing Comfy Cloud and an unsaved
+Z-Image workflow. Chrome also opened the Cloud editor without a new login. Both
+showed “Subscribe to Run”; no subscription or generation initiated. Chrome's AX
+read exposed named workspace controls and some node labels, while the native
+window read exposed only the outer shell. This does not prove that every graph
+parameter is usable by the current AX coach.
+
+Implementation: separate Comfy/CapCut knowledge contexts, bounded read-only probe
+catalogue/launcher, product identity preserved in the shared tower, preparation
+stage timings, reuse of an unchanged unique target after unrelated layout jitter,
+and removal of the unused screen-difference watcher. 325 targeted offline tests
+passed. A human voice/click trial is still needed to validate the latency fix.
