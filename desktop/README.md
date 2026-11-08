@@ -19,18 +19,43 @@ The window is excluded from screen capture (like the overlay): H never sees it a
 does not take its live updates for the user acting; clicks inside it never count as doing a step.
 `HCS_APP_CAPTURABLE=1` makes it recordable for a demo video.
 
-**Autonomy moved into the app**: while the app is open, the Magnet slider leaves the screen; close the app and
-it comes back. Changing the level mid-task applies at once ("Do it, I watch" during a guide = takeover).
+**Autonomy moved into the app**: while the panel is visible, the Magnet slider leaves the screen; hide the panel and
+it comes back. On macOS the close button hides the panel and keeps the menu-bar companion available.
+Changing the level mid-task applies at once ("Do it, I watch" during a guide = takeover).
 Preset voice, speed and safe key choices are remembered. An explicitly configured custom voice wins over an old preset; observation-only sessions keep autonomy at zero.
 
 ## Stop a task yourself
 
-- **Button:** while a task runs, **Stop task** stays in the bar just below the tabs, including Voice and Mon retour. The Home card also keeps its Stop button. Reopen H Companion from the Dock if its window is hidden.
+- **Button:** while a task runs, **Stop task** stays in the bar just below the tabs, including Voice and Mon retour. The Home card also keeps its Stop button. The macOS menu-bar icon also provides **Stop task** and **Open H Companion**, even when the window is hidden.
 - **Voice:** hold the push-to-talk shortcut shown by the app (normally **Ctrl+Shift+H**), say **“Stop”**, **“Stop task”**, **“Arrête”** or **“Arrête la tâche”**, then release. Casing, accents and final punctuation are tolerated; longer sentences mentioning Stop remain normal requests. “Stop the task” is also accepted. Recognition occurs after transcription, not while the microphone is still held.
 - The button shows **Stopping…** while stopping. Acceptance means a stop was requested; **Task stopped** only appears once the runtime reports that terminal state. A failed request stays visible and can be retried.
 - If **Dicter mon retour** was armed, the next transcription is feedback, even when it is just “stop”. Use the button to stop in that case. Stopping never creates feedback labels or a new task.
 
 ## Run
+
+### Finder / menu-bar launcher for the Devin pilot (macOS)
+
+Double-click **`Launch H Companion.command`** at the repository root. This starts
+the native Devin coach on ports 8780/8781 and opens its panel. The small companion
+icon in the macOS menu bar offers **Open H Companion**, **Stop task**,
+**Start Devin coach** (reuse or restart the coach) and **Quit H Companion**.
+Closing the panel keeps that icon; quitting the desktop app removes the icon.
+The coach is a separate process: use **Stop task** to stop the current intervention.
+
+The launcher detaches the runtime from the terminal and writes logs only to
+`~/Library/Application Support/HCompanionResearch/human-cognition/`.
+It reuses a ready native Devin runtime whose PID matches its metadata, refuses
+occupied ports belonging to another runtime, and never stops unrelated processes.
+Repeated panel launches reopen the existing window. There is no login-time service
+or automatic background restart.
+
+Dependencies: run `uv sync --all-packages` and `npm ci --prefix desktop`, or set
+`HCS_PILOT_PYTHON` to an existing Python environment. This Mac can also keep its
+interpreter path (not keys) in private `human-cognition/launcher.json`:
+`{"python":"/absolute/path/to/venv/bin/python"}`. The generic launcher itself uses
+only Python's standard library. Secrets continue to be read by the existing runtime.
+
+### Development / other software
 
 ```bash
 uv run hcs-agent talk          # repo root, on the Mac (the app also works with `run`)
@@ -56,7 +81,7 @@ Not yet seen on the Mac: the Magnet hide/show (AppKit), hand fonts, the Vision L
 
 ## Next (to iterate with Matteo)
 
-- Menu-bar icon and a small floating pill (status + Stop) for when the window is hidden.
+- A small floating pill (status + Stop) for when the window is hidden.
 - Approval prompt in the app when `talk --confirm` is used.
 - Admin / IT page for costs and plan (H compute, ElevenLabs, Gladia, Linkup) in the support backend.
 - Gaze from the Vision Lab feeding the agent (where the user is stuck).

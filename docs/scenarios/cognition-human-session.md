@@ -80,6 +80,14 @@ MFA et affichage de secrets se font hors prise et hors capture du coach.
 
 ### Lancement de la version intégrée
 
+**Sur le Mac de démo :** double-cliquer `Launch H Companion.command` à la racine
+du dépôt. Le lanceur démarre le moteur Devin natif si nécessaire et rouvre la
+fenêtre existante. Son icône reste dans la barre de menus macOS quand on ferme
+le panneau. **Open H Companion** le rouvre ; **Start Devin coach** relance le
+moteur s'il est arrêté ; **Stop task** interrompt seulement la tâche.
+Les étapes terminal ci-dessous restent utiles pour le développement ou une autre
+configuration. Ne pas démarrer les deux méthodes simultanément.
+
 Terminer l'essai en cours, enregistrer son éventuel feedback, puis arrêter le précédent
 processus de coaching avant de lancer le suivant : un seul pilote du micro et du bureau.
 Le lanceur refuse les ports déjà occupés ; changer de ports ne règle pas un conflit de raccourcis.

@@ -789,3 +789,31 @@ Validation après intégration : **1 104 tests Python** et **13 tests desktop**
 passent. Les tests couvrent le changement de fenêtre, l'exclusion des champs et
 de leurs descendants, l'arrêt vocal, le bouton global et le refus d'une requête
 d'arrêt. La recette hors ligne ne produit pas de label humain ou de gain de latence.
+
+## 2026-11-08 — Dictée vide, barre de menus et relance autonome
+
+L'utilisateur signalait une app disparue. Le processus Electron tournait encore,
+mais le moteur vocal avait quitté avec `ValueError: Please say a question` après
+une transcription vide. Ce n'était pas un échec de Holo ni de l'accès à Devin.
+Une transcription vide affiche désormais une invitation à réessayer et conserve
+le listener ; elle ne crée pas de tâche, ne consomme pas un feedback armé et ne
+produit pas de label.
+
+La barre de menus macOS reprend le visage du compagnon : ouverture du panneau,
+arrêt de tâche et relance du pilote Devin. La croix masque la fenêtre ; une nouvelle
+ouverture réutilise la même instance. Le panneau masqué n'envoie plus de heartbeat
+qui maintiendrait le Magnet caché. Quitter l'interface reste distinct d'arrêter le
+moteur vocal indépendant ; aucun service au démarrage de macOS n'est installé.
+
+Le lanceur `Launch H Companion.command` démarre le moteur détaché, vérifie sa
+disponibilité et réutilise uniquement un pilote natif Devin identifié par son PID
+et ses métadonnées. Il refuse les ports occupés par un autre moteur et ne tue aucun
+processus existant. Les logs et la configuration de l'interpréteur restent privés.
+
+Validation : **1 114 tests Python**, **26 tests du lanceur** et **19 tests desktop**
+passent. Sur le Mac, le lancement détaché a réussi ; une seconde ouverture a gardé
+le même PID moteur et un seul processus principal desktop. L'interface affiche
+le raccourci choisi par l'utilisateur, **Option droite**, et le moteur rapporte
+ElevenLabs disponible et activé. Aucun scénario Devin n'a été lancé par cette
+recette ; aucun label humain de guidage n'a été ajouté. La visibilité du menu dans
+la barre macOS a été soumise à vérification de l'utilisateur.

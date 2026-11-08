@@ -679,7 +679,12 @@ def cmd_talk(args: argparse.Namespace) -> int:
             info = a11y.page()
             if info is not None and os.environ.get("HCS_GUIDE_OBSERVE_ONLY") != "1":
                 sitemap.remember(info)
-            print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
+            if a11y.native_target():
+                detail = (f"ready, {n} controls in the focused native window" if n > 1 else
+                          "waiting for the selected native app in front; no browser or screenshot fallback")
+                print(f"  native accessibility tree: {detail}")
+            else:
+                print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
     except Exception as exc:  # noqa: BLE001
         print(f"  (accessibility tree unavailable: {exc})")
     ptt = PushToTalk(key_name=args.key or os.environ.get("HCS_PTT_KEY", "cmd+h"), vocabulary=vocab, on_state=on_state)
@@ -712,6 +717,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
     try:
         while True:
             text = next_transcript()
+            if not text.strip():
+                # A short key press, silence or a transcription failure can yield an empty final.
+                # Keep the microphone/control server alive; do not consume an armed feedback draft,
+                # construct a task, or turn a retry into an implied label.
+                message = "I didn't catch a question. Hold the talk key, speak, then release to try again."
+                print(f"  {message}", flush=True)
+                _flash(ov, message, "question")
+                continue
             _VOICE["last_text"] = text
             print(f"\nYou said: \"{text}\"")
             if _consume_talk_control(text, ov):

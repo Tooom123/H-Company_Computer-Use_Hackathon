@@ -149,7 +149,7 @@ def main():
 
     cli._RUN_FINISHED_HOOK = archive_finished
     revision = subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip()
-    atomic(private/'runtime.json', {'git_revision':revision, 'model':'holo4-35b-a3b',
+    atomic(private/'runtime.json', {'git_revision':revision, 'pid':os.getpid(), 'model':'holo4-35b-a3b',
         'mode':'guide', 'human_present':True, 'observe_only':True, 'control_port':args.control_port,
         'backend_port':args.backend_port, 'knowledge_documents':document_count, 'voice':'gladia',
         'raw_microphone_audio_retained':False, 'software':args.software, 'response_language':'en',
