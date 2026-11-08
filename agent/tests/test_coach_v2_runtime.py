@@ -77,6 +77,50 @@ def prepare_guide(rt, decision=None, target=None):
     return decision, target
 
 
+def test_terminal_notice_disappears_after_reading_interval(rt, monkeypatch):
+    rt.finish('failed', 'Please try your question again.')
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 107.9)
+    rt.tick()
+    rt.overlay.hide.assert_not_called()
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 108.0)
+    rt.tick()
+    rt.overlay.hide.assert_called_once()
+    assert rt.dismiss_notice is None
+    assert rt.current.report['status'] == 'failed'  # dismissing is not erasing the trace
+
+
+def test_terminal_notice_waits_for_voice_but_has_a_hard_deadline(rt, monkeypatch):
+    rt.finish('completed', 'You can find your sessions here.')
+    rt.speaker.speaking = True
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 109.0)
+    rt.tick()
+    rt.overlay.hide.assert_not_called()
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 125.0)
+    rt.tick()
+    rt.overlay.hide.assert_called_once()
+
+
+def test_old_notice_timer_cannot_hide_a_new_request(rt, monkeypatch):
+    rt.finish('failed', 'Please try again.')
+    rt.feedback = Mock()
+    rt.feedback.consume_transcript.return_value = False
+    rt.request_decision = Mock()
+    rt.start_request('Show me Skills.')
+    rt.overlay.reset_mock()
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 130.0)
+    rt.tick()
+    rt.overlay.hide.assert_not_called()
+    assert rt.dismiss_notice is None and not rt.current.state.terminal
+
+
+def test_stop_clears_finished_notice_immediately(rt):
+    rt.finish('failed', 'Please try again.')
+    rt.cancel()
+    rt.tick()
+    rt.overlay.hide.assert_called_once()
+    assert rt.dismiss_notice is None
+
+
 def test_new_utterance_cancels_before_transcription_and_rejects_old_result(rt):
     decision = CoachDecision(action="click", target=1, speech="Open Sessions.")
     rt.voice_event("starting")

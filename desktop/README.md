@@ -33,7 +33,7 @@ Preset voice, speed and safe key choices are remembered. An explicitly configure
 
 ## Run
 
-### Finder / menu-bar launcher for the Devin pilot (macOS)
+### Finder / menu-bar launcher (macOS)
 
 On the demo Mac, **Applications → H Companion.app** is the Finder/Spotlight entry
 point. It has the companion icon and invokes the same launcher below, reopening
@@ -44,12 +44,26 @@ shortcut on another Mac after setting up the dependencies:
 python3 scripts/install-macos-launcher.py
 # Optional shared Applications folder, if writable:
 python3 scripts/install-macos-launcher.py --destination '/Applications/H Companion.app'
+# H Platform coach V2 instead of the older Devin pilot:
+python3 scripts/install-macos-launcher.py --profile h-platform-v2
 ```
 
 The default destination is `~/Applications/H Companion.app`. The installer refuses
 to overwrite an existing app. It uses the installed Swift compiler and macOS icon
 tools; no credentials are embedded. This shortcut points to this local checkout
 and Python environment: it is not yet a standalone distributable application.
+
+The installed icon on Edouard's demo Mac now selects `h-platform-v2` from the
+`h-companion-clean` checkout. It opens the coach on port 8792 with Right Option
+push-to-talk. Its logs and traces stay in the private
+`~/Library/Application Support/HCompanionResearch/h-platform-coach-v2/` directory.
+To replace an existing shortcut, keep a backup first and build to a new destination;
+the installer intentionally refuses to overwrite it. The default `devin` profile
+retains the older pilot behavior described below.
+
+V2 terminal notices dismiss after eight seconds, waiting for speech when necessary
+up to a maximum of 25 seconds. Stop clears them immediately; dismissing a notice
+does not delete the trace or cancel an active instruction awaiting the user.
 
 Double-click **`Launch H Companion.command`** at the repository root. This starts
 the native Devin coach on ports 8780/8781 and opens its panel. The small companion

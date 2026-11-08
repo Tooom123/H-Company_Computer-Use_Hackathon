@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--destination', type=Path, default=Path.home() / 'Applications/H Companion.app')
+    parser.add_argument('--profile', choices=('devin', 'h-platform-v2'), default='devin',
+                        help='Choose the runtime this Finder icon opens; existing installs default to Devin.')
     args = parser.parse_args()
     target = args.destination.expanduser().absolute()
     if sys.platform != 'darwin' or target.suffix != '.app':
@@ -42,12 +44,12 @@ def main():
                                 str(source), '--out', str(output)], check=True, stdout=subprocess.DEVNULL)
         subprocess.run(['/usr/bin/iconutil', '-c', 'icns', str(iconset), '-o',
                         str(resources / 'Companion.icns')], check=True)
-        (resources / 'launcher.json').write_text(json.dumps({'repository': str(ROOT)}, indent=2) + '\n')
+        (resources / 'launcher.json').write_text(json.dumps({'repository': str(ROOT), 'profile': args.profile}, indent=2) + '\n')
         with (contents / 'Info.plist').open('wb') as stream:
             plistlib.dump({'CFBundleIdentifier': 'ai.hcompanion.local-launcher', 'CFBundleName': 'H Companion',
                           'CFBundleDisplayName': 'H Companion', 'CFBundleExecutable': 'HCompanionLauncher',
                           'CFBundlePackageType': 'APPL', 'CFBundleIconFile': 'Companion.icns',
-                          'CFBundleShortVersionString': '0.1.0', 'CFBundleVersion': '1',
+                          'CFBundleShortVersionString': '0.2.0', 'CFBundleVersion': '2',
                           'LSMinimumSystemVersion': '12.0', 'LSUIElement': True,
                           'NSHighResolutionCapable': True,
                           'NSMicrophoneUsageDescription': 'Record your request only while you hold the H Companion talk shortcut.'}, stream)

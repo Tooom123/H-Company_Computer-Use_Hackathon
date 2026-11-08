@@ -296,6 +296,7 @@ class Runtime:
         self.confirmation_pending = False
         self.approved_step = None
         self.due = None
+        self.dismiss_notice = None
         self.busy = False
         self.autonomy = 0
         self.response_mode = "both"
@@ -390,6 +391,7 @@ class Runtime:
 
     def show(self, speech, target=None, *, speak=True):
         from .overlay import Scene
+        self.dismiss_notice = None
         self.overlay.badge(None)
         self.overlay.show_scene(Scene(text=speech, target=target.center if target else None,
                                       target_box=target.box if target else None, why=""), animate=False)
@@ -413,6 +415,7 @@ class Runtime:
         self.tour, self.requires_confirmation, self.confirmation_pending = None, False, False
         self.approved_step = None
         self.last_text, self.voice_state = question, "ready"
+        self.dismiss_notice = None
         self.overlay.hide()
         self.request_decision()
 
@@ -573,6 +576,10 @@ class Runtime:
         self.overlay.badge(None)
         if show:
             self.show(speech)
+        # Keep a short reading interval and let a normal spoken reply finish.
+        # The upper bound also clears a notice if audio gets stuck as speaking.
+        now = time.monotonic()
+        self.dismiss_notice = (self.generation, now + 8, now + 25)
 
     def schedule_tour_advance(self, speech):
         # With voice, playback completion gates every point; text-only gets a
@@ -683,6 +690,7 @@ class Runtime:
                 self.pending, self.due, self.busy = None, None, False
                 self.tour, self.requires_confirmation, self.confirmation_pending = None, False, False
                 self.approved_step = None
+                self.dismiss_notice = None
                 self.overlay.hide()
                 self.overlay.badge(None)
             elif kind == "voice":
@@ -831,6 +839,17 @@ class Runtime:
                 except Exception as exc:
                     self.current.record("action_error", {"type": type(exc).__name__})
                     self.finish("failed", "I couldn't complete that action. You can stop here and try another request.")
+        notice = getattr(self, "dismiss_notice", None)
+        if notice:
+            generation, earliest, latest = notice
+            now = time.monotonic()
+            if generation != self.generation:
+                self.dismiss_notice = None
+            elif (self.current and self.current.state.terminal and now >= earliest
+                  and (not self.speaker or not self.speaker.speaking or now >= latest)):
+                self.dismiss_notice = None
+                self.overlay.hide()
+                self.overlay.badge(None)
         self.control.check_presence()
 
     def close(self):

@@ -11,7 +11,12 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
             fail("The local launcher configuration is missing. Reinstall the H Companion shortcut.")
             return
         }
-        let script = URL(fileURLWithPath: root).appendingPathComponent("scripts/start-devin-companion.py")
+        let scripts = ["devin": "start-devin-companion.py", "h-platform-v2": "run-h-platform-coach-v2.py"]
+        guard let entry = scripts[config["profile"] ?? "devin"] else {
+            fail("This launcher profile is unknown. Reinstall the H Companion shortcut.")
+            return
+        }
+        let script = URL(fileURLWithPath: root).appendingPathComponent("scripts/" + entry)
         guard FileManager.default.fileExists(atPath: script.path) else {
             fail("The project has moved. Reinstall the H Companion shortcut from its new location.")
             return
