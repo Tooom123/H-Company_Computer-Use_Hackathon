@@ -151,6 +151,22 @@
       <section class="view" id="view-vision" hidden>
         <div class="view-h"><h1>Vision</h1></div>
         <div class="card">
+          <div class="row">
+            <div>
+              <h2>Use my gaze to show the assistant less of my screen</h2>
+              <p class="muted small">Off by default. When on, the assistant sends Holo only the part of the screen you are
+                looking at, chosen from your gaze, the controls on screen and what you asked; if the control is not
+                there, it sends the whole screen as usual.</p>
+            </div>
+            <button class="switch" id="visionSwitch" role="switch" aria-checked="false" aria-label="Use my gaze"><i></i></button>
+          </div>
+          <div class="vision-facts">
+            <span class="badge" id="visionLive">—</span>
+            <span class="muted small" id="visionStats"></span>
+          </div>
+          <p class="muted small" id="visionHint"></p>
+        </div>
+        <div class="card">
           <h2>Gaze calibration</h2>
           <p class="muted">The camera follows your gaze to frame the part of the screen you are looking at, so I see where you are stuck.
             Your face never leaves this Mac: only the screen region goes to Holo.</p>

@@ -58,6 +58,11 @@ function pref(key, value) {
 }
 
 async function syncPrefs() {
+  // Vision is off by default in the assistant: a "on" chosen in the app is applied again when it (re)starts.
+  if (pref("vision") === "true" && status && status.vision && !status.vision.enabled) {
+    const r = await api.agent("POST", "/vision", { enabled: true });
+    if (r.ok) status.vision = r.data;
+  }
   const sp = status && status.speech;
   const want = {};
   const voice = pref("voice");
@@ -473,7 +478,48 @@ $("speed").addEventListener("change", async () => {
 $("testVoice").addEventListener("click", () => api.agent("POST", "/voice/test"));
 
 // vision ----------------------------------------------------------------------------------------
+// Vision opt-in: off by default; when on, the agent crops its screenshots around the gaze (gaze_crop.py).
+function renderVisionToggle() {
+  const v = status && status.vision;
+  const on = Boolean(v && v.enabled);
+  $("visionSwitch").setAttribute("aria-checked", String(on));
+  $("visionSwitch").disabled = !status;
+  const live = $("visionLive");
+  if (!status) {
+    live.textContent = "Assistant not running";
+    live.className = "badge";
+  } else if (!on) {
+    live.textContent = "Off";
+    live.className = "badge";
+  } else if (v.live) {
+    live.textContent = "Gaze received";
+    live.className = "badge on";
+  } else {
+    live.textContent = v.gaze_age_s === null ? "Waiting for the gaze" : `No gaze for ${v.gaze_age_s} s`;
+    live.className = "badge test";
+  }
+  $("visionStats").textContent = on && v
+    ? `accuracy ~${v.error_px} px · ${v.crops} crops sent · ${v.fallbacks} fell back to the full screen`
+    : "";
+  $("visionHint").textContent = !status
+    ? "Start the assistant to turn it on."
+    : on && !v.live
+      ? "The gaze comes from the Vision Lab: open it with Recalibrate below and follow the calibration."
+      : on
+        ? "Your face never leaves this Mac: only the screen region goes to Holo."
+        : "";
+}
+$("visionSwitch").addEventListener("click", async () => {
+  const on = $("visionSwitch").getAttribute("aria-checked") !== "true";
+  $("visionSwitch").setAttribute("aria-checked", String(on));
+  pref("vision", on);
+  const r = await api.agent("POST", "/vision", { enabled: on });
+  if (r.ok && status) status.vision = r.data;
+  renderVisionToggle();
+});
+
 async function loadVision(s) {
+  renderVisionToggle();
   const v = s || (await api.vision.status());
   $("visionState").textContent = v.running ? "Calibrating" : v.available ? "Ready" : "Not installed";
   $("visionState").className = `badge${v.running ? " on" : ""}`;
@@ -492,6 +538,7 @@ async function poll() {
   if (status && !was) await syncPrefs();
   renderHome();
   if (view === "voice") renderVoice();
+  if (view === "vision") renderVisionToggle();
   // A task just ended (or the assistant came up): refresh the numbers and the list.
   const key = status && status.current ? `${status.current.session_id}:${status.current.terminal}` : String(Boolean(status));
   if (key !== lastSessionKey || Boolean(was) !== Boolean(status)) {

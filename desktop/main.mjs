@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = process.env.HCS_CONTROL_URL || "http://127.0.0.1:8768";
 const VISION_DIR = path.resolve(here, "..", "app"); // Édouard's Vision Lab
-const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|ptt|rate|feedback|feedback\/dictate)$/;
+const AGENT_PATHS = /^\/(status|sessions|usage|autonomy|stop|next|voice|voice\/test|ptt|rate|feedback|feedback\/dictate|vision)$/;
 let mainWin = null;
 let menuBar = null;
 let quitting = false;

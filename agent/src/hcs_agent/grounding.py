@@ -121,12 +121,67 @@ class Grounder:
         fn = calls[0]["function"]
         return fn, json.loads(fn.get("arguments") or "{}")
 
+    def _locate_gaze(self, description: str, context: str) -> Located | None:
+        """Vision on (opt-in) and a fresh gaze: ask Holo on the crop around where the user looks (gaze × controls ×
+        intent, see gaze_crop.py). None = no gaze, or Holo said "not here": the caller asks on the full screen."""
+        from .gaze_crop import STATE, Element, choose_crop
+
+        point = STATE.point()
+        if point is None:
+            if STATE.enabled:
+                STATE.stats["full_no_gaze"] += 1
+            return None
+        t0 = time.time()
+        from .overlay import screen_size_points
+
+        sw, sh = screen_size_points()
+        elements = None
+        try:  # clickable controls from the accessibility tree, when the front app exposes them (Chrome, Devin)
+            from . import a11y
+
+            if a11y.available():
+                info = a11y.page()
+                if info and info.elements:
+                    elements = [Element(c.name or c.role, c.frame) for c in info.elements]
+        except Exception:  # noqa: BLE001 - no tree: crop on the gaze alone
+            elements = None
+        (cx, cy, cw, ch), strategy = choose_crop(point, max(96.0, STATE.error_px), (sw, sh), elements,
+                                                 f"{context} {description}")
+        img = grab_screen().convert("RGB")
+        k = img.width / sw  # screen points -> screenshot pixels (2 on Retina)
+        crop = img.crop((int(cx * k), int(cy * k), int((cx + cw) * k), int((cy + ch) * k)))
+        if crop.width > GROUNDING_WIDTH:
+            crop = crop.resize((GROUNDING_WIDTH, int(crop.height * GROUNDING_WIDTH / crop.width)))
+        buf = io.BytesIO()
+        crop.save(buf, format="JPEG", quality=85)
+        prompt = (f"{context + ' ' if context else ''}Locate: {description}. Give the tight bounding box of that "
+                  "element, coordinates in [0,1000] of the image (x1,y1 top-left; x2,y2 bottom-right). If it is "
+                  "really not on this screen, call not_found and describe what is visible instead.")
+        fn, args = self._call(base64.b64encode(buf.getvalue()).decode(), prompt, _TOOLS)
+        STATE.stats["last_strategy"] = strategy
+        if fn and fn["name"] == "locate" and args.get("is_the_control", True) and all(k2 in args for k2 in ("x1", "y1", "x2", "y2")):
+            x1, x2 = sorted((cx + int(args["x1"]) / 1000 * cw, cx + int(args["x2"]) / 1000 * cw))
+            y1, y2 = sorted((cy + int(args["y1"]) / 1000 * ch, cy + int(args["y2"]) / 1000 * ch))
+            STATE.stats["crops"] += 1
+            return Located(True, (int((x1 + x2) / 2), int((y1 + y2) / 2)), args.get("seen", ""), time.time() - t0,
+                           (int(x1), int(y1), max(8, int(x2 - x1)), max(8, int(y2 - y1))))
+        STATE.stats["fallbacks"] += 1
+        return None
+
     def locate(self, description: str, context: str = "", strict: bool = False) -> Located:
         """Find `description` on the current screen.
 
         Default is "always point": Holo gives up far too easily when offered a not_found escape, so we only
         offer it with `strict=True` (used to confirm we are on the expected screen).
+        With Vision on (desktop app, opt-in), a crop around the user's gaze is tried first (`_locate_gaze`).
         """
+        if not strict:
+            try:
+                hit = self._locate_gaze(description, context)
+            except Exception:  # noqa: BLE001 - vision is a bonus: any problem = the usual full screen
+                hit = None
+            if hit is not None:
+                return hit
         t0 = time.time()
         img_b64, (iw, ih), (sw, sh) = capture()
         prompt = (f"{context + ' ' if context else ''}Locate: {description}. Give the tight bounding box of that "
