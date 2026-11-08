@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from hcs_agent.presentation import action_narration, paginate_text
+from hcs_agent.presentation import action_narration, clean_narration, paginate_text
 
 
 @pytest.mark.parametrize('tools, expected', [
@@ -31,6 +31,39 @@ def test_raw_action_remains_in_trace_but_never_reaches_overlay_or_desktop(monkey
     assert 'private test content' not in str(cli._LAST_ACTION)
     assert event.message == raw  # preserve the original evidence
     assert raw in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", [None, {}, ["text"], '{"instruction": "raw"}',
+    "click_desktop({'x': 0.1, 'y': 0.2})", "Use this: write_desktop({'content': 'private'})",
+    "```python\nprint('private')\n```", "Preparing the response…", "Selecting an on-screen control…"])
+def test_public_narration_rejects_code_and_status_only_fallbacks(value):
+    assert clean_narration(value) == ""
+
+
+def test_public_narration_preserves_exact_product_names_and_explanations():
+    assert clean_narration('**Local:** choose `h/holo-desktop`.') == 'Local: choose h/holo-desktop.'
+    assert clean_narration('Projects — this is where you organize your workspace.') == 'Projects — this is where you organize your workspace.'
+
+
+def test_backend_exposes_public_narration_separately_from_reasoning_and_actions(monkeypatch):
+    from hcs_agent import backend, cli
+    monkeypatch.setattr(backend, '_agent_xy_to_screen', lambda x, y: (100, 120))
+    monkeypatch.setattr(cli, '_LAST_ACTION', {})
+    content = 'Projects — this is where you organize your workspace.'
+    provider = SimpleNamespace(type='AgentEvent', timestamp=None, data={
+        'kind': 'policy_event', 'content': content, 'reasoning_content': 'INTERNAL reasoning',
+        'tool_reqs': [{'tool_name': 'click_desktop', 'args': {'x': .1, 'y': .1, 'element': 'INTERNAL raw element'}}]})
+    step = backend._event_to_step(provider, 1, 1)
+    assert step.detail['narration'] == content
+    cli._print_event(SimpleNamespace(type='step', session_id='tour', event_id='action-one',
+        simulated=True, message=step.summary, data={'step': step.model_dump()}))
+    assert cli._LAST_ACTION['narration'] == cli._LAST_ACTION['summary'] == content
+    assert 'INTERNAL' not in str(cli._LAST_ACTION)
+    assert 'INTERNAL reasoning' in step.detail['reasoning']  # keep original evidence
+    provider.data['content'] = None
+    step = backend._event_to_step(provider, 2, 1)
+    assert step.detail['narration'] == ''
+    assert 'click_desktop(' in step.summary
 
 
 @pytest.mark.parametrize('text', [

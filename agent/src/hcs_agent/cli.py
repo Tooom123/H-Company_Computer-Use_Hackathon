@@ -24,7 +24,7 @@ from .contract import AgentEvent, ApproveCommand, InterventionRequest, Mode, Nex
 from .procedures import ProcedureRegistry
 from .runner import Intervention
 from .desktop_feedback import DesktopFeedback, RunJournal
-from .presentation import CHECKING_RESULT, VERIFIED_RESULT, UNVERIFIED_RESULT, STOPPED_RESULT, WORKING_ACKNOWLEDGEMENT
+from .presentation import CHECKING_RESULT, VERIFIED_RESULT, UNVERIFIED_RESULT, STOPPED_RESULT, WORKING_ACKNOWLEDGEMENT, clean_narration
 
 
 _LAST_LOOKUP_AT = 0.0
@@ -135,7 +135,8 @@ def _control_status() -> dict:
             "mode": it.request.mode.value, "state": it.state.value, "terminal": it.state.terminal,
             "takeover": bool(getattr(it, "takeover", False)), "autonomy": it.autonomy,
             "step": {"index": g.index, "instruction": g.instruction, "kind": g.kind, "total": total} if g else None,
-            "last_action": _LAST_ACTION.get("summary") if getattr(it, "takeover", False) else None,
+            "last_action": _LAST_ACTION.get("summary") if getattr(it, "takeover", False)
+                           and _LAST_ACTION.get("session_id") == it.request.session_id else None,
             "cost_usd": round(float(getattr(it, "cost_usd", 0.0) or 0.0), 4),
             "started_at": it.timings.started_at.isoformat() if it.timings.started_at else None,
             "status": r.status.value if r else None,
@@ -396,15 +397,21 @@ def _print_event(e: AgentEvent) -> None:
     global _LAST_LOOKUP_AT
     if e.type == "knowledge":
         _LAST_LOOKUP_AT = time.time()
-    if e.type == "step" and e.data["step"]["kind"] == "action" and e.data["step"].get("detail", {}).get("tools"):
+    current_session = getattr(getattr(_MAGNET.get("current"), "request", None), "session_id", None)
+    current_event = current_session is None or current_session == getattr(e, "session_id", None)
+    if current_event and e.type == "step" and e.data["step"]["kind"] == "action":
         from .presentation import action_narration
 
-        det = e.data["step"]["detail"]
-        _LAST_ACTION.update(summary=action_narration(det["tools"]), pointer=det.get("pointer"),
-                            at=time.time(), id=e.event_id)
-    elif e.type == "step" and e.data["step"]["kind"] == "observation":
+        det = e.data["step"].get("detail", {})
+        explanation = clean_narration(det.get("narration"))
+        if det.get("tools") or explanation:
+            _LAST_ACTION.update(summary=explanation or action_narration(det["tools"]), narration=explanation,
+                                pointer=det.get("pointer"), session_id=getattr(e, "session_id", None),
+                                at=time.time(), id=e.event_id, stale_at=None)
+    elif current_event and e.type == "step" and e.data["step"]["kind"] == "observation":
         # The agent took a new screenshot: the page may have changed, marks for the previous action are stale.
-        _LAST_ACTION["stale_at"] = time.time()
+        if _LAST_ACTION.get("session_id") == getattr(e, "session_id", None):
+            _LAST_ACTION["stale_at"] = time.time()
     tag = "SIM " if e.simulated else ""
     msg = e.message or ""
     if e.type == "step":
@@ -455,6 +462,7 @@ def _execute(request: InterventionRequest, backend, runs_dir: Path, *, auto_appr
     it = Intervention(request, backend, ProcedureRegistry(), journal, runs_dir)
     _FEEDBACK.register(it)
     _MAGNET["current"] = it
+    _LAST_ACTION.clear()
     if ov is not None:
         _ensure_magnet(ov)
     print(f"session {request.session_id} (backend: {'MOCK' if backend.simulated else 'H desktop'}, "
@@ -703,6 +711,10 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         doodle = "question"
     final = (it.guidance[-1] if r.mode is Mode.guide and it.guidance and it.guidance[-1].last
              and r.status.value != "abandoned" else None)
+    declared = getattr(r, "declared", None)
+    actor_answer = (clean_narration(getattr(declared, "summary", "")) if final is None
+                    and r.status.value != "abandoned" and getattr(declared, "outcome", "not_run") != "not_run"
+                    and (r.mode is Mode.act or getattr(it, "takeover", False)) else "")
     ov.badge(None)
     if final is not None:
         # The model's explanation is useful even when verification is inconclusive;
@@ -710,6 +722,9 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
         _say(final.instruction, text)
         ov.show_scene(Scene(text=final.instruction, target=final.pointer, target_box=final.box,
                             why=text, step=final.index, doodle=doodle))
+    elif actor_answer:
+        _say(actor_answer, text)
+        ov.show_scene(Scene(text=actor_answer, why=text, doodle=doodle))
     else:
         _say(text, why)
         ov.show_scene(Scene(text=text, why=why, doodle=doodle))
@@ -721,7 +736,7 @@ def _show_outcome(ov, it: Intervention, seconds: float = 5.0) -> None:
                 return True
             elapsed = time.time() - t0
             speaker = _SPEECH["speaker"]
-            speaking = final is not None and speaker is not None and speaker.speaking
+            speaking = speaker is not None and speaker.speaking
             return elapsed > hold and (not speaking or elapsed > max(hold, 30))
         ov.run_until(finished, None, 0.1)
     except KeyboardInterrupt:
@@ -1353,31 +1368,46 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
         elif it.state.terminal:
             ov.badge(None)
 
-    shown_action: dict = {"id": None, "at": None, "announced": False}
+    shown_action: dict = {"id": None, "at": None, "announced": False, "narration": "", "detached": False}
 
     def narrate() -> None:
         """Takeover: show what the agent is doing, where, as it does it; clear it as soon as it is stale."""
         if ov is None or not _LAST_ACTION:
             return
+        if _LAST_ACTION.get("session_id") != getattr(getattr(it, "request", None), "session_id", None):
+            return  # a late event from the interrupted task is not this request's narration
         if _LAST_ACTION.get("id") != shown_action["id"] and _LAST_ACTION.get("id"):
             shown_action["id"] = _LAST_ACTION["id"]
-            shown_action["at"] = time.time()
             from .overlay import Scene
 
             ov.badge("Checking the result…" if it.state is State.verifying else "Taking over…", pulsing=True)
-            text = _LAST_ACTION.get("summary") or "Working on the current step…"
-            # Operational labels belong on screen, not in the spoken conversation.
-            # A single cached acknowledgement avoids repeating filler for every tool call.
-            if not shown_action["announced"]:
-                shown_action["announced"] = True
-                _say(WORKING_ACKNOWLEDGEMENT, interrupt=False)
-            ov.show_scene(Scene(text=text, target=_LAST_ACTION.get("pointer")))
-            return
+            explanation = _LAST_ACTION.get("narration") or ""
+            if explanation:
+                if explanation != shown_action["narration"]:
+                    _say(explanation, interrupt=False)
+                shown_action.update(narration=explanation, detached=False, announced=True, at=time.time())
+                ov.show_scene(Scene(text=explanation, target=_LAST_ACTION.get("pointer")))
+            else:
+                if shown_action["narration"] and not shown_action["detached"] and ov.view.scene is not None:
+                    ov.show_scene(Scene(text=shown_action["narration"]), animate=False)
+                    shown_action["detached"] = True
+                if not shown_action["announced"]:
+                    shown_action["announced"] = True
+                    _say(WORKING_ACKNOWLEDGEMENT, interrupt=False)
+            # A generic tool status does not deserve its own handwritten note.
+            # It also must not extend the lifetime of the preceding explanation.
         shown_at = shown_action.get("at")
-        if shown_at and ov.view.scene is not None:
-            stale = _LAST_ACTION.get("stale_at", 0) > shown_at + 0.3  # a screenshot came after this action
-            if stale or time.time() - shown_at > 2.0:
-                ov.hide()  # the badge stays; only the marks go
+        if shown_at is not None and ov.view.scene is not None:
+            stale = _LAST_ACTION.get("stale_at") is not None  # reset for each action; even fast observations count
+            if stale and shown_action["narration"] and not shown_action["detached"]:
+                from .overlay import Scene
+
+                ov.show_scene(Scene(text=shown_action["narration"]), animate=False)
+                shown_action["detached"] = True  # retain the explanation, remove the obsolete pointer
+            speaker = _SPEECH.get("speaker")
+            hold = max(2.0, getattr(ov, "reading_duration", 0)) if shown_action["narration"] else 2.0
+            if time.time() - shown_at > hold and not (speaker is not None and speaker.speaking):
+                ov.hide()
 
     interrupted = {"done": False}
 

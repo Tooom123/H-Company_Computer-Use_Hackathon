@@ -10,7 +10,7 @@ STOPPED_RESULT = "I've stopped the task."
 
 
 def action_narration(tools: list[str]) -> str:
-    """Narrate action types without reading tool arguments, secrets or internal code."""
+    """Short operational status only; never substitute this for the agent's explanation."""
     phrases = {
         "click_desktop": "Selecting an on-screen control…",
         "click_web": "Selecting an on-screen control…",
@@ -31,6 +31,34 @@ def action_narration(tools: list[str]) -> str:
     labels = list(dict.fromkeys(phrases.get(name, "Working on the current step…")
                                for name in tools if isinstance(name, str)))
     return " ".join(labels[:2]) or "Working on the current step…"
+
+
+def clean_narration(value) -> str:
+    """Keep public prose; reject raw tool/code fallbacks and status-only messages.
+
+    Callers must supply the provider's public content/answer, never reasoning or
+    tool arguments. This is a presentation filter, not a general privacy filter.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or text.startswith(("{", "[", "```")):
+        return ""
+    if re.search(r"\b\w+_(?:desktop|web)\s*\(|\b(?:print|exec|eval|subprocess\.\w+)\s*\(|"
+                 r"\b(?:tool_name|tool_reqs|reasoning_content)\s*['\"]?\s*:|```", text):
+        return ""
+    # Formatting is not useful in the handwritten notes or when read aloud.
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text).replace("**", "")
+    text = re.sub(r"(?im)^\s*#{1,6}\s+", "", text)
+    text = re.sub(r"(?i)^(?:done|task completed)\s*:\s*", "", text).strip()
+    status = text.casefold().rstrip(" .…!")
+    if status in {"preparing the response", "reading the screen", "selecting an on-screen control",
+                  "entering text", "filling in a field", "using a keyboard shortcut", "scrolling the page",
+                  "waiting for the page", "opening the page", "working on the current step", "agent decided",
+                  "done", "task completed"}:
+        return ""
+    return text
 
 
 def paginate_text(text: str, fits) -> list[str]:

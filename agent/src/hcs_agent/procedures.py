@@ -334,6 +334,10 @@ class BoundProcedure(BaseModel):
             parts.append(
                 "The user watches you work: before EACH action, write one short sentence in English saying what "
                 "you are about to do and why (e.g. \"I click Qualified to change the stage\"). "
+                "Put this user-facing explanation in public content, not reasoning or tool arguments. "
+                "For an introductory tour, cover two or three relevant areas. Use one sentence of at most "
+                "16 words per area: name the area and explain its purpose. Avoid technical status labels, "
+                "filler, account/security pages and artificial waits. "
                 "When finished, answer with: result (done / blocked / unclear), a one-paragraph summary, "
                 "the exact blocker text if blocked, and the list of steps you actually performed."
             )

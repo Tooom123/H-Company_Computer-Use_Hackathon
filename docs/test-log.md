@@ -1346,3 +1346,37 @@ questions, no AX walk on protected pages, documentation access, origin checks,
 and the live-loop fallback without a fabricated run. No new model call or human
 success/usefulness label was produced. The restriction itself remains: coaching
 resumes after the user opens an allowed section or the documentation.
+
+### Restore spoken explanations during an introductory tour — 2026-11-08
+
+The user's real "show me around" trace contained useful public explanations of
+Home, Projects, Agents, Sessions and Skills. Our presentation layer replaced
+them with generic tool statuses such as "Selecting an on-screen control…".
+The subsequent quiet-status change suppressed those spoken statuses without
+restoring the explanations. This was a presentation regression, not missing
+Holo content. The interrupted tour remains abandoned, without a success label.
+
+Public provider content now has a separate narration field. Only that prose is
+shown and spoken during ACT; tool arguments and private reasoning remain trace
+data. Code/status-only fallbacks do not become coaching notes. Useful ACT final
+answers are also retained alongside the independent verification qualification;
+the report and its labels are unchanged. Introductory tours request two or three
+areas with short explanations. This does not add a model call or deliberate wait.
+
+Session guards prevent late events from an interrupted request replacing the
+current narration. When the page changes, obsolete pointers disappear while
+the explanation remains readable. Voice-only/text-only preferences and the
+push-to-talk interruption behavior are preserved.
+
+Local replay of the archived provider events restored all seven public
+explanations to the presentation cache. The previous cloud/local answer also
+survived the prose filter, with verification still false. Replay made no API
+call and performed no desktop action; it did not play audio or establish human
+usefulness. Live narration and screen/voice synchronization still need the
+user's next tour trial.
+
+Validation: 205 focused offline tests passed (156 presentation/final guidance/
+interruption/preferences/routing checks, plus 49 speech/procedure checks).
+Regressions include immediate post-action observations, generic actions not
+prolonging old notes, tool-free explanations, old-session events, and ACT final
+answers retaining their independently unverified status.

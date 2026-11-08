@@ -795,6 +795,8 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
     if etype == "AgentEvent":
         kind = d.get("kind")
         if kind == "policy_event":
+            from .presentation import clean_narration
+
             reqs = d.get("tool_reqs") or []
             actions = [f"{r.get('tool_name')}({_short(r.get('args'))})" for r in reqs]
             summary = d.get("content") or "; ".join(actions) or "agent decided"
@@ -806,6 +808,7 @@ def _event_to_step(event: Any, index: int, attempt: int) -> Step | None:
                     element = a.get("element") or element
             return Step(index=index, attempt=attempt, timestamp=ts, kind="action", summary=summary[:300],
                         detail={"actions": actions, "reasoning": _short(d.get("reasoning_content"), 500),
+                                "narration": clean_narration(d.get("content")),
                                 "pointer": pointer, "element": element, "tools": [r.get("tool_name") for r in reqs]})
         if kind == "observation_event":
             img = (d.get("image") or {}).get("source")
