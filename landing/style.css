@@ -57,7 +57,7 @@ a{color:inherit}
 [data-write],.billing-msg,.hero .pen{clip-path:inset(-30% 100% -30% -10%);transition:clip-path .75s cubic-bezier(.45,.05,.55,.95)}
 [data-write].on,.billing-msg.on,.hero .pen.on{clip-path:inset(-30% -10% -30% -10%)}
 
-.sub{margin-top:30px;max-width:560px;min-height:3em}
+.sub{margin-top:clamp(40px,6vh,64px);max-width:560px;min-height:3em}
 
 .slogan{margin:0;line-height:1.5;font-size:clamp(15px,1.8vw,19px);
   color:var(--grey-400);opacity:0;transform:translateY(8px);transition:opacity .6s,transform .6s}
