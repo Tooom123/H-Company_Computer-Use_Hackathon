@@ -330,10 +330,20 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
                  "The new sentence may answer the assistant's question, correct a value ('actually 15000'), or "
                  "change the task. Merge it with the earlier turns: keep every value still valid, replace what the "
                  "user corrects.\n\n")
+    site = ""
+    try:
+        from .sitemap import platform_summary
+
+        known = "\n".join(f"{sw}:\n{platform_summary(sw, max_pages=6, max_controls=8)}" for sw in ("hcompany", "odoo")
+                           if platform_summary(sw, max_pages=6, max_controls=8))
+        if known:
+            site = "Pages of the software seen on this machine (path: controls), to recognise what the user talks about:\n" + known + "\n\n"
+    except Exception:  # noqa: BLE001
+        site = ""
     return (
         "You are the ears of a support assistant: route a spoken request to a procedure, or ask what is unclear.\n"
         f"Today is {date.today().isoformat()}.\n"
-        "Known procedures:\n" + "\n".join(cat) + "\n\n" + convo +
+        "Known procedures:\n" + "\n".join(cat) + "\n\n" + site + convo +
         f"User just said (transcribed speech, may contain errors): \"{transcript}\"\n\n"
         "Return ONLY a JSON object with keys: procedure_id (string or null), mode ('act' if the user wants it done "
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "

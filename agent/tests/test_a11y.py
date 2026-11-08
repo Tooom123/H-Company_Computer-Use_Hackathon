@@ -38,3 +38,22 @@ def test_huge_containers_lose_to_controls():
 
 def test_no_match_returns_empty():
     assert match("the cloud-shaped save icon", CHATTER) == []
+
+
+def test_sitemap_doc_lookup_and_platform_memory(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from hcs_agent import sitemap
+
+    assert sitemap.find_doc_pages("share a session with my team", k=1)[0]["title"] == "Share a session"
+    monkeypatch.setattr(sitemap, "_MEMORY_DIR", tmp_path)
+    info = SimpleNamespace(url="https://platform.hcompany.ai/sessions/0123456789ab?x=1", title="Sessions",
+                           elements=[Candidate("AXButton", "Create agent", (0, 0, 10, 10)),
+                                     Candidate("AXLink", "API keys", (0, 0, 10, 10)),
+                                     Candidate("AXStaticText", "some text", (0, 0, 10, 10))])
+    sitemap.remember(info)
+    sitemap.remember(info)
+    pages = sitemap.known_pages("hcompany")
+    assert len(pages) == 1 and pages[0].path == "/sessions/<id>" and pages[0].seen == 2
+    assert "Create agent" in sitemap.platform_summary("hcompany") and "some text" not in sitemap.platform_summary("hcompany")
+    assert "Share a session" in sitemap.context_for("hcompany", "share a session", with_doc=False)

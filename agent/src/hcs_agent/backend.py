@@ -496,6 +496,10 @@ class HBackend:
 
             t0 = time.time()
             best, ties, info = a11y.find(description)
+            if info is not None:
+                from . import sitemap
+
+                sitemap.remember(info)  # the assistant learns the site as it is used (labels only)
             if best is None or info is None or not info.is_front:
                 return None, []
             if best.score < 10:  # only word overlap, no label match: let Holo look

@@ -1,0 +1,744 @@
+{
+ "source": "https://hub.hcompany.ai/llms.txt",
+ "intro": "Documentation for H's computer-use platform: the Agents API and its holo CLI, the Holo Models API, and the HoloTab Chrome extension.\nH Platform has three products: the Agents API (managed computer-use agents, base URL https://agp.eu.hcompany.ai/api/v2 or https://agp.hcompany.ai/api/v2 for the US), the Models API (OpenAI-compatible Holo vision-language models at https://api.hcompany.ai/v1), and HoloTab (a free no-code Chrome extension that runs Holo in the user's browser, with recordable routines and schedules). The `holo` CLI (`pip install \"hai-agents[cli]\"`) runs Agents API agents from a terminal, drives the user's own desktop with `-a h/holo-desktop`, and serves coding agents through `holo mcp`.\nAuthenticate with a bearer API key from the HAI_API_KEY environment variable. SDKs: `pip install hai-agents` (Python, `from hai_agents import Client`) and `npm install hai-agents` (TypeScript, `import { HaiAgentsClient } from \"hai-agents\"`). CLI: `holo`.\nAgents do work in a browser or on a desktop; describe the task as an imperative instruction. To run a task quickly, prefer the pre-built agent `h/web-surfer-flash`. Read results from the session's `latest_answer` after it reaches a terminal status.\nSessions are the unit of work; wait for a terminal status (completed, failed, timed_out, interrupted) before reading the answer. Use webhooks or the `changes` long-poll endpoint to follow progress.",
+ "pages": [
+  {
+   "title": "Get started",
+   "url": "https://hub.hcompany.ai/index",
+   "md": "https://hub.hcompany.ai/index.md",
+   "description": "Run computer-use agents in a cloud browser or on a desktop with the Agents API, build your own agent on Holo models, or run Holo on your own machine."
+  },
+  {
+   "title": "Agents API",
+   "url": "https://hub.hcompany.ai/agents-api/overview",
+   "md": "https://hub.hcompany.ai/agents-api/overview.md",
+   "description": "Agents that use a browser or desktop for you."
+  },
+  {
+   "title": "Agents",
+   "url": "https://hub.hcompany.ai/agents-api/agents/overview",
+   "md": "https://hub.hcompany.ai/agents-api/agents/overview.md",
+   "description": "A saved config of environment, model, skills, and instructions."
+  },
+  {
+   "title": "Skills",
+   "url": "https://hub.hcompany.ai/agents-api/skills/overview",
+   "md": "https://hub.hcompany.ai/agents-api/skills/overview.md",
+   "description": "Markdown instructions an agent loads when a task matches."
+  },
+  {
+   "title": "Custom tools",
+   "url": "https://hub.hcompany.ai/agents-api/custom-tools",
+   "md": "https://hub.hcompany.ai/agents-api/custom-tools.md",
+   "description": "Let the agent call functions in your code."
+  },
+  {
+   "title": "Subagents",
+   "url": "https://hub.hcompany.ai/agents-api/multi-agent",
+   "md": "https://hub.hcompany.ai/agents-api/multi-agent.md",
+   "description": "A manager agent splits a task across subagents that run in parallel."
+  },
+  {
+   "title": "Structured output",
+   "url": "https://hub.hcompany.ai/agents-api/structured-output",
+   "md": "https://hub.hcompany.ai/agents-api/structured-output.md",
+   "description": "Get the agent's final answer as typed JSON that matches your schema."
+  },
+  {
+   "title": "Environments",
+   "url": "https://hub.hcompany.ai/agents-api/environments/overview",
+   "md": "https://hub.hcompany.ai/agents-api/environments/overview.md",
+   "description": "Where the agent acts, such as a cloud browser, your Chrome, or your desktop."
+  },
+  {
+   "title": "Your browser",
+   "url": "https://hub.hcompany.ai/agents-api/your-browser",
+   "md": "https://hub.hcompany.ai/agents-api/your-browser.md",
+   "description": "Let an agent drive Chrome on your machine, with your logins and your network."
+  },
+  {
+   "title": "Your desktop",
+   "url": "https://hub.hcompany.ai/agents-api/your-desktop",
+   "md": "https://hub.hcompany.ai/agents-api/your-desktop.md",
+   "description": "Let an agent drive the screen, mouse, and keyboard of your machine."
+  },
+  {
+   "title": "Cloud browser",
+   "url": "https://hub.hcompany.ai/agents-api/browser/configuration",
+   "md": "https://hub.hcompany.ai/agents-api/browser/configuration.md",
+   "description": "The browser H runs for your agent."
+  },
+  {
+   "title": "Browser profiles",
+   "url": "https://hub.hcompany.ai/agents-api/browser/profiles",
+   "md": "https://hub.hcompany.ai/agents-api/browser/profiles.md",
+   "description": "A cloud browser's saved cookies and storage, so a session starts signed in."
+  },
+  {
+   "title": "Credentials and 2FA",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/overview",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/overview.md",
+   "description": "Let an agent sign in with vault credentials and resolve one-time codes, without vault secrets entering its context."
+  },
+  {
+   "title": "Sessions",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/overview",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/overview.md",
+   "description": "One agent working on a task."
+  },
+  {
+   "title": "Watch and steer",
+   "url": "https://hub.hcompany.ai/agents-api/observe-and-steer",
+   "md": "https://hub.hcompany.ai/agents-api/observe-and-steer.md",
+   "description": "Follow a session live and redirect the agent while it works."
+  },
+  {
+   "title": "Webhooks",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/overview",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/overview.md",
+   "description": "A signed POST each time a session changes status."
+  },
+  {
+   "title": "Schedules",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/overview",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/overview.md",
+   "description": "Run a session on a cron."
+  },
+  {
+   "title": "Local runtime",
+   "url": "https://hub.hcompany.ai/agents-api/local-runtime",
+   "md": "https://hub.hcompany.ai/agents-api/local-runtime.md",
+   "description": "Run the agent loop on your machine with Client.local(), on H's hosted model or your own Holo4 server."
+  },
+  {
+   "title": "Local inference",
+   "url": "https://hub.hcompany.ai/agents-api/local-inference",
+   "md": "https://hub.hcompany.ai/agents-api/local-inference.md",
+   "description": "Serve open-weight Holo4 or Holo3.1 with llama.cpp or vLLM and point base_url at it. Prompts and screenshots never leave your network."
+  },
+  {
+   "title": "SDKs",
+   "url": "https://hub.hcompany.ai/agents-api/sdks",
+   "md": "https://hub.hcompany.ai/agents-api/sdks.md",
+   "description": "Python, TypeScript, and the CLI."
+  },
+  {
+   "title": "Coding agents",
+   "url": "https://hub.hcompany.ai/agents-api/coding-agents",
+   "md": "https://hub.hcompany.ai/agents-api/coding-agents.md",
+   "description": "Let Claude Code, Cursor, Codex, and other coding agents run H agents and write SDK code."
+  },
+  {
+   "title": "MCP server",
+   "url": "https://hub.hcompany.ai/agents-api/mcp",
+   "md": "https://hub.hcompany.ai/agents-api/mcp.md",
+   "description": "Run H agents as tools from any MCP client."
+  },
+  {
+   "title": "n8n",
+   "url": "https://hub.hcompany.ai/agents-api/n8n",
+   "md": "https://hub.hcompany.ai/agents-api/n8n.md",
+   "description": "Run agents from an n8n workflow with plain HTTP Request nodes."
+  },
+  {
+   "title": "Plans and limits",
+   "url": "https://hub.hcompany.ai/agents-api/plans-and-limits",
+   "md": "https://hub.hcompany.ai/agents-api/plans-and-limits.md",
+   "description": "What each plan includes, and what happens at the limit."
+  },
+  {
+   "title": "Errors",
+   "url": "https://hub.hcompany.ai/agents-api/errors",
+   "md": "https://hub.hcompany.ai/agents-api/errors.md",
+   "description": "Why a call or session failed, and whether to retry."
+  },
+  {
+   "title": "Optimize for speed",
+   "url": "https://hub.hcompany.ai/agents-api/optimize-for-speed",
+   "md": "https://hub.hcompany.ai/agents-api/optimize-for-speed.md",
+   "description": "Knobs that make an agent respond faster, and what each one costs."
+  },
+  {
+   "title": "Changelog",
+   "url": "https://hub.hcompany.ai/agents-api/changelog",
+   "md": "https://hub.hcompany.ai/agents-api/changelog.md",
+   "description": "Notable changes to the Agents API, the hai-agents SDKs, and the holo CLI, by release."
+  },
+  {
+   "title": "Create an agent",
+   "url": "https://hub.hcompany.ai/agents-api/agents/create",
+   "md": "https://hub.hcompany.ai/agents-api/agents/create.md",
+   "description": "Create a reusable agent configuration in your catalog."
+  },
+  {
+   "title": "List agents",
+   "url": "https://hub.hcompany.ai/agents-api/agents/list",
+   "md": "https://hub.hcompany.ai/agents-api/agents/list.md",
+   "description": "List your custom agents and the pre-built `h/` agents."
+  },
+  {
+   "title": "Retrieve an agent",
+   "url": "https://hub.hcompany.ai/agents-api/agents/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/agents/retrieve.md",
+   "description": "Retrieve one agent's full spec by name, including pre-built `h/` agents."
+  },
+  {
+   "title": "Update an agent",
+   "url": "https://hub.hcompany.ai/agents-api/agents/update",
+   "md": "https://hub.hcompany.ai/agents-api/agents/update.md",
+   "description": "Update an agent by replacing its whole configuration."
+  },
+  {
+   "title": "Patch an agent",
+   "url": "https://hub.hcompany.ai/agents-api/agents/patch",
+   "md": "https://hub.hcompany.ai/agents-api/agents/patch.md",
+   "description": "Patch some fields of an agent and keep the rest."
+  },
+  {
+   "title": "Delete an agent",
+   "url": "https://hub.hcompany.ai/agents-api/agents/delete",
+   "md": "https://hub.hcompany.ai/agents-api/agents/delete.md",
+   "description": "Delete an agent from your catalog by name."
+  },
+  {
+   "title": "List agent revisions",
+   "url": "https://hub.hcompany.ai/agents-api/agents/list-revisions",
+   "md": "https://hub.hcompany.ai/agents-api/agents/list-revisions.md",
+   "description": "List an agent's revisions, newest first."
+  },
+  {
+   "title": "Restore an agent revision",
+   "url": "https://hub.hcompany.ai/agents-api/agents/restore-revision",
+   "md": "https://hub.hcompany.ai/agents-api/agents/restore-revision.md",
+   "description": "Restore an earlier revision's spec as a new revision."
+  },
+  {
+   "title": "Create an environment",
+   "url": "https://hub.hcompany.ai/agents-api/environments/create",
+   "md": "https://hub.hcompany.ai/agents-api/environments/create.md",
+   "description": "Create a reusable browser or desktop configuration in your catalog."
+  },
+  {
+   "title": "List environments",
+   "url": "https://hub.hcompany.ai/agents-api/environments/list",
+   "md": "https://hub.hcompany.ai/agents-api/environments/list.md",
+   "description": "List your organization's environments and the pre-built `h/` browsers."
+  },
+  {
+   "title": "Retrieve an environment",
+   "url": "https://hub.hcompany.ai/agents-api/environments/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/environments/retrieve.md",
+   "description": "Retrieve one environment's full spec by ID, including pre-built `h/` ones."
+  },
+  {
+   "title": "Update an environment",
+   "url": "https://hub.hcompany.ai/agents-api/environments/update",
+   "md": "https://hub.hcompany.ai/agents-api/environments/update.md",
+   "description": "Update an environment by replacing its whole configuration."
+  },
+  {
+   "title": "Patch an environment",
+   "url": "https://hub.hcompany.ai/agents-api/environments/patch",
+   "md": "https://hub.hcompany.ai/agents-api/environments/patch.md",
+   "description": "Patch some fields of an environment and keep the rest."
+  },
+  {
+   "title": "Delete an environment",
+   "url": "https://hub.hcompany.ai/agents-api/environments/delete",
+   "md": "https://hub.hcompany.ai/agents-api/environments/delete.md",
+   "description": "Delete an environment from your catalog."
+  },
+  {
+   "title": "List environment revisions",
+   "url": "https://hub.hcompany.ai/agents-api/environments/list-revisions",
+   "md": "https://hub.hcompany.ai/agents-api/environments/list-revisions.md",
+   "description": "List an environment's revisions, newest first."
+  },
+  {
+   "title": "Restore an environment revision",
+   "url": "https://hub.hcompany.ai/agents-api/environments/restore-revision",
+   "md": "https://hub.hcompany.ai/agents-api/environments/restore-revision.md",
+   "description": "Restore an earlier revision's spec as a new revision."
+  },
+  {
+   "title": "The event object",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/event-object",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/event-object.md",
+   "description": "The shape of every event a session records."
+  },
+  {
+   "title": "Create a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/create",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/create.md",
+   "description": "Run an agent on a task."
+  },
+  {
+   "title": "List sessions",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/list",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/list.md",
+   "description": "List your sessions, newest first, with filters."
+  },
+  {
+   "title": "Retrieve a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/retrieve.md",
+   "description": "Retrieve the full session object, with its agent, status, and latest answer."
+  },
+  {
+   "title": "Get session status",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/status",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/status.md",
+   "description": "Get a session's state, step count, and token usage."
+  },
+  {
+   "title": "Get session changes",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/changes",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/changes.md",
+   "description": "Long-poll for new events and the answer."
+  },
+  {
+   "title": "List events",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/events",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/events.md",
+   "description": "List everything the agent observed and did in a session, page by page."
+  },
+  {
+   "title": "Get the session quota",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/quota",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/quota.md",
+   "description": "Get how many concurrent sessions you can run and how many are in use."
+  },
+  {
+   "title": "Send messages",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/send-messages",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/send-messages.md",
+   "description": "Send a running agent more context, a correction, or an answer to its question."
+  },
+  {
+   "title": "Send tool results",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/tool-results",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/tool-results.md",
+   "description": "Send results for the agent's pending custom tool calls so the session continues."
+  },
+  {
+   "title": "Pause a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/pause",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/pause.md",
+   "description": "Pause a running session and keep its state for a later resume."
+  },
+  {
+   "title": "Resume a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/resume",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/resume.md",
+   "description": "Resume a paused session from where the agent stopped."
+  },
+  {
+   "title": "Force an answer",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/force-answer",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/force-answer.md",
+   "description": "Force a running agent to give its final answer on the next step."
+  },
+  {
+   "title": "Cancel a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/cancel",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/cancel.md",
+   "description": "Cancel a session, which then ends `interrupted`."
+  },
+  {
+   "title": "Download a session resource",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/resources",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/resources.md",
+   "description": "Download a screenshot or file the session produced."
+  },
+  {
+   "title": "List files",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/list-files",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/list-files.md",
+   "description": "List the files on a cloud browser's machine, such as what the agent downloaded."
+  },
+  {
+   "title": "Read a file",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/read-file",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/read-file.md",
+   "description": "Read a file from a cloud browser's machine, base64-encoded."
+  },
+  {
+   "title": "Write a file",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/write-file",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/write-file.md",
+   "description": "Write a file to a cloud browser's machine for the agent to use."
+  },
+  {
+   "title": "Share a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/share",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/share.md",
+   "description": "Share a session through a public Agent View link that needs no key."
+  },
+  {
+   "title": "Unshare a session",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/unshare",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/unshare.md",
+   "description": "Unshare a session by revoking its public link."
+  },
+  {
+   "title": "Send session feedback",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/feedback",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/feedback.md",
+   "description": "Send feedback on whether a session completed its task."
+  },
+  {
+   "title": "Send event feedback",
+   "url": "https://hub.hcompany.ai/agents-api/sessions/event-feedback",
+   "md": "https://hub.hcompany.ai/agents-api/sessions/event-feedback.md",
+   "description": "Send feedback flagging one step of a session as right or wrong."
+  },
+  {
+   "title": "Create a skill",
+   "url": "https://hub.hcompany.ai/agents-api/skills/create",
+   "md": "https://hub.hcompany.ai/agents-api/skills/create.md",
+   "description": "Create reusable instructions an agent loads when a task matches."
+  },
+  {
+   "title": "List skills",
+   "url": "https://hub.hcompany.ai/agents-api/skills/list",
+   "md": "https://hub.hcompany.ai/agents-api/skills/list.md",
+   "description": "List your skills and the pre-built `h/` skills."
+  },
+  {
+   "title": "Retrieve a skill",
+   "url": "https://hub.hcompany.ai/agents-api/skills/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/skills/retrieve.md",
+   "description": "Retrieve one skill's full content by name, including pre-built `h/` skills."
+  },
+  {
+   "title": "Update a skill",
+   "url": "https://hub.hcompany.ai/agents-api/skills/update",
+   "md": "https://hub.hcompany.ai/agents-api/skills/update.md",
+   "description": "Update a skill by replacing its whole content."
+  },
+  {
+   "title": "Patch a skill",
+   "url": "https://hub.hcompany.ai/agents-api/skills/patch",
+   "md": "https://hub.hcompany.ai/agents-api/skills/patch.md",
+   "description": "Patch some fields of a skill and keep the rest."
+  },
+  {
+   "title": "Delete a skill",
+   "url": "https://hub.hcompany.ai/agents-api/skills/delete",
+   "md": "https://hub.hcompany.ai/agents-api/skills/delete.md",
+   "description": "Delete a skill from your catalog."
+  },
+  {
+   "title": "List skill revisions",
+   "url": "https://hub.hcompany.ai/agents-api/skills/list-revisions",
+   "md": "https://hub.hcompany.ai/agents-api/skills/list-revisions.md",
+   "description": "List a skill's revisions, newest first."
+  },
+  {
+   "title": "Restore a skill revision",
+   "url": "https://hub.hcompany.ai/agents-api/skills/restore-revision",
+   "md": "https://hub.hcompany.ai/agents-api/skills/restore-revision.md",
+   "description": "Restore an earlier revision's content as a new revision."
+  },
+  {
+   "title": "Create a vault",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/create",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/create.md",
+   "description": "Register a 1Password vault, or create an H-hosted one, so agents can sign in without secrets entering their context."
+  },
+  {
+   "title": "List vaults",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/list",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/list.md",
+   "description": "List your organization's vault configs."
+  },
+  {
+   "title": "Retrieve a vault",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/retrieve.md",
+   "description": "Retrieve a vault config by ID, without its write-only token."
+  },
+  {
+   "title": "Update a vault",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/update",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/update.md",
+   "description": "Update a vault config's name or provider settings, keeping the stored token."
+  },
+  {
+   "title": "Rotate a vault token",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/rotate-token",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/rotate-token.md",
+   "description": "Rotate a vault's stored service account token, keeping its ID and settings."
+  },
+  {
+   "title": "Delete a vault",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/delete",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/delete.md",
+   "description": "Delete a vault config."
+  },
+  {
+   "title": "Check vault health",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/health",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/health.md",
+   "description": "Check that a vault's stored token still works before a session needs it."
+  },
+  {
+   "title": "Create an item",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/create-item",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/create-item.md",
+   "description": "Add a login to an H-hosted vault."
+  },
+  {
+   "title": "List items",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/list-items",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/list-items.md",
+   "description": "Browse an H-hosted vault's items, newest first, with offset pagination."
+  },
+  {
+   "title": "Retrieve an item",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/retrieve-item",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/retrieve-item.md",
+   "description": "Fetch an H-hosted vault item's name, sites, and which fields are set, without their values."
+  },
+  {
+   "title": "Update an item",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/update-item",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/update-item.md",
+   "description": "Rename an H-hosted vault item, replace its sites, or set and remove individual values."
+  },
+  {
+   "title": "Reveal an item",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/reveal-item",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/reveal-item.md",
+   "description": "Read an H-hosted vault item's values, with the current TOTP code in place of its secret. Audit-logged."
+  },
+  {
+   "title": "Delete an item",
+   "url": "https://hub.hcompany.ai/agents-api/vaults/delete-item",
+   "md": "https://hub.hcompany.ai/agents-api/vaults/delete-item.md",
+   "description": "Remove an item and its stored values from an H-hosted vault. Agents can no longer fill its credentials."
+  },
+  {
+   "title": "List browser profiles",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/list",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/list.md",
+   "description": "List your organization's browser profiles."
+  },
+  {
+   "title": "Initiate a profile upload",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/initiate-upload",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/initiate-upload.md",
+   "description": "Initiate a direct upload of a browser profile archive to storage."
+  },
+  {
+   "title": "Complete a profile upload",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/complete-upload",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/complete-upload.md",
+   "description": "Complete an uploaded browser profile so sessions can load it."
+  },
+  {
+   "title": "Retrieve a browser profile",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/retrieve.md",
+   "description": "Retrieve a browser profile by ID, with its default flag."
+  },
+  {
+   "title": "Delete a browser profile",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/delete",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/delete.md",
+   "description": "Delete a browser profile with its stored cookies and storage."
+  },
+  {
+   "title": "Set the default browser profile",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/set-default",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/set-default.md",
+   "description": "Set the browser profile sessions load when they ask for the default."
+  },
+  {
+   "title": "Get the default browser profile",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/get-default",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/get-default.md",
+   "description": "Get the browser profile sessions load when they ask for the default."
+  },
+  {
+   "title": "Unset the default browser profile",
+   "url": "https://hub.hcompany.ai/agents-api/browser-profiles/unset-default",
+   "md": "https://hub.hcompany.ai/agents-api/browser-profiles/unset-default.md",
+   "description": "Unset the default flag on a browser profile."
+  },
+  {
+   "title": "Create a webhook",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/create",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/create.md",
+   "description": "Create a webhook that gets signed notifications when sessions change status."
+  },
+  {
+   "title": "List webhooks",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/list",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/list.md",
+   "description": "List your organization's webhooks, newest first, without their signing secrets."
+  },
+  {
+   "title": "Retrieve a webhook",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/retrieve.md",
+   "description": "Retrieve a webhook by ID, with its subscribed events and delivery stats."
+  },
+  {
+   "title": "Update a webhook",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/update",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/update.md",
+   "description": "Update a webhook's URL, events, description, or disabled state."
+  },
+  {
+   "title": "Delete a webhook",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/delete",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/delete.md",
+   "description": "Delete a webhook, effective immediately."
+  },
+  {
+   "title": "List event types",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/events",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/events.md",
+   "description": "List the event types a webhook can subscribe to."
+  },
+  {
+   "title": "Ping a webhook",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/ping",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/ping.md",
+   "description": "Ping a webhook with a signed test event and see how your endpoint responds."
+  },
+  {
+   "title": "Rotate a webhook secret",
+   "url": "https://hub.hcompany.ai/agents-api/webhooks/rotate",
+   "md": "https://hub.hcompany.ai/agents-api/webhooks/rotate.md",
+   "description": "Rotate a webhook's signing secret, effective at once."
+  },
+  {
+   "title": "Create a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/create",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/create.md",
+   "description": "Create a cron schedule that starts a session on each fire."
+  },
+  {
+   "title": "List schedules",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/list",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/list.md",
+   "description": "List your organization's schedules, newest first."
+  },
+  {
+   "title": "Retrieve a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/retrieve",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/retrieve.md",
+   "description": "Retrieve a schedule by ID, with its timing, status, and session template."
+  },
+  {
+   "title": "Update a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/update",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/update.md",
+   "description": "Update a schedule's name, timing, or session template."
+  },
+  {
+   "title": "Delete a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/delete",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/delete.md",
+   "description": "Delete a schedule and its run history."
+  },
+  {
+   "title": "Pause a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/pause",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/pause.md",
+   "description": "Pause a schedule's future fires and keep it for a later resume."
+  },
+  {
+   "title": "Resume a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/resume",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/resume.md",
+   "description": "Resume a paused schedule on its cron cadence."
+  },
+  {
+   "title": "Trigger a schedule",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/trigger",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/trigger.md",
+   "description": "Trigger one fire of a schedule now, without changing its cron cadence."
+  },
+  {
+   "title": "List schedule runs",
+   "url": "https://hub.hcompany.ai/agents-api/schedules/runs",
+   "md": "https://hub.hcompany.ai/agents-api/schedules/runs.md",
+   "description": "List a schedule's fires and the sessions they created."
+  },
+  {
+   "title": "Models API",
+   "url": "https://hub.hcompany.ai/models-api/overview",
+   "md": "https://hub.hcompany.ai/models-api/overview.md",
+   "description": "Holo agent models behind an OpenAI-compatible API."
+  },
+  {
+   "title": "Element localization",
+   "url": "https://hub.hcompany.ai/models-api/element-localization",
+   "md": "https://hub.hcompany.ai/models-api/element-localization.md",
+   "description": "GUI grounding with Holo: send a screenshot and an element description, get click coordinates back."
+  },
+  {
+   "title": "Document OCR",
+   "url": "https://hub.hcompany.ai/models-api/document-ocr",
+   "md": "https://hub.hcompany.ai/models-api/document-ocr.md",
+   "description": "Turn a digitally rendered page into Markdown in one chat completion: headings, tables, equations, reading order."
+  },
+  {
+   "title": "Core concepts",
+   "url": "https://hub.hcompany.ai/models-api/build-an-agent/core-concepts",
+   "md": "https://hub.hcompany.ai/models-api/build-an-agent/core-concepts.md",
+   "description": "The conventions Holo is trained on. Skip one and accuracy drops."
+  },
+  {
+   "title": "Function calling",
+   "url": "https://hub.hcompany.ai/models-api/build-an-agent/function-calling",
+   "md": "https://hub.hcompany.ai/models-api/build-an-agent/function-calling.md",
+   "description": "The Holo agent loop with OpenAI-style function calling, for Holo4 and Holo3.1."
+  },
+  {
+   "title": "Structured outputs",
+   "url": "https://hub.hcompany.ai/models-api/build-an-agent/structured-outputs",
+   "md": "https://hub.hcompany.ai/models-api/build-an-agent/structured-outputs.md",
+   "description": "The Holo agent loop as one constrained JSON object per step, for Holo3."
+  },
+  {
+   "title": "Create a chat completion",
+   "url": "https://hub.hcompany.ai/models-api/chat-completions",
+   "md": "https://hub.hcompany.ai/models-api/chat-completions.md",
+   "description": "OpenAI-compatible. Point any OpenAI client at `https://api.hcompany.ai/v1/`."
+  },
+  {
+   "title": "List models",
+   "url": "https://hub.hcompany.ai/models-api/list-models",
+   "md": "https://hub.hcompany.ai/models-api/list-models.md",
+   "description": "Served models, limits, pricing, and deprecation dates."
+  },
+  {
+   "title": "Holo CLI",
+   "url": "https://hub.hcompany.ai/holo-cli/introduction",
+   "md": "https://hub.hcompany.ai/holo-cli/introduction.md",
+   "description": "Run H agents from your terminal, in the cloud or on your desktop."
+  },
+  {
+   "title": "Holo CLI reference",
+   "url": "https://hub.hcompany.ai/holo-cli/reference",
+   "md": "https://hub.hcompany.ai/holo-cli/reference.md",
+   "description": "What each Holo CLI command and setting does, and how to fix common errors."
+  },
+  {
+   "title": "HoloTab",
+   "url": "https://hub.hcompany.ai/holotab/introduction",
+   "md": "https://hub.hcompany.ai/holotab/introduction.md",
+   "description": "A free Chrome extension that runs Holo in your browser."
+  },
+  {
+   "title": "Docs MCP",
+   "url": "https://hub.hcompany.ai/docs-mcp-server",
+   "md": "https://hub.hcompany.ai/docs-mcp-server.md",
+   "description": "A hosted, read-only MCP server that searches and reads the H Platform docs without an API key."
+  }
+ ]
+}

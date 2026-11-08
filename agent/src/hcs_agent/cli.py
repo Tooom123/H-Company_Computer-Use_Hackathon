@@ -496,6 +496,11 @@ def cmd_talk(args: argparse.Namespace) -> int:
 
         if a11y.available():
             n = a11y.warm_up()
+            from . import sitemap
+
+            info = a11y.page()
+            if info is not None:
+                sitemap.remember(info)
             print(f"  browser accessibility tree: {'ready, ' + str(n) + ' elements on the current page' if n > 1 else 'no browser page yet (Holo will be used until one is open)'}")
     except Exception as exc:  # noqa: BLE001
         print(f"  (accessibility tree unavailable: {exc})")
@@ -561,15 +566,21 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 # No script for this: the general agent works from the screen, with the vendor docs as context.
                 from .voice import generic_request
 
-                doc = None
-                try:
-                    ans = backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
-                                                software=intent.software or "hcompany", depth="fast")
-                    doc = ans.as_text(2) if ans and ans.answer else None
-                    if ans:
-                        print(f"  [docs] {ans.answer[:120]}")
-                except Exception:  # noqa: BLE001
-                    pass
+                from . import sitemap
+
+                software = intent.software or "hcompany"
+                doc = sitemap.context_for(software, intent.task) or None  # local: hub map + pages seen, ~0.3 s
+                if doc:
+                    print(f"  [site] {len(doc)} chars of local context (documentation map, pages seen)")
+                else:
+                    try:  # nothing local: one web lookup
+                        ans = backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
+                                                    software=software, depth="fast")
+                        doc = ans.as_text(2) if ans and ans.answer else None
+                        if ans:
+                            print(f"  [docs] {ans.answer[:120]}")
+                    except Exception:  # noqa: BLE001
+                        pass
                 request = generic_request(intent, doc)
                 last_request = request
                 history.clear()
@@ -620,6 +631,14 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 continue
             history.clear()
             request = intent_to_request(intent)
+            if request.procedure_id == "hcompany_hub_find_documentation" and request.parameters.get("topic") \
+                    and not request.parameters.get("page_title"):
+                from . import sitemap
+
+                pages = sitemap.find_doc_pages(request.parameters["topic"], k=1)
+                if pages:  # the hub map names the page: the guide can wait for exactly that title
+                    request.parameters["page_title"] = pages[0]["title"]
+                    print(f"  [site] documentation page: {pages[0]['title']} ({pages[0]['url']})")
             last_request = request
             history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")

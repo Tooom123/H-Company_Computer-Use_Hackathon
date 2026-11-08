@@ -313,7 +313,7 @@ def make_generic_procedure(request: InterventionRequest, doc_context: str | None
     """
     software = request.software or "the software"
     hint = SITE_HINTS.get(software.lower(), f"The software is {software} in a browser on macOS.")
-    docs = f"\nRelevant documentation (from the vendor):\n{doc_context}\n" if doc_context else ""
+    docs = f"\nWhat is known about this software (documentation map, pages seen on this machine):\n{doc_context}\n" if doc_context else ""
     return Procedure(
         id=GENERIC_ID,
         software=software,
