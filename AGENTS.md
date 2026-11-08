@@ -6,6 +6,9 @@ Read this before pushing. It applies to humans and coding agents alike.
 
 - [docs/notes-for-agents-from-tom.md](docs/notes-for-agents-from-tom.md): contract regeneration, missing report
   fields (autonomy, takeover), support uplink, gaze halo, Odoo reset, Devin auto-fix.
+- [docs/notes-for-agents-from-matteo.md](docs/notes-for-agents-from-matteo.md): **coaching Devin Desktop** (which
+  launcher, which key, where the keys and traces are), what the coach sees in Devin, questions to test with.
+  `hcs-agent talk` alone coaches the H platform in Chrome, never Devin.
 
 ## Branches
 
