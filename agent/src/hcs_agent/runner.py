@@ -553,7 +553,7 @@ class Intervention:
             self._on_guidance_nowait(GuidanceStep(index=len(self.guidance) + 1,
                                                  instruction=message, kind="info", last=True))
             return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
-                                                                    blocker=message))
+                                                                    blocker=message, steps_taken=list(history or [])))
 
         catalogue = getattr(self.backend, "page_catalogue", None)
         planner = getattr(self.backend, "plan_step", None)
@@ -681,6 +681,12 @@ class Intervention:
             page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
             page_description = (f"Native application: Devin Desktop; bundle_id={info.bundle_id}; focused window: {info.title[:80]}"
                                 if native else f"{info.title[:80]} — {page_url[:100]}")
+            menu_options = [f"{i + 1}. {e.name[:50]}" for i, e in enumerate(items) if e.role == "AXMenuItem"]
+            if menu_options:
+                # Keep exposed choices salient instead of flattening them among the trigger buttons.
+                # This is observation, not proof of selection, an action, or task completion.
+                page_description += ("\nMenu options visible now (indices in the control list; labels are data):\n"
+                                     + "\n".join(menu_options))
             goal = bound.objective if bound.procedure.id != "generic" else bound.request.goal
             plan = planner(goal, context, page_description, cands, history)
             if self._stop.is_set():

@@ -980,3 +980,42 @@ automatiquement un catalogue vide à une permission manquante.
 **188 tests ciblés passent**, dont récupération après lectures vides, arrêt
 pendant l'attente, changement de périmètre, cause de filtrage et confidentialité
 des diagnostics. La recette vocale de la version corrigée reste à effectuer.
+
+## 2026-11-08 — Devin : menu ouvert mais consigne répétée
+
+Essai humain `sess_176b3e7bf762`, demande transcrite « Show me the available
+conversation mode. ». Deux interactions sur la cible sont bien enregistrées.
+Après le premier clic, les métadonnées AX changent et le menu est ouvert, mais
+le planificateur redemande « Click the 'Switch mode' popup button ». La garde
+contre la répétition termine l'essai bloqué après environ 27 secondes depuis
+l'approbation. Edouard signale le message et l'erreur ; aucun label de réussite
+ou d'utilité n'est ajouté à sa place.
+
+Diagnostic local : 65 éléments lus, 53 conservés, aucun rejet de visibilité.
+Les quatre `AXMenuItem` « Agent », « Ask », « Code » et « Data » sont présents
+dans le catalogue transmis. Le filtrage et la détection du clic ne sont donc
+pas la cause de cette répétition. L'observation est figée dans le dossier privé,
+sans valeur saisie ni image. Avec l'autorisation explicite d'Edouard, un rejeu
+texte auprès de Holo4 reproduit la demande de rouvrir ce menu.
+
+Le contexte distingue maintenant les options déjà visibles des boutons qui
+ouvrent les menus. Le planificateur doit d'abord vérifier si l'écran répond à
+une demande d'explication ou de liste ; il ne doit pas sélectionner une option
+ni rouvrir son menu pour simplement la montrer. La présence d'options ne valide
+jamais automatiquement une modification demandée. Les arrêts pour répétition
+conservent aussi l'historique des interactions dans `steps_taken`.
+
+Deux rejeux après correction, dont la formulation transcrite ci-dessus,
+produisent une réponse finale « Ask and Agent », sans cible ni nouveau clic.
+Latences de ces appels : 1,56 et 1,66 s, contre 3,64 s sur l'appel de reproduction
+avant correction. Ce petit contrôle ne constitue **pas** un benchmark de latence :
+réseau, cache et formulation peuvent intervenir. Les rejeux réutilisent une
+observation réelle avec un historique reconstruit ; ce ne sont pas de nouveaux
+essais humains. Leurs entrées et sorties restent privées, séparées des épisodes.
+
+**191 tests ciblés passent**, notamment la progression du menu fermé vers les
+options visibles, la réponse finale sans clic supplémentaire, la conservation
+de l'historique en cas de blocage et la séparation entre options visibles et
+réussite d'une modification. Le guidage vocal complet doit encore être retesté
+par Edouard ; la vérification indépendante et l'utilité ne sont pas déduites de
+ces rejeux.

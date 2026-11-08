@@ -385,6 +385,60 @@ def test_native_repeated_plan_reports_no_progress_not_accessibility_failure(dyna
     assert 'accessibility' not in result.declared.blocker.lower()
     assert dynamic.shown[-1].last and dynamic.shown[-1].pointer is None
     assert any('repeated_planner_instruction' in step.summary for step in dynamic.it.steps)
+    assert len(result.declared.steps_taken) == 2
+    assert all('Observed interaction:' in note for note in result.declared.steps_taken)
+
+
+def test_opened_menu_choices_reach_next_plan_and_finish_without_an_extra_click(dynamic, monkeypatch):
+    """Regression for a detected click followed by another instruction to open the same menu."""
+    from hcs_agent.a11y import Candidate
+
+    _make_native(dynamic, monkeypatch)
+    trigger = Candidate('AXPopUpButton', 'Text style', (100, 100, 60, 25))
+    choices = [Candidate('AXMenuItem', 'Regular', (100, 130, 150, 25)),
+               Candidate('AXMenuItem', 'Bold', (100, 155, 150, 25))]
+    items = [trigger]
+    dynamic.backend.page_catalogue = lambda _: (dynamic.info, list(items))
+    pages = []
+
+    def plan(goal, context, page, candidates, history):
+        pages.append(page)
+        if len(pages) == 1:
+            assert 'Menu options visible now' not in page
+            return {'instruction': 'Open Text style', 'kind': 'click', 'target': 0}
+        assert 'Menu options visible now' in page
+        assert '2. Regular' in page and '3. Bold' in page
+        assert any('Observed interaction:' in entry for entry in history)
+        return {'done': True, 'kind': 'info', 'target': None,
+                'summary': 'The visible styles are Regular and Bold.'}
+
+    def human_click(step):
+        dynamic.shown.append(step)
+        if not step.last:
+            items.extend(choices)
+        return True, 'Observed interaction: click inside suggested target. Result not verified.'
+
+    dynamic.backend.plan_step = plan
+    dynamic.it._on_guidance = human_click
+    result = dynamic.it._dynamic_guide(dynamic.bound)
+    assert result.declared.outcome == 'done'
+    assert len(dynamic.shown) == 2
+    assert dynamic.shown[0].where == 'Text style'
+    assert dynamic.shown[1].kind == 'info' and dynamic.shown[1].last
+    assert dynamic.shown[1].pointer is None and dynamic.shown[1].box is None
+    assert len(result.declared.steps_taken) == 1  # Listing options is not a second human click.
+
+
+def test_visible_menu_is_context_not_automatic_task_success(dynamic):
+    from hcs_agent.a11y import Candidate
+
+    dynamic.backend.page_catalogue = lambda _: (
+        dynamic.info, [Candidate('AXMenuItem', 'Regular', (100, 130, 150, 25))])
+    dynamic.backend.plan_step = lambda *args: {'done': False, 'kind': 'info',
+        'instruction': 'The requested option is not visible.', 'target': None}
+    result = dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    assert result.declared.outcome == 'unclear'
+    assert not dynamic.shown[0].last
 
 
 def test_repeated_next_instruction_on_changed_pages_is_not_a_stall(dynamic, monkeypatch):

@@ -152,7 +152,7 @@ class Grounder:
             "parameters": {"type": "object", "properties": {
                 "done": {"type": "boolean", "description": "true when the goal is visibly reached on this page"},
                 "blocked": {"type": "boolean", "description": "true if the current coaching scope or unavailable evidence prevents continuing; not success"},
-                "instruction": {"type": "string", "description": "one short imperative sentence in English"},
+                "instruction": {"type": "string", "description": "one short English instruction, or a factual answer for kind=info"},
                 "why": {"type": "string", "description": "one short sentence: why this step"},
                 "kind": {"type": "string", "enum": ["click", "type", "info"]},
                 "target": {"type": "integer", "description": "1-based index of the control to act on; 0 if none"},
@@ -174,6 +174,13 @@ class Grounder:
                   "an app forward when Current page already identifies its focused window. "
                   "Information-only entries and enabled=False controls are context, never click/type targets. "
                   "enabled=None or selected=None means unknown; selected=True does not mean disabled. "
+                  "First check whether the CURRENT visible evidence already answers the question. "
+                  "For a request to show, list, locate or explain options, the relevant visible labels can be the answer: "
+                  "set done=true, kind=info, target=0 and give that factual answer in summary. "
+                  "Visible MenuItem entries are already exposed choices; do not ask to reopen their menu just to show them, "
+                  "or select an option when the user only asked to see the choices. "
+                  "Name the observed choices without inventing their behavior. Visibility alone does not prove a choice "
+                  "is selected or a requested change has happened. If the goal requires a change, require evidence of that change. "
                   "A button role or label alone does not prove that it opens another view. Use type only on text inputs. "
                   "When a previous interaction produced no observed change, choose a different evidenced route "
                   "or explain the blocker; do not rephrase the same ineffective action. A metadata change is not proof of goal completion. "
