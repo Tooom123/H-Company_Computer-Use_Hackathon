@@ -96,7 +96,7 @@ def system_player() -> Player | None:
 class Speaker:
     """One voice for the whole process. Thread-safe; playback runs on its own worker thread."""
 
-    def __init__(self, synth: Synth, player: Player, cache_dir: Path, *, max_hold_s: float = 1.5) -> None:
+    def __init__(self, synth: Synth, player: Player, cache_dir: Path, *, max_hold_s: float = 0.35) -> None:
         self._synth, self._player = synth, player
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)

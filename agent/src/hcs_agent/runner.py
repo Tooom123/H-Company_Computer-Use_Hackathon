@@ -534,6 +534,7 @@ class Intervention:
             gs = GuidanceStep(index=len(self.guidance) + 1, instruction=instruction[:140], why=(plan.get("why") or "")[:160],
                               where=target.name if target else "", pointer=target.center if target else None,
                               box=target.box if target else None, box_exact=target is not None, kind=kind)
+            signature = (info.url, tuple(sorted(e.name for e in items)))
             reply = self._on_guidance(gs)
             if reply is None:
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
@@ -541,9 +542,23 @@ class Intervention:
             if not did:
                 return None  # the user is stuck: the caller decides (takeover / agent) from the autonomy level
             history.append(instruction if not note else f"{instruction} (user: {note})")
+            self._wait_page_change(catalogue, bound, signature)
         return AttemptResult(None, "completed", DeclaredResult(
             outcome="unclear", summary="Step limit reached while guiding from the page; outcome to verify.",
             steps_taken=history))
+
+    def _wait_page_change(self, catalogue, bound, signature, timeout_s: float = 1.6) -> None:
+        """After the user acted, give the page up to ~1.5 s to change (navigation, menu, dialog) before planning
+        the next step from it; planning on the old page would just repeat the step."""
+        deadline = time.time() + timeout_s
+        while time.time() < deadline and not self._stop.is_set():
+            cat = catalogue(bound)
+            if cat is None:
+                return
+            info, items = cat
+            if (info.url, tuple(sorted(e.name for e in items))) != signature:
+                return
+            time.sleep(0.2)
 
     def _on_guidance_nowait(self, step: GuidanceStep) -> None:
         """Publish an informational step without waiting for the user (e.g. 'bring the browser to the front')."""

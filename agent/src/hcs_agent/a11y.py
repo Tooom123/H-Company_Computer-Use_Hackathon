@@ -267,6 +267,17 @@ def page() -> PageInfo | None:
     url = str(url) if url is not None else ""
     info = PageInfo(app=app_name, title=_text(_attr(win, "AXTitle")), url=url, is_front=is_front, viewport=_frame(web))
     elements = _walk(web)
+    # Right after a navigation Chrome exposes the new page progressively: give it a moment before deciding
+    # the page is empty (an empty catalogue would send the guide to the slow path for nothing).
+    for _ in range(4):
+        loading = _attr(web, "AXLoadingProgress")
+        busy = isinstance(loading, (int, float)) and loading < 1.0
+        if len(elements) > 3 and not busy:
+            break
+        time.sleep(0.25)
+        elements = _walk(web)
+        url = str(_attr(web, "AXURL") or url)
+        info.url, info.title = url, _text(_attr(win, "AXTitle"))
     if info.viewport:  # keep what is actually visible in the viewport (scrolled-out elements keep a frame)
         vx, vy, vw, vh = info.viewport
         elements = [e for e in elements
@@ -406,9 +417,13 @@ def screen_check(expected: str, software: str = "", info: PageInfo | None = None
     hay = f"{info.url} {info.title}".lower()
     if sw and sw not in hay and sw.rstrip("y") not in hay:  # "hcompany" vs "hcompany.ai", "odoo" vs "odoo.com"
         return False, where
-    words = [w for w in re.findall(r"\b[A-Z][\w']+\b", expected) if w.lower() not in {sw, "crm", "the", "a"}]
+    words = [w for w in re.findall(r"\b[A-Z][\w']+\b", expected) if w.lower() not in {sw, "crm", "the", "a", "h"}]
     if not words:
         return True, where
     text = page_text(info).lower()
     hits = sum(1 for w in words if w.lower() in text)
-    return (hits >= max(1, round(0.6 * len(words)))), where
+    if hits >= max(1, round(0.5 * len(words))):
+        return True, where
+    # Right software, but the words that name the expected page are not there: cannot tell from the tree
+    # (labels may differ from the description) -> let the vision check decide instead of saying no.
+    return None, where

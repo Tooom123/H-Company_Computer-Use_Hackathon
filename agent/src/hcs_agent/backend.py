@@ -861,7 +861,8 @@ class MockBackend:
         if bound is not None and self._scenario(bound) != "done":
             return None  # simulate a page that cannot be read: the H agent path (and its blocked outcome) runs
         info = SimpleNamespace(url="https://platform.example/sessions", title="Sessions", is_front=True, elements=[])
-        items = [Candidate("AXButton", "New session", (400, 300, 120, 32)), Candidate("AXLink", "Agents", (40, 120, 80, 24))]
+        items = [Candidate("AXButton", "New session", (400, 300, 120, 32)), Candidate("AXLink", "Agents", (40, 120, 80, 24)),
+                 Candidate("AXHeading", f"[simulated] page state {self._plans}", (40, 60, 300, 24))]  # changes per step
         return info, items
 
     _plans = 0
