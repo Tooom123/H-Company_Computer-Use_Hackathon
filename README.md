@@ -8,8 +8,6 @@ anything it cannot solve goes to the vendor's support as a complete, structured 
 Built on [H Company](https://hcompany.ai/)'s Holo models and H Agents API (computer use) during the H Company
 computer-use hackathon.
 
-**Website: [hcompanion.help](https://hcompanion.help/)**
-
 ![H Companion: clicking the H key turns "H Company" into "H Companion", corrected in red pen](h-companion.gif)
 
 ---
@@ -73,7 +71,7 @@ the general agent working from the live page.
 | [`app/`](app/) | Vision Lab (local gaze tracking, calibration, region of interest, clean screen capture, Holo analysis) and the voice pilot UI | Electron, React, Vite, TypeScript |
 | [`pilot/`](pilot/) | Voice pilot server and isolated headless-browser pilot | Python |
 | [`heatmap/`](heatmap/) | Gaze "honeycomb" heatmap module and its test page | JS (no dependency) |
-| [`landing/`](landing/) | The public website, [hcompanion.help](https://hcompanion.help/) | Static HTML/CSS/JS, three.js |
+| [`landing/`](landing/) | The public website (landing page) | Static HTML/CSS/JS, three.js |
 | [`contracts/`](contracts/) | JSON Schemas shared by every component, generated from `agent/src/hcs_agent/contract.py` | JSON Schema |
 | [`scripts/`](scripts/) | Contract export, demo data reset (Odoo), procedure drafting, launchers, benchmarks | Python |
 | [`docs/`](docs/) | Product spec ([PRD.md](PRD.md)), gaze research protocol, scenarios, test logs | Markdown |
@@ -183,7 +181,7 @@ See [pilot/README.md](pilot/README.md) and [docs/isolated-browser-pilot.md](docs
 python3 -m http.server 5173 --bind 127.0.0.1 --directory landing   # http://127.0.0.1:5173
 ```
 
-Live at [hcompanion.help](https://hcompanion.help/). Click the H key (or press `h`).
+Click the H key (or press `h`).
 
 ## Tests
 
