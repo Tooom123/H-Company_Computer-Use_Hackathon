@@ -1,0 +1,89 @@
+# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
+# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+id: hcompany_platform_redeem_credits
+software: hcompany
+software_version: "2026-11"
+session_type: configuration
+title: Redeem a promo code / check credits in Billing
+reversible: false
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: promo_code
+    description: The promotional code to redeem (given by the organisers)
+    required: true
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+objective: >-
+  Redeem the promo code "{promo_code}" in the Billing section and confirm the credits appear.
+
+planned_changes:
+  - The code is applied to the account's credits. No payment method is entered.
+allowed_actions:
+  - Navigate to Billing / Credits.
+  - Type the promo code in the dedicated field and apply it.
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Revealing, copying or reading aloud an API key or secret; the overlay never frames a secret value.
+  - Deleting agents, keys, sessions or environments.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
+  Procedure:
+  1. Open Settings, then Billing (left navigation or account menu).
+  2. Find the promo / coupon code field, type "{promo_code}", click Apply (or Redeem).
+  3. Confirm the credit balance or a success message shows the credits were added. Credits can take a few
+     minutes to appear: say so instead of retrying.
+  Never enter a payment method, never click Buy or Upgrade.
+guide_steps:
+  - instruction: "Open Billing in Settings"
+    element: "the Billing (or Credits) entry in the settings navigation of the platform"
+    why: "This page shows your credits, your plan and where a promo code is entered."
+    done_when: "a Billing page is displayed with a credit balance or plan information"
+  - instruction: "Click the promo code field"
+    element: "the promo code or coupon input on the Billing page"
+    why: "Codes from the hackathon add inference credits to the account."
+    done_when: "the promo code input is active with a text cursor"
+  - instruction: "Type \"{promo_code}\" and click Apply"
+    kind: type
+    element: "the promo code input on the Billing page"
+    why: "The balance updates within a few minutes."
+    annotations:
+      - element: "the Upgrade or Buy credits button on the Billing page"
+        text: "Not this: it is a purchase"
+        shape: label
+    done_when: "a confirmation message or an updated credit balance is displayed after applying the code"
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to go back to the platform home"
+    element: "the H Company logo at the top-left of the platform page"
+    why: "The home page is where every section starts from."
+  - instruction: "Click the Computer Use Agents section in the left navigation"
+    element: "the Computer Use Agents entry in the left navigation menu"
+    why: "Agents, sessions and keys live under this product."
+    optional: true
+
+postcondition:
+  description: >-
+    The Billing page shows the promo code accepted (success message or updated credit balance).
+  checks:
+    - key: billing_page
+      prompt: The Billing page of the platform is displayed.
+    - key: code_applied
+      prompt: A success message or an increased credit balance is visible after applying a promo code.
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
+    you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must check whether the code is valid for this account and whether credits are delayed.
+  default_category: unknown

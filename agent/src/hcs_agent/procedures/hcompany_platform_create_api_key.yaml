@@ -1,0 +1,95 @@
+# H Company platform / docs — guided procedure. UNVERIFIED on the live site (written from the public docs on
+# 2026-11-08): element descriptions and done_when must be checked with the grounding test before a demo.
+id: hcompany_platform_create_api_key
+software: hcompany
+software_version: "2026-11"
+session_type: onboarding
+title: Create an API key on the H Platform
+reversible: false
+max_attempts: 1
+max_steps_per_attempt: 25
+max_time_s_per_attempt: 300
+
+parameters:
+  - name: key_name
+    description: Name for the new key, e.g. "hackathon-mac"
+    required: false
+    default: "hackathon-mac"
+preconditions:
+  - The user is logged in on platform.hcompany.ai in the browser on the main display.
+  - The user understands the key is shown once and must be stored in a password manager or .env.
+objective: >-
+  Create an API key named "{key_name}" on platform.hcompany.ai and store it safely, without exposing it on screen longer than needed.
+
+planned_changes:
+  - One new API key named "{key_name}" is created. Nothing else is modified.
+allowed_actions:
+  - Navigate to the API keys section of the platform.
+  - Click Create / New key, name it, confirm.
+  - Tell the user to copy the key into their .env; never read or frame the key value.
+forbidden_actions:
+  - Entering credentials or a payment method; any purchase.
+  - Revealing, copying or reading aloud an API key or secret; the overlay never frames a secret value.
+  - Deleting agents, keys, sessions or environments.
+  - Leaving the H browser tab or opening other applications.
+
+agent_instructions: |
+  You help a user on platform.hcompany.ai in a browser on macOS. Work only inside the visible tab.
+  Procedure:
+  1. Open the API keys section (left navigation, or the account menu at the top right, then API keys).
+  2. Click the button to create a key, type the name "{key_name}", confirm.
+  3. The key value is displayed once: tell the user to click Copy and paste it into their .env file. Never
+     read the value, never write it anywhere, never describe its characters.
+  4. Confirm the new key appears in the list with its name.
+  If creation requires billing or a verified account, stop and report it as blocked with the exact message.
+guide_steps:
+  - instruction: "Open API keys in the left navigation"
+    element: "the API keys entry in the left navigation menu of the platform"
+    why: "Keys are what your code uses to authenticate; each project should have its own."
+    done_when: "an API keys page is displayed with a list (possibly empty) and a create button"
+  - instruction: "Click Create API key"
+    element: "the Create API key (or New key) button on the API keys page"
+    why: "A dialog opens to name the key."
+    done_when: "a dialog or form to name a new API key is open"
+  - instruction: "Type \"{key_name}\" as the name, then confirm"
+    kind: type
+    element: "the name field in the create API key dialog"
+    why: "A clear name tells you later which machine or project uses it."
+    done_when: "a new key named {key_name} is shown, with its value displayed once or a Copy button"
+  - instruction: "Click Copy and paste the key in your .env — I look away"
+    element: "the Copy button next to the newly created key value"
+    why: "The value is shown only once. Keep it out of screenshots and chats."
+    done_when: "the API keys list shows a key named {key_name} and the one-time value is no longer displayed"
+
+expected_screen: "the H Platform (platform.hcompany.ai) in a browser, with its left navigation (Agents, Sessions, API keys, Billing)"
+recovery_steps:
+  - instruction: "Click the H logo at the top left to go back to the platform home"
+    element: "the H Company logo at the top-left of the platform page"
+    why: "The home page is where every section starts from."
+  - instruction: "Click the Computer Use Agents section in the left navigation"
+    element: "the Computer Use Agents entry in the left navigation menu"
+    why: "Agents, sessions and keys live under this product."
+    optional: true
+
+postcondition:
+  description: >-
+    The API keys page lists a key named "{key_name}" and no full key value is visible on screen.
+  checks:
+    - key: keys_page
+      prompt: The API keys page of the platform is displayed.
+    - key: key_listed
+      prompt: A key named "{key_name}" appears in the list.
+    - key: value_hidden
+      prompt: No full API key value is displayed on screen (only a masked or truncated form).
+  verification_instructions: |
+    You are a read-only verifier. Stay inside the visible H browser tab; never click outside the browser window
+    and do not reload the page. Navigate only to look. Never reveal or read a secret value. Report exactly what
+    you observe.
+
+escalation:
+  when:
+    - The agent reports "blocked".
+    - The postcondition is not satisfied after max_attempts.
+  decision_expected: >-
+    Support must confirm the account may create API keys (plan, verification) and remind the storage policy.
+  default_category: unknown

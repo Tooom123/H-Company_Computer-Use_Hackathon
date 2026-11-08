@@ -145,6 +145,11 @@ class Intent(BaseModel):
     procedure_id: str | None = Field(description="One of the known procedure ids, or null if none fits.")
     question: str | None = Field(default=None, description="One short English question to ask the user when the "
                                                            "task or a required value is unclear; null otherwise.")
+    point_at: str | None = Field(default=None, description="When the user asks where something is on the current "
+                                                           "screen, an English description of that element; else null.")
+    task: str | None = Field(default=None, description="When the user clearly asks for a task that no known procedure "
+                                                       "covers, that task as one imperative English sentence; else null.")
+    software: str | None = Field(default=None, description="Software the request is about: 'odoo', 'hcompany' or null.")
     mode: str | None = Field(default="act", description="'guide' if the user wants to be shown/explained how, else 'act'.")
     parameters: dict[str, str | int | float | None] | None = Field(default_factory=dict)
     role: str | None = None
@@ -154,6 +159,9 @@ class Intent(BaseModel):
     def model_post_init(self, __context) -> None:
         self.goal = self.goal or ""
         self.question = self.question or None
+        self.point_at = (self.point_at or None) and str(self.point_at)
+        self.task = (self.task or None) and str(self.task)
+        self.software = (self.software or None) and str(self.software).lower()
         self.role = self.role or None
         self.mode = self.mode if self.mode in ("act", "guide") else "act"
         self.parameters = {k: str(v) for k, v in (self.parameters or {}).items() if v not in (None, "")}
@@ -181,6 +189,15 @@ def _intent_prompt(transcript: str, procedures: list[Procedure], history: list[s
         "for them, 'guide' if they want to learn / be shown / be explained how), parameters (object of strings; dates "
         "as YYYY-MM-DD, resolve relative dates like 'next Friday'; NEVER invent a value the user did not say), "
         "role (string or null), goal (one clean sentence in English, whatever language the user spoke), "
+        "task (string or null: when the user asks to do or be shown something concrete on the software but NO known "
+        "procedure fits, restate it as one imperative English sentence, set procedure_id null and question null; "
+        "prefer a task over a question whenever the request names an action, even if details are missing — the "
+        "agent will work them out on screen), "
+        "software ('odoo', 'hcompany' when the request concerns the H Company platform, documentation, agents, "
+        "sessions, API keys, credits; else null), "
+        "point_at (string or null: when the user asks WHERE something is on the screen in front of them — 'where is the "
+        "login button?', 'which field is the amount?' — give an English visual description of that element, e.g. 'the "
+        "Log in button', and set procedure_id null and question null), "
         "missing (required parameters the user did not give), question (string or null: when the request could "
         "match several procedures, or a required value is missing, or the sentence is too garbled, ONE short "
         "friendly English question that gets exactly the missing piece; null when everything is clear). No prose."
@@ -222,7 +239,7 @@ class IntentRouter:
             if intent.missing and not intent.question:
                 descs = [next(p.description for p in proc.parameters if p.name == n) for n in intent.missing]
                 intent.question = "Which " + " and which ".join(d.split(",")[0].lower() for d in descs) + "?"
-        elif not intent.question:
+        elif not intent.question and not intent.point_at and not intent.task:
             intent.question = "I did not catch what you want to do. Which task should I help with?"
         return intent
 
@@ -232,6 +249,18 @@ def _extract_json(text: str) -> dict:
     if start < 0 or end < 0:
         raise ValueError(f"no JSON in model output: {text[:200]}")
     return json.loads(text[start:end + 1])
+
+
+def generic_request(intent: Intent, doc_context: str | None = None) -> InterventionRequest:
+    """An unscripted task: the general H agent will work it out from the screen."""
+    from .procedures import GENERIC_ID
+
+    params = {"doc_context": doc_context} if doc_context else {}
+    return InterventionRequest(
+        software=intent.software or "hcompany", role=intent.role, goal=intent.task or intent.goal,
+        procedure_id=GENERIC_ID, parameters=params,
+        mode=Mode(intent.mode) if intent.mode in ("act", "guide") else Mode.guide,
+    )
 
 
 def intent_to_request(intent: Intent, software: str | None = None) -> InterventionRequest:

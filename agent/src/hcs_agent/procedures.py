@@ -301,6 +301,62 @@ Rules:
 """
 
 
+# ---------------------------------------------------------------------- generic (unscripted) tasks
+
+GENERIC_ID = "generic"
+
+SITE_HINTS = {
+    "hcompany": "The software is the H Company website: platform.hcompany.ai (agents, sessions, Agent View, API keys, "
+                "billing, usage) and the documentation hub hub.hcompany.ai (search bar at the top). Never reveal or "
+                "read an API key value; never buy credits or add a payment method; never delete anything.",
+    "odoo": "The software is Odoo 20 in a browser. Never send emails or messages, never delete or archive records.",
+}
+
+
+def make_generic_procedure(request: InterventionRequest, doc_context: str | None = None) -> Procedure:
+    """A procedure for a task no YAML covers: the H agent works it out from the screen.
+
+    Slower (~10 s per observation) and less predictable than a script, but it covers anything the user asks on
+    the software. The goal text is the objective; allowed actions are navigation and the edits the goal implies;
+    the postcondition is the goal itself, checked on screen.
+    """
+    software = request.software or "the software"
+    hint = SITE_HINTS.get(software.lower(), f"The software is {software} in a browser on macOS.")
+    docs = f"\nRelevant documentation (from the vendor):\n{doc_context}\n" if doc_context else ""
+    return Procedure(
+        id=GENERIC_ID,
+        software=software,
+        title=f"Unscripted task: {request.goal[:60]}",
+        reversible=False,
+        max_attempts=1,
+        max_steps_per_attempt=40,
+        max_time_s_per_attempt=480,
+        parameters=[],
+        preconditions=[f"{software} is open in the browser on the main display and the user is logged in."],
+        objective=request.goal,
+        planned_changes=["Whatever the goal requires, and nothing else. No script exists for this task: the agent "
+                         "reasons from the screen and says so."],
+        allowed_actions=["Navigate inside the software; read any page; fill the fields and click the buttons the goal "
+                         "requires."],
+        forbidden_actions=["Entering credentials or payment details.", "Deleting anything.",
+                           "Revealing secrets (API keys, tokens).", "Leaving the software's browser tab."],
+        agent_instructions=f"{hint}\nThere is no written procedure for this task: work it out from what you see, one "
+                           f"step at a time, and check each result on screen before moving on.{docs}",
+        guide_steps=[],
+        expected_screen="",
+        recovery_steps=[],
+        postcondition=Postcondition(
+            description=f"The goal is visibly achieved on screen: {request.goal}",
+            checks=[PostconditionCheck(key="goal_achieved", prompt=f"The screen shows that this is done: {request.goal}")],
+            verification_instructions="You are a read-only verifier. Stay inside the visible browser tab. Look at the "
+                                      "screen and report whether the goal is visibly achieved. Never read secrets.",
+        ),
+        escalation=EscalationRule(when=["The agent reports blocked."],
+                                  decision_expected="Support must decide how to help with this unscripted request.",
+                                  default_category=Category.unknown),
+    )
+
+
 # ---------------------------------------------------------------------- registry
 
 
@@ -324,6 +380,8 @@ class ProcedureRegistry:
             raise KeyError(f"Unknown procedure '{procedure_id}'. Known: {sorted(self._by_id)}") from None
 
     def for_request(self, request: InterventionRequest) -> Procedure:
+        if request.procedure_id == GENERIC_ID:
+            return make_generic_procedure(request, request.parameters.get("doc_context"))
         if request.procedure_id:
             return self.get(request.procedure_id)
         candidates = [p for p in self._by_id.values() if p.software == request.software]

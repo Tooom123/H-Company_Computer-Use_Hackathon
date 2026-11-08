@@ -421,6 +421,34 @@ def _wait_stopped(it: Intervention, ov, timeout: float) -> None:
         print("(stop requested; the H session did not confirm within the timeout — see runs/hcs-agent.log)")
 
 
+def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
+    """'Where is X?': locate it on the current screen and circle it, no procedure involved."""
+    from .overlay import Scene
+
+    if ov is not None:
+        ov.badge("Looking at the screen…", pulsing=True)
+    loc = backend.locate(element, "Point at what the user asks about on the screen in front of them.") \
+        if hasattr(backend, "locate") else None
+    if loc is None or not loc.found:
+        print(f"  could not find: {element}")
+        _say(f"I can't see {element} on this screen.")
+        _flash(ov, f"I can't see {element} here", "question", why=(loc.visible[:80] if loc else ""))
+        return
+    text = f"Here: {element}"
+    print(f"  -> pointing at {element} {loc.screen_xy}")
+    _say(text)
+    if ov is None:
+        return
+    ov.badge(None)
+    ov.show_scene(Scene(text=text, target=loc.screen_xy, target_box=loc.box))
+    t0 = time.time()
+    try:
+        ov.run_until(lambda: time.time() - t0 > seconds or _new_request_pending(), None, 0.1)
+    except KeyboardInterrupt:
+        ov.hide()
+    ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+
+
 def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: float = 3.5) -> None:
     """Short on-screen note outside of a task (routing feedback), then back to the listening hint."""
     if ov is None:
@@ -572,6 +600,61 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 except Exception as exc:  # noqa: BLE001
                     print(f"  could not understand the request ({exc}); try again.")
                     _flash(ov, "I did not get that, please rephrase", "question")
+                    continue
+                if intent.point_at and not intent.procedure_id:
+                    _point_at(ov, backend, intent.point_at)
+                    history.clear()
+                    continue
+                if intent.task and not intent.procedure_id:
+                    # No script for this: the general agent works from the screen, with the vendor docs as context.
+                    from .voice import generic_request
+
+                    doc = None
+                    try:
+                        ans = backend.knowledge.ask(f"{intent.task} — how is it done, step by step?",
+                                                    software=intent.software or "hcompany", depth="fast")
+                        doc = ans.as_text(2) if ans and ans.answer else None
+                        if ans:
+                            print(f"  [docs] {ans.answer[:120]}")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    request = generic_request(intent, doc)
+                    last_request = request
+                    history.clear()
+                    print(f"  -> no script for this; general agent | {request.software} | mode {request.mode.value} | {request.goal}")
+                    _say("No script for this one, I will work it out from the screen.")
+                    try:
+                        code = _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                                        overlay=not args.no_overlay, ov=ov)
+                    except Exception:  # noqa: BLE001
+                        import traceback
+
+                        traceback.print_exc()
+                    if args.once:
+                        return 0
+                    if ov is not None and not _new_request_pending():
+                        ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
+                    continue
+                asked_before = any(h.startswith("Assistant:") for h in history)
+                if not intent.procedure_id and not intent.missing and asked_before and (intent.goal or text):
+                    # One question was already asked: do not keep interrogating, work from the screen instead.
+                    intent.task = intent.goal or text
+                    from .voice import generic_request
+
+                    request = generic_request(intent, None)
+                    last_request = request
+                    history.clear()
+                    print(f"  -> no script for this; general agent | {request.software} | {request.goal}")
+                    _say("I will work it out from the screen.")
+                    try:
+                        _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                                 overlay=not args.no_overlay, ov=ov)
+                    except Exception:  # noqa: BLE001
+                        import traceback
+
+                        traceback.print_exc()
+                    if ov is not None and not _new_request_pending():
+                        ov.badge(f"{os.environ.get('HCS_PTT_KEY', 'ctrl+shift+h')}: new request")
                     continue
                 if not intent.procedure_id or intent.missing:
                     # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
