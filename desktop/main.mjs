@@ -81,7 +81,17 @@ ipcMain.handle("vision:stop", () => {
   return { ...visionStatus(), running: false };
 });
 
+// Window controls for the frameless window (the top bar draws them; only these three actions exist).
+ipcMain.on("win", (e, action) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  if (action === "minimize") win.minimize();
+  else if (action === "maximize") win.isMaximized() ? win.unmaximize() : win.maximize();
+  else if (action === "close") win.close();
+});
+
 function createWindow() {
+  const mac = process.platform === "darwin";
   const win = new BrowserWindow({
     width: 940,
     height: 640,
@@ -89,7 +99,11 @@ function createWindow() {
     minHeight: 540,
     title: "H Companion",
     backgroundColor: "#f9f9fb",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Frameless everywhere but macOS: GNOME on Wayland gives an Electron window no title bar at all (it could not
+    // be moved, minimised or closed). The black tab bar is the title bar: drag it to move the window, its buttons
+    // on the right minimise / maximise / close. macOS keeps the native traffic lights.
+    frame: mac,
+    titleBarStyle: mac ? "hiddenInset" : undefined,
     show: !smoke,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
@@ -105,6 +119,17 @@ function createWindow() {
   if (process.env.HCS_APP_CAPTURABLE !== "1") win.setContentProtection(true);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
+  const sendState = () => win.webContents.send("win:state", { maximized: win.isMaximized() });
+  win.on("maximize", sendState);
+  win.on("unmaximize", sendState);
+  win.webContents.on("did-finish-load", sendState);
+  // Keyboard: Ctrl/Cmd+W closes, Ctrl/Cmd+M minimises (no menu bar to carry the usual accelerators).
+  win.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt || input.shift) return;
+    const k = input.key.toLowerCase();
+    if (k === "w") (e.preventDefault(), win.close());
+    else if (k === "m") (e.preventDefault(), win.minimize());
+  });
   win.loadFile(path.join(here, "renderer", "index.html"), { hash: section });
 
   if (smoke) {

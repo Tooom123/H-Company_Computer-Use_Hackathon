@@ -92,9 +92,11 @@ export function paintBadge(svg, w, h, { seed = 11, dot = "on", dotX = 19 } = {})
 /**
  * The autonomy slider, wide, in the overlay's style (overlay.py, _MagnetView): a paper scrap, a red-pencil rail
  * from left to right with three notches, each level written under its notch, the chosen one a filled dot in two
- * scribbled loops (same strokes and sizes as on screen). Returns the x (0..1) of each notch, for the click zones.
+ * scribbled loops (same strokes and sizes as on screen). Returns the x (0..1) of each notch, for the pointer.
+ * `pos` (0..1 along the rail) puts the dot between notches while it is dragged; `level` is then the notch it
+ * would land on (its label is the one written in red).
  */
-export function drawAutonomy(svg, level, labels, { animate = false } = {}) {
+export function drawAutonomy(svg, level, labels, { animate = false, pos = null } = {}) {
   const W = 640;
   const H = 104;
   svg.replaceChildren();
@@ -102,8 +104,9 @@ export function drawAutonomy(svg, level, labels, { animate = false } = {}) {
   const r = rng(7);
   const paper = paperPoints(6, 6, W - 12, H - 12, r);
   svg.append(node("polygon", { points: paper.map((p) => p.map((v) => v.toFixed(1)).join(",")).join(" "), fill: PAPER, class: "paper" }));
-  const line = (pts, width, jitter, cls = "") => {
-    for (const d of wobble(pts, r, jitter)) {
+  const loops = rng(19); // the knob's loops draw from their own sequence: the rail stays still while it moves
+  const line = (pts, width, jitter, cls = "", rr = r) => {
+    for (const d of wobble(pts, rr, jitter)) {
       svg.append(node("path", { d, fill: "none", stroke: INK, "stroke-width": width, "stroke-linecap": "round", "stroke-linejoin": "round", class: cls, pathLength: 1 }));
     }
   };
@@ -119,10 +122,14 @@ export function drawAutonomy(svg, level, labels, { animate = false } = {}) {
     const t = node("text", { x: cx, y: y + 42, "text-anchor": "middle", class: `level-label${i === level ? " on" : ""}` });
     t.textContent = labels[i];
     svg.append(t);
-    if (i === level) {
+    if (i === level && pos === null) {
       svg.append(node("circle", { cx, cy: y, r: 7, fill: INK }));
-      for (let k = 0; k < 2; k++) line(circlePoints(cx, y, 11 - k * 2, 10 - k * 2), 1.6, 1.8, animate ? "draw" : "");
+      for (let k = 0; k < 2; k++) line(circlePoints(cx, y, 11 - k * 2, 10 - k * 2), 1.6, 1.8, animate ? "draw" : "", loops);
     }
+  }
+  if (pos !== null) {
+    // held: a bigger dot riding the rail, no loops (they are drawn in again where it lands)
+    svg.append(node("circle", { cx: left + (right - left) * pos, cy: y, r: 9, fill: INK, class: "held" }));
   }
   return xs;
 }

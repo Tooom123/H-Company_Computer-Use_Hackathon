@@ -88,41 +88,105 @@ function go(name) {
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
 if (api.platform === "darwin") document.body.classList.add("mac");
 
+// window controls (frameless window; macOS keeps its traffic lights and hides these) -------------
+$("wcMin").addEventListener("click", () => api.window.minimize());
+$("wcMax").addEventListener("click", () => api.window.maximize());
+$("wcClose").addEventListener("click", () => api.window.close());
+api.window.onState(({ maximized }) => {
+  document.body.classList.toggle("maximized", maximized);
+  $("wcMax").title = maximized ? "Restore" : "Maximise";
+  $("wcMax").setAttribute("aria-label", $("wcMax").title);
+});
+
 // home: autonomy, a pencil slider with the three levels written out -------------------------------
-let drawnLevel; // what the slider shows (redrawn only on change, the knob loops drawn in like a pencil)
+// Drag the red dot along the rail, click anywhere on the scrap (it goes to the nearest level), or use the
+// arrow keys (1/2/3 too). It snaps on release and applies at once, to the running task as well.
+let drawnKey; // what the slider shows (redrawn only on change, the knob loops drawn in like a pencil)
+let notchX = [0.17, 0.5, 0.83]; // x (0..1) of each notch, from the last drawing
+let drag = null; // {pos} while the dot is held, pos 0..1 along the rail
+let autMsgTimer = 0;
+const STOPS = LABELS.length;
+
 function buildAutonomy() {
-  const hit = $("magnetHit");
-  LABELS.forEach((label, i) => {
-    const b = el("button", "hit");
-    b.setAttribute("role", "radio");
-    b.setAttribute("aria-label", label);
-    b.addEventListener("click", () => setAutonomy(i));
-    hit.append(b);
+  const box = $("magnet");
+  const posAt = (x) => {
+    const r = box.getBoundingClientRect();
+    const a = r.left + r.width * notchX[0];
+    const b = r.left + r.width * notchX[STOPS - 1];
+    return Math.max(0, Math.min(1, (x - a) / (b - a)));
+  };
+  box.addEventListener("pointerdown", (e) => {
+    if (!status || e.button !== 0) return;
+    try {
+      box.setPointerCapture(e.pointerId); // keep following the pointer outside the scrap
+    } catch {}
+    box.focus();
+    drag = { pos: posAt(e.clientX) };
+    renderAutonomy();
   });
+  box.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    drag.pos = posAt(e.clientX);
+    renderAutonomy();
+  });
+  box.addEventListener("pointerup", () => {
+    if (!drag) return;
+    const level = Math.round(drag.pos * (STOPS - 1));
+    drag = null;
+    setAutonomy(level);
+  });
+  box.addEventListener("pointercancel", () => ((drag = null), renderAutonomy()));
+  box.addEventListener("keydown", (e) => {
+    if (!status) return;
+    const cur = pendingAutonomy ?? status.autonomy ?? 0;
+    const next = { ArrowLeft: cur - 1, ArrowDown: cur - 1, ArrowRight: cur + 1, ArrowUp: cur + 1, Home: 0, End: STOPS - 1, 1: 0, 2: 1, 3: 2 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    setAutonomy(Math.max(0, Math.min(STOPS - 1, next)));
+  });
+}
+
+function sayAutonomy(text) {
+  $("autMsg").textContent = text;
+  clearTimeout(autMsgTimer);
+  if (text) autMsgTimer = setTimeout(() => ($("autMsg").textContent = ""), 4000);
 }
 
 async function setAutonomy(level) {
   if (!status) return;
+  if (level === status.autonomy && pendingAutonomy === null) return renderAutonomy();
+  const busy = isBusy(status);
+  const guiding = busy && status.current.mode !== "act" && !status.current.takeover;
   pendingAutonomy = level;
   renderAutonomy();
   const r = await api.agent("POST", "/autonomy", { level });
   pendingAutonomy = null;
-  if (r.ok && r.data) status = r.data;
+  if (r.ok && r.data) {
+    status = r.data;
+    sayAutonomy(guiding && level === STOPS - 1 ? "I'm taking over this task now." : busy ? "Applied to the task in progress." : "");
+  } else {
+    sayAutonomy("The assistant did not answer: the setting is unchanged.");
+  }
   renderAutonomy();
 }
 
 function renderAutonomy() {
-  const level = pendingAutonomy ?? (status ? status.autonomy : null);
-  if (level !== drawnLevel) {
-    const xs = drawAutonomy($("magnetSvg"), level, LABELS, { animate: drawnLevel !== undefined });
-    drawnLevel = level;
-    $("magnetHit").querySelectorAll(".hit").forEach((b, i) => (b.style.left = `${xs[i] * 100}%`));
+  const level = pendingAutonomy ?? (status && Number.isInteger(status.autonomy) ? status.autonomy : null);
+  const shown = drag ? Math.round(drag.pos * (STOPS - 1)) : level; // the level the dot would land on
+  const key = drag ? `d${drag.pos.toFixed(3)}` : String(level);
+  if (key !== drawnKey) {
+    const settled = !drag && drawnKey !== undefined;
+    notchX = drawAutonomy($("magnetSvg"), shown, LABELS, { animate: settled, pos: drag ? drag.pos : null });
+    drawnKey = key;
   }
-  $("magnetHit").querySelectorAll(".hit").forEach((b, i) => {
-    b.setAttribute("aria-checked", String(i === level));
-    b.disabled = !status;
-  });
-  $("magnet").classList.toggle("off", !status);
+  const box = $("magnet");
+  box.classList.toggle("off", !status);
+  box.classList.toggle("dragging", Boolean(drag));
+  box.setAttribute("aria-disabled", String(!status));
+  if (shown !== null) {
+    box.setAttribute("aria-valuenow", String(shown));
+    box.setAttribute("aria-valuetext", LABELS[shown]);
+  }
 }
 
 // home: ready badge, running task, numbers -------------------------------------------------------

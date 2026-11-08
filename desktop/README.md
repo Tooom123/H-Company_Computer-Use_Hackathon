@@ -52,3 +52,11 @@ Not yet seen on the Mac: the Magnet hide/show (AppKit), hand fonts, the Vision L
 - Approval prompt in the app when `talk --confirm` is used.
 - Admin / IT page for costs and plan (H compute, ElevenLabs, Gladia, Linkup) in the support backend.
 - Gaze from the Vision Lab feeding the agent (where the user is stuck).
+
+## Window and autonomy slider
+
+- Frameless on Linux and Windows (GNOME on Wayland gave the window no title bar: it could not be moved,
+  minimised or closed). The black tab bar is the title bar: drag it to move the window; minimise / maximise /
+  close at its top right; Ctrl+W closes, Ctrl+M minimises. macOS keeps its traffic lights.
+- Autonomy: drag the red dot along the rail, click anywhere on the scrap (nearest level), or arrow keys / 1 2 3.
+  It snaps on release, applies at once, and says when it hit the running task or when the assistant did not answer.

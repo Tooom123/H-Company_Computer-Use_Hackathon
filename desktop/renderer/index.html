@@ -25,6 +25,19 @@
         <button class="tab" data-go="voice" role="tab">Voice</button>
         <button class="tab" data-go="vision" role="tab">Vision</button>
       </nav>
+      <!-- window controls (frameless window; hidden on macOS, which keeps its traffic lights) -->
+      <div class="winctl">
+        <button class="wc" id="wcMin" title="Minimise" aria-label="Minimise">
+          <svg viewBox="0 0 10 10"><path d="M1 5h8" /></svg>
+        </button>
+        <button class="wc" id="wcMax" title="Maximise" aria-label="Maximise">
+          <svg class="i-max" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" /></svg>
+          <svg class="i-restore" viewBox="0 0 10 10"><rect x="1" y="3" width="6" height="6" /><path d="M3 3V1h6v6H7" /></svg>
+        </button>
+        <button class="wc close" id="wcClose" title="Close" aria-label="Close">
+          <svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" /></svg>
+        </button>
+      </div>
       <!-- the landing's stick figure, sitting on the edge of the tabs, legs swinging -->
       <svg class="buddy" viewBox="0 0 48 76" aria-hidden="true">
         <path d="M24.5 9.6 C 19.6 9.2, 17.6 13.6, 18.4 16.6 C 19.6 20.6, 26.4 21.2, 29 17.6 C 31.2 14, 28.8 9.8, 24.2 10.1" />
@@ -72,10 +85,11 @@
             <h2>Autonomy</h2>
             <span class="muted small">How much I do for you · applies right away</span>
           </div>
-          <div class="magnet" id="magnet">
-            <svg id="magnetSvg" role="img" aria-label="Autonomy"></svg>
-            <div class="magnet-hit" id="magnetHit" role="radiogroup" aria-label="Autonomy"></div>
+          <div class="magnet" id="magnet" role="slider" tabindex="0" aria-label="Autonomy"
+               aria-valuemin="0" aria-valuemax="2" aria-orientation="horizontal">
+            <svg id="magnetSvg" aria-hidden="true"></svg>
           </div>
+          <p class="muted small aut-msg" id="autMsg" role="status"></p>
         </div>
 
         <div class="stats">
