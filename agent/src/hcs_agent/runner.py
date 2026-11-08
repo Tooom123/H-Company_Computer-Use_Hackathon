@@ -841,7 +841,7 @@ class Intervention:
                 # Spoken and written: the title and one short line; the full explanation goes to the history.
                 say = (n_.get("say") or n_["why"])[:160]
                 gs = GuidanceStep(index=len(self.guidance) + 1, instruction=n_["text"][:140], why=say,
-                                  prepared_speech=[n_["text"][:140], say],
+                                  prepared_speech=[n_["text"][:140]],  # only the title is said aloud
                                   where=at.name, pointer=at.center, box=at.box, box_exact=True, kind="info",
                                   keep_clear=_container_of(at, getattr(info, "elements", None), sw, sh))
                 self._trace(f"page note: {n_['text'][:60]}")

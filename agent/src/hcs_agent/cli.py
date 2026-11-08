@@ -1500,7 +1500,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     # Always explain: the voice says the whole explanation, the paper note keeps its first sentence.
                     why = g.why or ""
                     if not same_step:
-                        _say(g.instruction, why if verbose else _short(why, 110))  # one short line aloud
+                        # Aloud: the step's title only; the line under it stays written (HCS_GUIDE_VERBOSE=1 reads it).
+                        _say(g.instruction, why) if verbose else _say(g.instruction)
                     shown["text"] = g.instruction
                     scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 140), step=g.index,
@@ -1533,7 +1534,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 advance(note=inputs.observation_note(g.kind))
                 return
             if g.kind == "info" and not g.last and g.pointer and shown.get("since") and \
-                    time.time() - shown["since"] >= _reading_time(g.instruction, _short(g.why or "", 110)):
+                    time.time() - shown["since"] >= _reading_time(g.instruction) + len(_short(g.why or "", 140)) / 25:
                 # A tour step ("this panel shows the agent's screen"): nothing to click, move on once it is said.
                 advance(note="Explained this part of the page (nothing to click); moved on after the explanation.")
                 return

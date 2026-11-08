@@ -345,4 +345,4 @@ def test_planned_notes_are_spoken_in_one_short_line(guide):
     guide.it._dynamic_guide(guide.bound, history=["Instruction shown: Click 'Next'. ..."])
     step = guide.shown[0]
     assert step.why == next(n["say"] for n in notes if n["text"] == step.instruction)
-    assert step.prepared_speech == [step.instruction, step.why]
+    assert step.prepared_speech == [step.instruction]  # the voice says the title; the line under it is written
