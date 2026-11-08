@@ -575,6 +575,27 @@ def cmd_talk(args: argparse.Namespace) -> int:
                 if ov is not None and not _new_request_pending():
                     ov.badge("⌘H: new request")
                 continue
+            asked_before = any(h.startswith("Assistant:") for h in history)
+            if not intent.procedure_id and not intent.missing and asked_before and (intent.goal or text):
+                # One question was already asked: do not keep interrogating, work from the screen instead.
+                intent.task = intent.goal or text
+                from .voice import generic_request
+
+                request = generic_request(intent, None)
+                last_request = request
+                history.clear()
+                print(f"  -> no script for this; general agent | {request.software} | {request.goal}")
+                _say("I will work it out from the screen.")
+                try:
+                    _execute(request, backend, Path(args.runs_dir), auto_approve=not args.confirm,
+                             overlay=not args.no_overlay, ov=ov)
+                except Exception:  # noqa: BLE001
+                    import traceback
+
+                    traceback.print_exc()
+                if ov is not None and not _new_request_pending():
+                    ov.badge("⌘H: new request")
+                continue
             if not intent.procedure_id or intent.missing:
                 # Ask instead of guessing; the answer comes through ⌘H and is merged with this turn.
                 q = intent.question or "What exactly should I help with?"
