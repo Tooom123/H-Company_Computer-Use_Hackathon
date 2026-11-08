@@ -374,6 +374,7 @@ class Intervention:
             else:
                 gs = GuidanceStep(index=i + 1, instruction=step.instruction, where=step.element,
                                   why=step.why, pointer=loc.screen_xy, box=loc.box, kind=step.action, last=False,
+                                  box_exact=(loc.visible or "").startswith("tree"),
                                   annotations=self._ground_annotations(step, context))
             self._trace(f"step {gs.index} shown after {time.time() - t_step:.1f}s: {gs.instruction}")
             reply = self._on_guidance(gs)

@@ -407,6 +407,30 @@ def _point_at(ov, backend, element: str, seconds: float = 6.0) -> None:
     ov.badge("⌘H: new request")
 
 
+def _inside(point, box, margin: float = 0) -> bool:
+    x, y = point
+    bx, by, bw, bh = box
+    return bx - margin <= x <= bx + bw + margin and by - margin <= y <= by + bh + margin
+
+
+def _follow_target(ov, shown: dict, tracker: "_TargetTracker") -> None:
+    """Apply the tracker's latest measurement to what is drawn: move the frame, hide it, or bring it back."""
+    from dataclasses import replace
+
+    new_box = tracker.box
+    if new_box is None:
+        if not shown["hidden"]:
+            ov.hide()  # control gone or covered: no frame on a wrong spot (the note comes back with it)
+            shown["hidden"] = True
+        return
+    moved = shown["box"] is None or any(abs(a - b) > 6 for a, b in zip(new_box, shown["box"]))
+    if shown["hidden"] or moved:
+        cx, cy = new_box[0] + new_box[2] // 2, new_box[1] + new_box[3] // 2
+        scene = replace(shown["scene"], target=(cx, cy), target_box=new_box)
+        ov.show_scene(scene, animate=shown["hidden"])  # a comeback is drawn again; a move just slides
+        shown.update(scene=scene, box=new_box, hidden=False)
+
+
 def _flash(ov, text: str, doodle: str | None = None, why: str = "", seconds: float = 3.5) -> None:
     """Short on-screen note outside of a task (routing feedback), then back to the listening hint."""
     if ov is None:
@@ -733,6 +757,51 @@ class _ScreenWatcher:
         return False
 
 
+class _TargetTracker:
+    """While a step is shown, re-measure its control through the accessibility tree every ~0.5 s so the frame
+    follows the control (scroll, layout change) and disappears when the control is gone or covered."""
+
+    def __init__(self) -> None:
+        self.description: str | None = None
+        self.step: int | None = None
+        self.box: tuple[int, int, int, int] | None = None  # latest measured box (None = not visible)
+        self.measured_at = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def follow(self, step: int, description: str | None, box) -> None:
+        self.step, self.description, self.box, self.measured_at = step, description, box, time.time()
+        if self._thread is None and description and sys.platform == "darwin":
+            self._thread = threading.Thread(target=self._run, daemon=True, name="target-tracker")
+            self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            from . import a11y
+
+            if not a11y.available():
+                return
+        except Exception:  # noqa: BLE001
+            return
+        while not self._stop.wait(0.5):
+            desc, step = self.description, self.step
+            if not desc:
+                continue
+            try:
+                best, ties, info = a11y.find(desc)
+            except Exception:  # noqa: BLE001
+                continue
+            if (self.description, self.step) != (desc, step):
+                continue  # the step changed meanwhile
+            if info is None or len(info.elements) <= 1:
+                continue  # no page to compare with: keep what we have
+            self.box = best.box if (best and not ties and info.is_front) else None
+            self.measured_at = time.time()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
 class _InputWatcher:
     """Knows what the user actually did since the step was shown: clicks, typed keys, Enter/Tab, Escape.
     Reads the process-wide InputHub (one event tap for the whole program)."""
@@ -740,6 +809,7 @@ class _InputWatcher:
     def __init__(self) -> None:
         self.armed_at = 0.0
         self.last_click = 0.0
+        self.last_click_xy: tuple[float, float] | None = None
         self.typed = 0
         self.last_submit = 0.0  # Enter or Tab
         self.last_key = 0.0  # Escape
@@ -762,6 +832,7 @@ class _InputWatcher:
             if magnet is not None and payload and magnet.contains(*payload):
                 return  # changing the Magnet level is not the user doing the step
             self.last_click = now
+            self.last_click_xy = tuple(payload) if payload else None
         elif event == "key_down":
             if payload in (self._kb.Key.enter, self._kb.Key.tab):
                 self.last_submit = now
@@ -812,6 +883,8 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
     prompted = False
     watcher = _ScreenWatcher()
     inputs = _InputWatcher()
+    tracker = _TargetTracker()
+    shown: dict = {"scene": None, "box": None, "hidden": False}  # what is on screen for the current step
 
     def advance(done: bool = True, note: str | None = None) -> None:
         _hush()  # the user did the step: the sentence about it is over
@@ -892,12 +965,18 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
                     why = g.why if (verbose or g.kind in ("info", "wait")) else ""
                     _say(g.instruction, _short(why, 90))
-                    ov.show_scene(Scene(
+                    scene = Scene(
                         text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
                         doodle="question" if "can't see" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),
                                     None, a.box)
-                               for a in g.annotations if a.pointer]))
+                               for a in g.annotations if a.pointer])
+                    ov.show_scene(scene)
+                    shown.update(scene=scene, box=g.box, hidden=False)
+                # Follow the control while the user acts (exact boxes only: a vision estimate has no live source).
+                tracker.follow(g.index, g.where if (g.box_exact and g.kind in ("click", "type")) else None, g.box)
+            if ov and shown["scene"] is not None and tracker.step == g.index and tracker.description:
+                _follow_target(ov, shown, tracker)
             if auto:
                 time.sleep(0.3)
                 advance()
@@ -908,6 +987,19 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 prompted = True
             g = it.guidance[-1]
             if g.kind != "wait" and (inputs.acted(g.kind) or (g.kind == "click" and watcher.changed_and_settled())):
+                box = shown["box"] if shown.get("box") else g.box
+                if g.kind == "click" and g.box_exact and box and inputs.last_click_xy and inputs.acted("click") \
+                        and not _inside(inputs.last_click_xy, box, margin=24):
+                    # Clicked somewhere else: say so and keep the same step, no screen check needed.
+                    print("\n  click outside the target; showing it again", flush=True)
+                    inputs.arm()
+                    watcher.arm()
+                    _say("Not that one — here.")
+                    if ov and shown["scene"] is not None:
+                        from dataclasses import replace
+
+                        ov.show_scene(replace(shown["scene"], why="Not that one — here"), animate=True)
+                    return
                 print(f"\n  {'input' if inputs.acted(g.kind) else 'screen'} detected, next…", flush=True)
                 advance()
                 return
@@ -941,6 +1033,7 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                 it.wait(0.1)
     finally:
         inputs.stop()
+        tracker.stop()
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:

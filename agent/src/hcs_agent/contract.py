@@ -177,6 +177,8 @@ class GuidanceStep(BaseModel):
     why: str = Field(default="", description="What this step achieves.")
     pointer: tuple[int, int] | None = Field(default=None, description="Screen coordinates the agent pointed at.")
     box: tuple[int, int, int, int] | None = Field(default=None, description="Element bounds (x, y, w, h) in screen points.")
+    box_exact: bool = Field(default=False, description="True when the box comes from the accessibility tree "
+                                                       "(pixel-exact), False when estimated from a screenshot.")
     kind: Literal["click", "type", "key", "info", "wait"] = Field(
         default="click",
         description="click / type / key: act; info: read, moves on by itself; wait: the agent polls the screen.")

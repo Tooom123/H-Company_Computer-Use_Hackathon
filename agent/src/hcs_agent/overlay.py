@@ -452,8 +452,11 @@ class Overlay:
 
     # ------------------------------------------------------------------ API (any thread)
 
-    def show_scene(self, scene: Scene) -> None:
-        self._seed += 1
+    def show_scene(self, scene: Scene, animate: bool = True) -> None:
+        """Draw a scene. `animate=False` re-places an existing scene (the target moved) without redrawing it
+        stroke by stroke, so the frame follows the control instead of flickering."""
+        if animate:
+            self._seed += 1
         flipped = Scene(
             text=scene.text[:110], target=self._flip(scene.target), why=scene.why[:160], step=scene.step,
             marks=[Mark(m.shape, self._flip(m.xy), m.text[:60], m.size, self._flip(m.to), self._flip_box(m.box))
@@ -464,9 +467,13 @@ class Overlay:
         def apply() -> None:
             self.view.scene = flipped
             self.view.seed = self._seed
-            self.view.progress = 0.0  # drawn progressively by run_until
-            self.view.held = self.hold_reveal is not None and self.hold_reveal()
-            self.view.stroke_total = 40
+            if animate:
+                self.view.progress = 0.0  # drawn progressively by run_until
+                self.view.held = self.hold_reveal is not None and self.hold_reveal()
+                self.view.stroke_total = 40
+            else:
+                self.view.progress = 1.0
+                self.view.held = False
             self.view.setNeedsDisplay_(True)
             self.window.orderFrontRegardless()
 
