@@ -704,3 +704,23 @@ La recette renderer en Chrome headless couvre sept groupes de vérifications
 avec un serveur simulé local : confirmations exactes, double clic, conflit 409,
 états masqués, voix et feedback ; zéro erreur JavaScript. Elle ne mesure pas
 l’audio réel, H, ni le masquage natif Electron.
+
+## 2026-11-08 — Microbenchmark réel Holo4 : DGX et fenêtre
+
+26 appels Models API au total : 13 cloud et 13 DGX, dont 20 mesures retenues,
+quatre échauffements et deux préflights. Localisation d’un bouton de documentation
+H publique, bureau synthétique, sans données personnelles ni interaction réelle.
+Le centre prédit est dans la cible DOM pour 20/20 réponses mesurées. Ce score
+géométrique ne constitue ni une tâche réussie ni un label humain.
+
+Médianes TTFT reçu / JSON complet : cloud image complète 1,442 / 1,714 s ;
+DGX complète 0,600 / 1,705 s ; cloud fenêtre 1,376 / 1,568 s ; DGX fenêtre
+0,512 / 1,617 s. Tokens d’entrée : 1816 → 1286, soit −29,19 %. Une page
+fixe, cinq répétitions par condition et cache partiellement réutilisé ; ce n’est
+pas un A/B du coaching. Les images ont une échelle commune et restent hors Git.
+
+Relais DGX temporaire, tunnel et jeton fermés après mesure ; aucune modification
+des serveurs de modèles existants. Résultats et fixtures archivés dans le dossier
+privé HCompanionResearch/benchmarks. Protocole et limites dans
+[le rapport](holo4-latency-window-benchmark-2026-11-08.md). L’application utilise
+toujours son moteur précédent ; crop et DGX ne sont pas activés en production.
