@@ -331,7 +331,6 @@ def loop_rig(rig, monkeypatch):
     it = intervention()
     prefetched, stopped = [], []
     monkeypatch.setattr(cli, "_InputWatcher", lambda: rig.w)
-    monkeypatch.setattr(cli, "_ScreenWatcher", lambda: pytest.fail("Screen differences must not advance GUIDE"))
     monkeypatch.setattr(cli, "_new_request_pending", lambda: False)
     monkeypatch.setitem(cli._SPEECH, "speaker", SimpleNamespace(
         prefetch=lambda texts, **options: prefetched.append((texts, options)), stop=lambda: stopped.append(True)))

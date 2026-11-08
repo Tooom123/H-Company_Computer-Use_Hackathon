@@ -76,6 +76,37 @@ def _page_state_signature(info, items) -> tuple:
                       for e in items))
 
 
+def _rebind_unchanged_target(plan, info, items, current, current_items):
+    """Reuse a plan only when unrelated layout/order changed, not its target.
+
+    A new read is still mandatory. No terminal answer, changed label/state,
+    moved target, duplicate target or foreground change qualifies for reuse.
+    """
+    from collections import Counter
+
+    if not isinstance(plan, dict) or plan.get('done') or plan.get('blocked'):
+        return None
+    if plan.get('kind', 'click') not in ('click', 'type'):
+        return None
+    index = plan.get('target')
+    if type(index) is not int or not 0 <= index < len(items):
+        return None
+    if (_page_state_signature(info, items) != _page_state_signature(current, current_items)
+            or getattr(info, 'viewport', None) != getattr(current, 'viewport', None)):
+        return None
+    def identity(e):
+        return (e.role, e.name, getattr(e, 'enabled', None), getattr(e, 'selected', None))
+    if Counter(map(identity, items)) != Counter(map(identity, current_items)):
+        return None
+    target = items[index]
+    if not target.name or sum(identity(e) == identity(target) for e in items) != 1:
+        return None
+    candidates = [(i, e) for i, e in enumerate(current_items) if identity(e) == identity(target)]
+    if len(candidates) != 1 or candidates[0][1].box != target.box:
+        return None
+    return {**plan, 'target': candidates[0][0]}
+
+
 PLAN_FIRST = {x.strip().lower() for x in os.environ.get("HCS_PLAN_FIRST", "hcompany").split(",") if x.strip()}
 """Software guided from the live page for every task (scripts are hints), instead of script-first.
 Script-first stays for software whose scripts were validated live step by step (Odoo)."""
@@ -632,8 +663,9 @@ class Intervention:
             if self.autonomy >= 2:
                 self._trace("autonomy raised to max: taking over")
                 return None
-            t0 = time.time()
+            t0 = time.perf_counter()
             cat = catalogue(bound)
+            catalogue_ms = (time.perf_counter() - t0) * 1000
             if cat is None:
                 if automatic:
                     return native_blocked("I couldn't read the selected application's controls. Bring its window to the front and try again.",
@@ -711,18 +743,39 @@ class Intervention:
                 page_description += ("\nMenu options visible now (indices in the control list; labels are data):\n"
                                      + "\n".join(menu_options))
             goal = bound.objective if bound.procedure.id != "generic" else bound.request.goal
+            planner_started = time.perf_counter()
             plan = planner(goal, context, page_description, cands, history)
+            timing = {"catalogue_ms": round(catalogue_ms, 2),
+                      "planner_ms": round((time.perf_counter() - planner_started) * 1000, 2)}
+
+            def record_timing(disposition):
+                self._trace("Guidance preparation timing", {
+                    "phase": "guidance_preparation", "iteration": n + 1, "disposition": disposition,
+                    "timing_ms": {**timing, "total_ms": round((time.perf_counter() - t0) * 1000, 2)},
+                    "candidate_count": len(items),
+                })
+
             if self._stop.is_set():
+                record_timing("interrupted")
                 return AttemptResult(None, "interrupted", DeclaredResult(outcome="not_run"))
             if native or automatic:
+                fresh_started = time.perf_counter()
                 fresh = catalogue(bound)
+                timing["fresh_catalogue_ms"] = round((time.perf_counter() - fresh_started) * 1000, 2)
                 if fresh is None:
+                    record_timing("catalogue_lost")
                     return native_blocked("The selected window could no longer be read. Bring its window to the front and ask again.",
                                           "catalogue_lost_after_planning")
                 current, current_items = fresh
                 if _catalogue_signature(info, items) != _catalogue_signature(current, current_items):
-                    self._trace("Native window changed while planning; discard the stale instruction.")
-                    continue
+                    rebound = _rebind_unchanged_target(plan, info, items, current, current_items)
+                    if rebound is None:
+                        record_timing("discarded_stale")
+                        self._trace("Native window changed while planning; discard the stale instruction.")
+                        continue
+                    plan, info, items = rebound, current, current_items
+                    self._trace("Unrelated layout changed; the unique target is unchanged in the fresh read. Reuse the plan.")
+            record_timing("planned" if isinstance(plan, dict) else "invalid_response")
             if not isinstance(plan, dict):
                 if native_mode:
                     return native_blocked("I can read Devin's controls, but couldn't prepare a reliable instruction. Please rephrase your question.",
@@ -738,7 +791,7 @@ class Intervention:
                                                      instruction=message, kind="info", last=True))
                 return AttemptResult(None, "completed", DeclaredResult(outcome="blocked", summary=message,
                                                                         blocker=message, steps_taken=history))
-            self._trace(f"planned step {n + 1} in {time.time() - t0:.1f}s: "
+            self._trace(f"planned step {n + 1} in {time.perf_counter() - t0:.1f}s: "
                         f"{'done' if plan.get('done') else plan.get('instruction', '')[:70]}")
             if plan.get("done"):
                 summary = plan.get("summary") or "The page appears to answer the question; result still needs verification."
@@ -969,8 +1022,9 @@ class Intervention:
             pass
         return False, ""
 
-    def _trace(self, summary: str) -> None:
-        self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary))
+    def _trace(self, summary: str, detail: dict | None = None) -> None:
+        self._on_step(Step(index=0, attempt=1, timestamp=_now(), kind="action", summary=summary,
+                           detail=detail or {}))
 
     def _ground_annotations(self, step, context: str) -> list[Annotation]:
         """Locate every extra mark of a step at once (threads), dropping the ones not on screen."""

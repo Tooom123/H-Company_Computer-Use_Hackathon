@@ -321,6 +321,47 @@ def test_native_focus_switch_while_planning_discards_arrow_and_answer(dynamic, m
     assert dynamic.shown == []  # Neither a stale arrow nor an answer is presented.
 
 
+def test_timing_includes_model_and_both_reads_even_for_discarded_plan(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    control = SimpleNamespace(role='AXButton', name='Review', center=(100, 100), box=(80, 80, 40, 40))
+    background = SimpleNamespace(**vars(dynamic.info))
+    background.is_front = False
+    views = iter([(dynamic.info, [control]), (background, [])])
+    clock = [100.0]
+
+    def catalogue(_):
+        clock[0] += 0.2
+        return next(views)
+
+    def planner(*args):
+        clock[0] += 1.5
+        return {'instruction': 'Open Review', 'kind': 'click', 'target': 0}
+
+    monkeypatch.setattr('hcs_agent.runner.time.perf_counter', lambda: clock[0])
+    dynamic.backend.page_catalogue, dynamic.backend.plan_step = catalogue, planner
+    events = []
+    monkeypatch.setattr(dynamic.it, '_on_step', events.append)
+    dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    timing = next(s.detail for s in events if s.detail.get('phase') == 'guidance_preparation')
+    assert timing['disposition'] == 'discarded_stale'
+    assert timing['timing_ms'] == {'catalogue_ms': 200.0, 'planner_ms': 1500.0,
+                                  'fresh_catalogue_ms': 200.0, 'total_ms': 1900.0}
+    assert not dynamic.shown
+
+
+def test_unrelated_layout_change_keeps_one_model_call_and_the_correct_target(dynamic, monkeypatch):
+    _make_native(dynamic, monkeypatch)
+    target = SimpleNamespace(role='AXButton', name='Details', center=(100, 100), box=(80, 80, 40, 40))
+    other = SimpleNamespace(role='AXButton', name='Help', center=(250, 100), box=(230, 80, 40, 40))
+    moved = SimpleNamespace(role='AXButton', name='Help', center=(252, 100), box=(232, 80, 40, 40))
+    views = iter([(dynamic.info, [target, other]), (dynamic.info, [moved, target])])
+    dynamic.backend.page_catalogue = lambda _: next(views)
+    monkeypatch.setattr(dynamic.it, '_on_guidance', lambda step: dynamic.shown.append(step))
+    dynamic.it._dynamic_guide(dynamic.bound, max_steps=1)
+    assert len(dynamic.calls) == 1 and len(dynamic.shown) == 1
+    assert dynamic.shown[0].where == 'Details' and dynamic.shown[0].box == target.box
+
+
 def test_native_backend_never_captures_desktop_or_uses_agents_fallback(monkeypatch, tmp_path):
     import threading
     from hcs_agent import a11y

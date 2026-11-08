@@ -1,5 +1,29 @@
 # Holo4 — DGX Spark, API H et recadrage de fenêtre
 
+## Diagnostic GUIDE AX du 8 novembre, après 07:48
+
+Les essais Odoo `sess_941d33ee2f5c`, `sess_729e820585a6` et
+`sess_569d39e5b1ea` montrent des étapes préparées en 1,2 à 4,0 secondes, puis
+des attentes d'interaction, des répétitions et des instructions rejetées pendant
+des changements de catalogue. Ce temps « planned step » inclut la lecture AX et
+sa validation ; ce n'est pas une mesure du TTFT HTTP. La dernière dictée donnait
+« Maison Hope » au lieu de « Maison Aube ». Un grand nettoyage du dépôt ne
+corrige pas ces causes observées.
+
+Le code distingue maintenant `catalogue_ms`, `planner_ms`, `fresh_catalogue_ms`
+et `total_ms` dans `Step.detail`, y compris pour les réponses rejetées comme
+obsolètes. Un changement de géométrie d'un autre contrôle ou d'ordre de parcours
+AX ne relance plus le modèle si les libellés/états restent identiques et si la
+cible est unique, inchangée et au même emplacement après relecture. Une cible
+déplacée, ambiguë, une autre page ou fenêtre gardent le rejet. Gain réel à mesurer
+au prochain essai humain ; aucun pourcentage de gain affirmé.
+
+L'ancien `_ScreenWatcher` inutilisé a été retiré. Le Vision Lab (`app/`) et les
+pilotes de recherche ne sont pas tous chargés par le compagnon (`desktop/`).
+Le retrait de cette classe inactive ne constitue pas une optimisation mesurée.
+
+## Microbenchmark visuel antérieur
+
 Mesures réelles du 8 novembre 2026. **Microbenchmark de localisation visuelle**,
 pas une mesure de la boucle complète de coaching ni un test utilisateur.
 

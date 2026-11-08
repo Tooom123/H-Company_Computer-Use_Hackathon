@@ -944,69 +944,6 @@ def cmd_talk(args: argparse.Namespace) -> int:
         return 0
 
 
-class _ScreenWatcher:
-    """Detects that the user acted: the screen differs from when the step was shown, then holds still."""
-
-    def __init__(self, min_dwell_s: float = 1.0, settle_s: float = 0.8, threshold: float = 12.0) -> None:
-        self.min_dwell_s, self.settle_s, self.threshold = min_dwell_s, settle_s, threshold
-        self._base = None
-        self._armed_at = 0.0
-        self._changed_at: float | None = None
-        self._last = None
-        self._last_t = 0.0
-
-    def _grab(self):
-        try:
-            import numpy as np
-
-            from .grounding import grab_screen
-
-            img = grab_screen().convert("L").resize((96, 60))
-            return np.asarray(img, dtype=np.float32)
-        except Exception:  # noqa: BLE001
-            return None
-
-    def arm(self) -> None:
-        self._armed_at = time.time()
-        self._changed_at = None
-        self._base = None  # the baseline is taken on the next tick, once the overlay is drawn (it is not captured)
-        self._last_t = 0.0
-
-    def changed_and_settled(self) -> bool:
-        import numpy as np
-
-        now = time.time()
-        if now - self._last_t < 0.4:
-            return False
-        self._last_t = now
-        frame = self._grab()
-        if frame is None:
-            return False
-        if self._base is None:
-            self._base, self._last = frame, frame
-            return False
-        if now - self._armed_at < self.min_dwell_s:
-            self._last = frame
-            return False
-        # Block-wise: a small dialog or card changing anywhere must count, not just the screen average.
-        def block_diff(a, b) -> float:
-            d = np.abs(a - b).reshape(6, 10, 8, 12).mean(axis=(1, 3))  # 96x60 -> 6x8 blocks
-            return float(d.max())
-
-        diff_base = block_diff(frame, self._base)
-        diff_last = block_diff(frame, self._last)
-        self._last = frame
-        if diff_base > self.threshold:
-            if diff_last < self.threshold / 3:
-                if self._changed_at is None:
-                    self._changed_at = now
-                elif now - self._changed_at >= self.settle_s:
-                    return True
-            else:
-                self._changed_at = None
-        return False
-
-
 class _TargetTracker:
     """While a step is shown, re-measure its control through the accessibility tree every ~0.5 s so the frame
     follows the control (scroll, layout change) and disappears when the control is gone or covered."""
