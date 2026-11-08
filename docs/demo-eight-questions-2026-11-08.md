@@ -122,6 +122,15 @@ explicitly after each trial: **task success**, **usefulness**, and a short
 comment about wrong targets, missing steps or corrections. No automatic check
 is a substitute for that human label.
 
+### Local launch check
+
+On Edouard's Mac the updated launcher was opened from Applications. The running
+backend reports revision `48ef5ba`, software `auto`, four knowledge documents,
+Right Option and autonomy 0. In the real Electron window, the slider was moved
+to **Help if I'm stuck**, then restored to **Show me**; the backend confirmed 0.
+No business task was started during this control check. The Odoo login form is
+open for the human rehearsal because the old session had expired.
+
 ## Recording order
 
 Rehearse Odoo 2 and SAP 4 first: the user's business question and the supporting
