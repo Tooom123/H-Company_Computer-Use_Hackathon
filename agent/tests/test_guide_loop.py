@@ -328,8 +328,7 @@ def test_newcomer_tour_points_at_each_sidebar_section_not_the_breadcrumb():
     shown, order = set(), []
     while (r := _next_page_note(notes, shown, info, items)):
         shown.add(r[0]); order.append((r[1].name, r[1].center[0]))
-    assert [n for n, _ in order] == ["Home", "Agents", "Sessions", "Skills", "Environments", "Browser Profiles",
-                                     "Schedules", "API keys", "Upgrade", "Help and feedback"]
+    assert [n for n, _ in order] == ["Agents", "Sessions", "Skills"]  # 20-second tour (demo feedback)
     assert dict(order)["Agents"] == 100 and dict(order)["Sessions"] == 100  # sidebar, not breadcrumb
 
 
@@ -346,3 +345,25 @@ def test_planned_notes_are_spoken_in_one_short_line(guide):
     step = guide.shown[0]
     assert step.why == next(n["say"] for n in notes if n["text"] == step.instruction)
     assert step.prepared_speech == [step.instruction]  # the voice says the title; the line under it is written
+
+
+def test_tour_ends_after_its_three_notes_without_the_planner(tmp_path, monkeypatch):
+    """Demo feedback 2026-11-08: the tour must fit in about 20 seconds and then stop."""
+    from hcs_agent.contract import InterventionRequest, Mode
+
+    req = InterventionRequest(software="hcompany", goal="I'm new here, quick tour?", mode=Mode.guide,
+                              procedure_id="hcompany_platform_tour")
+    backend = MockBackend()
+    it = Intervention(req, backend, ProcedureRegistry(), lambda _: None, tmp_path, uplink=False)
+    bound = ProcedureRegistry().for_request(req).bound(req)
+    items = [ctl("AXButton", "Agents", 468), ctl("AXButton", "Sessions", 575)] + \
+            [ctl("AXButton", n, 100) for n in ["Home", "Agents", "Sessions", "Skills", "Environments"]]
+    info = SimpleNamespace(is_front=True, title="H Platform", url="https://platform.hcompany.ai/", elements=items)
+    backend.page_catalogue = lambda _: (info, items)
+    backend.plan_step = lambda *a: pytest.fail("the tour ends without the planner")
+    shown = []
+    monkeypatch.setattr(it, "_on_guidance", lambda step: shown.append(step) or (True, None))
+    monkeypatch.setattr("hcs_agent.overlay.screen_size_points", lambda: (1512, 982))
+    result = it._dynamic_guide(bound)
+    assert [s.where for s in shown] == ["Agents", "Sessions", "Skills"] and all(s.pointer[0] == 100 for s in shown)
+    assert result.declared.outcome == "done"

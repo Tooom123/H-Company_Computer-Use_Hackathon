@@ -834,6 +834,11 @@ class Intervention:
             # Site notes only on pages reached during the guidance (no tour for an unrelated question); notes that
             # belong to this procedure (the tour itself) start at once.
             note = _next_page_note([n if (history or n.get("procedure")) else {} for n in notes], notes_shown, info, items)
+            own = [i for i, n in enumerate(notes) if n.get("procedure") == bound.procedure.id]
+            if note is None and getattr(bound.procedure, "notes_only", False) and own and set(own) <= notes_shown:
+                # A short tour: once its notes are said, it is over (no extra planner steps).
+                return AttemptResult(None, "completed", DeclaredResult(
+                    outcome="done", summary="Tour given.", steps_taken=history))
             if note is not None:
                 idx, at = note
                 notes_shown.add(idx)

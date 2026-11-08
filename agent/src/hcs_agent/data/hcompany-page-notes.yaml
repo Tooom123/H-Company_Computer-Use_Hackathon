@@ -189,93 +189,30 @@
     A key that expires limits the damage if it leaks. Store the value in a password manager or a .env file
     that is never committed, and never paste it in a chat.
 
-# Newcomer tour (procedure hcompany_platform_tour): one note per sidebar section, top to bottom. Sidebar labels read
-# live 2026-11-08; "prefer: left" picks the sidebar entry, not the breadcrumb button of the same name.
+# Newcomer tour (procedure hcompany_platform_tour): three sidebar sections, about 20 seconds in all, then the
+# tour ends (notes_only). Labels read live 2026-11-08; "prefer: left" = the sidebar entry, not the breadcrumb.
 - procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["Home"]
-  prefer: left
-  text: "Welcome to the H Platform"
-  say: "Here you build agents that use a computer for you. Let's look around."
-  why: >-
-    Here you build computer-use agents and run them: they see a screen, click and type to finish tasks for you.
-    Let me show you around, section by section.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
+  has: ["Agents", "Sessions"]
   at: ["Agents"]
   prefer: left
-  text: "Agents: your saved agents"
-  say: "Your agents: model, instructions, skills. Command B builds one."
+  text: "Here are your agents"
+  say: "Saved recipes: a model, instructions and skills."
   why: >-
-    An agent is a saved recipe: where it acts, which Holo model drives it, its instructions and skills. The plus
-    next to it, or Command B, builds a new one; ready-made agents like h/web-surfer-flash are there too.
+    An agent is a saved recipe: where it acts, which Holo model drives it, its instructions and skills. Command B
+    builds a new one.
 - procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
+  has: ["Agents", "Sessions"]
   at: ["Sessions"]
   prefer: left
-  text: "Sessions: every run of an agent"
-  say: "Every run of an agent. Open one to watch or replay it."
+  text: "Here, every run of an agent"
+  say: "Watch a session live, or replay it step by step."
   why: >-
-    A session is one agent working on one task, in a browser H hosts in the cloud. Open one to watch it live or
-    replay it step by step in Agent View; Command I starts a new one.
+    A session is one agent working on one task in a cloud browser; Agent View shows it live or replays it.
 - procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
+  has: ["Agents", "Sessions"]
   at: ["Skills"]
   prefer: left
-  text: "Skills: know-how for your agents"
+  text: "And here, skills"
   say: "Know-how your agents load when a task needs it."
   why: >-
-    Short Markdown guides an agent loads only when a task matches them. H ships ready-made ones, and you can
-    write your own.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["Environments"]
-  prefer: left
-  text: "Environments: where agents act"
-  say: "Where agents act: a cloud browser, your Chrome or your desktop."
-  why: >-
-    A cloud browser by default, or your own Chrome, or your desktop. Save a configuration here to reuse it across
-    agents.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["Browser Profiles"]
-  prefer: left
-  text: "Browser profiles and vaults: signing in"
-  say: "Profiles and vaults let agents sign in to websites."
-  why: >-
-    A cloud browser starts with no logins. A browser profile saves cookies so a session starts signed in; Vaults,
-    just below, hold passwords and 2FA the agent can fill safely.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["Schedules"]
-  prefer: left
-  text: "Schedules: run tasks automatically"
-  say: "Run a task on a timetable, automatically."
-  why: >-
-    Run a session on a timetable, for example every morning, without starting it by hand.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["API keys"]
-  prefer: left
-  text: "API keys and webhooks: for developers"
-  say: "For developers: API keys and webhooks."
-  why: >-
-    A key lets your code or the holo command line start sessions; webhooks call your server when a session
-    changes state. Organisation, just above, holds your team's settings.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["Upgrade", "Free plan"]
-  prefer: left
-  text: "Your plan and credits"
-  say: "Your plan: credits, and three sessions at once on Free."
-  why: >-
-    Sessions use credits. Your plan sets how many sessions run at once: three on the Free plan. Upgrade shows the
-    other plans.
-- procedure: hcompany_platform_tour
-  has: ["Home", "Sessions"]
-  at: ["Help and feedback"]
-  text: "Help is always here"
-  say: "Docs and support are here. Or just ask me."
-  why: >-
-    Documentation, the Discord community and support are one click away. And you can ask me anything: hold the
-    key and say what you want to do.
+    Short Markdown guides an agent reads only when a task matches them; H ships some, you can write your own.

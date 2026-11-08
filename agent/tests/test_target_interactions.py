@@ -492,3 +492,8 @@ def test_limit_and_price_questions_point_at_the_plan(q, plan):
 ])
 def test_direct_requests_act_how_questions_are_shown(text, routed_act, acts):
     assert cli._wants_it_done(text, routed_act) is acts
+
+
+def test_a_tour_is_never_handed_to_the_acting_agent():
+    """'Fais-moi faire le tour' contains 'fais-moi', but a tour has nothing to do: it is shown."""
+    assert cli._is_tour("hcompany_platform_tour") and not cli._is_tour("hcompany_platform_create_api_key")

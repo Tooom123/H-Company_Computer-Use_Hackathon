@@ -354,6 +354,13 @@ _ASK_TO_SEE = re.compile(r"\b(show me|how (do|to|can|would|should)|walk me|teach
                          r"explique|apprends)\b", re.I)
 
 
+def _is_tour(procedure_id: str | None) -> bool:
+    try:
+        return bool(procedure_id) and bool(getattr(ProcedureRegistry().get(procedure_id), "notes_only", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _wants_it_done(text: str, routed_act: bool) -> bool:
     """Explicit "do it for me" always; otherwise a direct request the router read as act, unless it asks how."""
     if _DO_IT.search(text):
@@ -363,7 +370,7 @@ def _wants_it_done(text: str, routed_act: bool) -> bool:
 
 def _reading_time(*texts: str) -> float:
     """Seconds to say these texts aloud (about 14 characters per second), at least 4 s."""
-    return max(4.0, sum(len(t or "") for t in texts) / 14.0 + 1.0)
+    return max(3.0, sum(len(t or "") for t in texts) / 14.0 + 0.8)
 
 
 def _take_step_question() -> str | None:
@@ -1009,7 +1016,8 @@ def cmd_talk(args: argparse.Namespace) -> int:
             last_request = request
             if not coaching:
                 history.append(f"User: {text}")  # kept so a follow-up correction can be merged with this request
-            do_it = bool(not coaching and request.procedure_id and _wants_it_done(text, request.mode is Mode.act))
+            do_it = bool(not coaching and request.procedure_id and _wants_it_done(text, request.mode is Mode.act)
+                         and not _is_tour(request.procedure_id))  # a tour is shown, never "done" by the agent
             if do_it:
                 print("  [voice] explicit \"do it for me\": the agent acts for this request (autonomy 2)")
             print(f"  -> {request.procedure_id} | mode {request.mode.value} | {request.parameters}")
