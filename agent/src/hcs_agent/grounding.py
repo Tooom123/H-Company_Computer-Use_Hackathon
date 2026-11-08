@@ -158,7 +158,9 @@ class Grounder:
                 "done": {"type": "boolean", "description": "true when the goal is visibly reached on this page"},
                 "blocked": {"type": "boolean", "description": "true if the current coaching scope or unavailable evidence prevents continuing; not success"},
                 "instruction": {"type": "string", "description": "one short imperative sentence in English"},
-                "why": {"type": "string", "description": "one short sentence: why this step"},
+                "why": {"type": "string", "description": "the explanation read aloud, 1 to 2 sentences (max 260 "
+                        "characters): what this page or control is for and, when the page offers choices or "
+                        "fields, what they mean, what to pick for this goal and why; never just 'to proceed'"},
                 "kind": {"type": "string", "enum": ["click", "type", "info"]},
                 "target": {"type": "integer", "description": "1-based index of the control to act on; 0 if none"},
                 "text": {"type": "string", "description": "for kind=type: what to type"},
@@ -184,6 +186,11 @@ class Grounder:
                   "repeat a step that already worked, and never ask to close a dialog the goal still needs. "
                   "A suggested step whose [done when] is already true on this page is finished: skip to the next one. "
                   "Click only buttons, links, fields, tabs or menu items, never a heading or plain text. "
+                  "You are a teacher, not a clicker: on each page of a form or wizard, first guide the person "
+                  "through the settings that matter for the goal (a model, an environment, a mode, a prompt), one "
+                  "step each, explaining in why what the option does using the reference knowledge and the page "
+                  "text; when keeping a default, say what that default means. Only then point at Next. Lines "
+                  "marked StaticText are the page's text: read them to explain, never click them. "
                   "Fields show their content (value=\"...\") or EMPTY, and REQUIRED when mandatory. Before Next, "
                   "Continue, Save, Create or Start, every EMPTY REQUIRED field on the page must be filled first, one "
                   "step each (kind=type): say exactly what to type, using the procedure's values when it gives "
@@ -192,7 +199,7 @@ class Grounder:
                   "listed leads to the goal, kind=info with an instruction telling the person where to go.")
         body = {
             "model": self.model, "messages": [{"role": "user", "content": prompt}],
-            "tools": [tool], "tool_choice": "required", "temperature": 0, "max_tokens": 300,
+            "tools": [tool], "tool_choice": "required", "temperature": 0, "max_tokens": 450,
             "chat_template_kwargs": {"enable_thinking": False},
         }
         r = self._http.post(f"{H_MODELS_URL}/chat/completions", json=body)

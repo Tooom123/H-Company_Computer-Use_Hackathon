@@ -1312,12 +1312,13 @@ def _guide_loop(it: Intervention, auto: bool, overlay: bool, ov=None) -> None:
                     from .overlay import Mark, Scene
 
                     verbose = os.environ.get("HCS_GUIDE_VERBOSE", "").lower() in {"1", "true", "yes"}
-                    why = g.why if (verbose or g.kind in ("info", "wait")) else ""
+                    # Always explain: the voice says the whole explanation, the paper note keeps its first sentence.
+                    why = g.why or ""
                     if not same_step:
-                        _say(g.instruction, _short(why, 90))
+                        _say(g.instruction, why[:300] if not verbose else why)
                     shown["text"] = g.instruction
                     scene = Scene(
-                        text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 90), step=g.index,
+                        text=g.instruction, target=g.pointer, target_box=g.box, why=_short(why, 140), step=g.index,
                         keep_clear=list(g.keep_clear),
                         doodle="question" if "can't see" in g.instruction else None,
                         marks=[Mark(a.shape, a.pointer, _short(a.text, 28), tuple(a.size) if a.size else (0, 0),

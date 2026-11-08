@@ -647,6 +647,21 @@ class HBackend:
             items = []
             pool = info.elements
             native = getattr(info, "native", False)
+            if not native:
+                # The page's own text (option descriptions, hints, "Creating the agent and starting a session...")
+                # is what the guide explains from: controls first, then headings, then text with words that is
+                # not just a control's label.
+                import re as _re
+
+                labels = {e.name.strip().lower() for e in pool if e.role != "AXStaticText"}
+                def useful(e):
+                    if e.role != "AXStaticText":
+                        return True
+                    t = e.name.strip()
+                    return t.lower() not in labels and _re.search(r"[^\W\d_]{3}", t) is not None
+                rank = lambda e: 0 if e.role in a11y.INTERACTIVE else 1 if e.role == "AXHeading" else 2
+                pool = sorted((e for e in pool if useful(e)), key=rank)
+                max_items = max(max_items, 130)
             if native:
                 # Devin Desktop exposes more named elements than max_items, and the walk lists the bottom of the
                 # window first: the cut used to drop the navigation (Agents, Expand sidebar, Back...) while keeping
@@ -661,7 +676,7 @@ class HBackend:
                 rank = lambda e: 0 if e.role in a11y.INTERACTIVE else 1 if e.role == "AXHeading" else 2
                 pool = sorted((e for e in pool if usable(e)), key=rank)
             for e in pool:
-                if e.role not in (*a11y.INTERACTIVE, "AXHeading", *(["AXStaticText"] if getattr(info, "native", False) else [])):
+                if e.role not in (*a11y.INTERACTIVE, "AXHeading", "AXStaticText"):
                     continue
                 key = (e.role, e.name.lower())
                 if key in seen or e.frame[2] * e.frame[3] > 500 * 400:
@@ -672,8 +687,7 @@ class HBackend:
                 items.append(e)
                 if len(items) >= max_items:
                     break
-            if native:
-                items.sort(key=lambda e: (round(e.frame[1] / 8), e.frame[0]))  # reading order for the planner
+            items.sort(key=lambda e: (round(e.frame[1] / 8), e.frame[0]))  # reading order for the planner
             return info, items
         except Exception:  # noqa: BLE001
             return None
