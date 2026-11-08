@@ -148,7 +148,8 @@ class Speaker:
 
     # ------------------------------------------------------------------ API (any thread)
 
-    def say(self, *segments: str, interrupt: bool = True) -> None:
+    def say(self, *segments: str, interrupt: bool = True,
+            on_started: Callable[[float], None] | None = None) -> None:
         """Speak the segments one after the other (e.g. the note, then its "why")."""
         texts = [t for t in (clean(s) for s in segments) if t]
         if not texts or self._closed or self.muted:
@@ -159,7 +160,7 @@ class Speaker:
                 self._kill()
             self._drain()  # only the latest request waits: never a backlog of stale sentences
             self._pending_since = time.time()
-            self._jobs.put((self._gen, texts))
+            self._jobs.put((self._gen, texts, on_started))
 
     def stop(self) -> None:
         """Silence now and forget anything waiting."""
@@ -279,7 +280,7 @@ class Speaker:
             if job is None:
                 return
             self._busy = True
-            gen, texts = job
+            gen, texts, on_started = job
             for text in texts:
                 if gen != self._gen:
                     break
@@ -292,12 +293,21 @@ class Speaker:
                         break
                     try:
                         self._proc = self._player(path)
+                        playback_started = time.monotonic()
                     except Exception as exc:  # noqa: BLE001
                         print(f"(voice playback failed: {exc})", flush=True)
                         self._pending_since = None
                         break
                     self._pending_since = None  # audible from now on: the overlay may draw
                     self.spoken.append(text)
+                if on_started is not None:
+                    # Process launch is measurable; it is not a physical speaker
+                    # measurement. Never let diagnostics break speech or hold its lock.
+                    try:
+                        on_started(playback_started)
+                    except Exception:
+                        pass
+                    on_started = None
                 while self._proc.poll() is None:
                     if gen != self._gen:
                         self._kill()

@@ -66,6 +66,18 @@ def owns_runtime(status, metadata, port):
             and metadata.get('control_port') == port and metadata.get('repository') == str(ROOT))
 
 
+def runtime_profile():
+    return {'read_only_rehearsal': os.environ.get('HCS_V2_READONLY_REHEARSAL') == '1',
+            'text_rehearsal': os.environ.get('HCS_V2_REHEARSAL') == '1'}
+
+
+def check_runtime_profile(status):
+    if status.get('runtime_profile') != runtime_profile():
+        raise RuntimeError('A coach with a different or unknown test mode is already running. '
+                           'Stop it with --stop-owned-runtime, then launch again in the intended mode. '
+                           'No task was interrupted and no test restriction was changed.')
+
+
 def port_busy(port):
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -148,6 +160,7 @@ def start_runtime(python, private, port, key):
     status = control_status(port)
     if status is not None:
         if owns_runtime(status, read_json(metadata_path), port):
+            check_runtime_profile(status)
             return False
         raise RuntimeError(f'Port {port} belongs to a different runtime. No process was stopped.')
     if port_busy(port):
@@ -164,7 +177,8 @@ def start_runtime(python, private, port, key):
                                 cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=subprocess.STDOUT, start_new_session=True, close_fds=True)
     metadata = {'engine': ENGINE, 'pid': proc.pid, 'repository': str(ROOT), 'control_port': port,
-                'runs_dir': str(private / 'episodes'), 'log': str(log_path), 'ptt_key': key}
+                'runs_dir': str(private / 'episodes'), 'log': str(log_path), 'ptt_key': key,
+                'runtime_profile': runtime_profile()}
     atomic_json(metadata_path, metadata)
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
@@ -197,7 +211,8 @@ def start_desktop(python, private, port, key):
     electron = next((p.absolute() for p in candidates if p.is_file() and os.access(p, os.X_OK)), None)
     if electron is None:
         raise RuntimeError('Electron is unavailable. Set HCS_ELECTRON to the existing Electron executable.')
-    env = {k: v for k, v in os.environ.items() if k not in SECRET_NAMES | {'HCS_INGEST_TOKEN'}}
+    env = {k: v for k, v in os.environ.items()
+           if k not in SECRET_NAMES | {'HCS_INGEST_TOKEN', 'HCS_V2_REHEARSAL', 'HCS_V2_READONLY_REHEARSAL'}}
     env.pop('ELECTRON_RUN_AS_NODE', None)
     env.update(HCS_CONTROL_URL=f'http://127.0.0.1:{port}', HCS_PILOT_KIND=ENGINE,
                HCS_PILOT_PYTHON=python, HCS_PYTHON=python,
@@ -219,10 +234,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--backend-only', action='store_true', help='Start/reuse the V2 runtime without opening Electron.')
     parser.add_argument('--stop-owned-runtime', action='store_true', help='Stop only the V2 PID verified by its status and metadata.')
+    parser.add_argument('--rehearsal', action='store_true', help='Enable local text rehearsal input; does not validate microphone or dictation.')
+    parser.add_argument('--read-only-rehearsal', action='store_true', help='Rehearse navigation only; block typing and non-navigation controls in the executor.')
     parser.add_argument('--private-root', type=Path, default=Path(os.environ.get('HCS_V2_PRIVATE_ROOT', PRIVATE)))
     parser.add_argument('--port', type=int, default=int(os.environ.get('HCS_V2_PORT', 8792)))
     parser.add_argument('--ptt-key', default=os.environ.get('HCS_V2_PTT_KEY', 'alt_r'))
     args = parser.parse_args()
+    # A normal Finder/menu-bar launch must not inherit a developer test mode.
+    # Test modes require explicit CLI flags and cannot silently reuse another mode.
+    os.environ['HCS_V2_REHEARSAL'] = '1' if args.rehearsal or args.read_only_rehearsal else '0'
+    os.environ['HCS_V2_READONLY_REHEARSAL'] = '1' if args.read_only_rehearsal else '0'
     if sys.platform != 'darwin':
         parser.error('This desktop launcher requires macOS.')
     if not 1024 <= args.port <= 65535:

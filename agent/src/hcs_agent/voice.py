@@ -594,6 +594,7 @@ class PushToTalk:
         if event == "combo_down" or (event == "key_down" and self._hub.plain_key_matches(payload)):
             self._commands.put("begin")
         elif event == "combo_up" or (event == "key_up" and self._hub.plain_key_matches(payload)):
+            self.on_state("released")
             self._commands.put("end")
 
     def _run_commands(self) -> None:

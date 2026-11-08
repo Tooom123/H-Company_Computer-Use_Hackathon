@@ -116,14 +116,20 @@ class CoachDecision(BaseModel):
     def normalize_unused_nulls(cls, value):
         """Accept provider null spellings only where the action cannot use a field.
 
-        Do not convert literal search text, guess IDs/directions, discard a real
-        extra action argument, or mutate ``last_raw`` retained by the client.
+        Do not convert literal search text, guess IDs/directions, discard an
+        executable extra argument, or mutate ``last_raw`` retained by the client.
         """
         if not isinstance(value, dict):
             return value
         needed = {"target": {"click", "type"}, "text": {"type"},
                   "direction": {"scroll"}, "key": {"key"}, "url": {"open_docs"}, "points": {"tour"}}
         result = value.copy()
+        # A documentation URL is the entire destination. Some Holo responses
+        # also point at the observed documentation link. It is never clicked by
+        # open_docs, so dropping this redundant ID cannot add a desktop effect.
+        if (value.get("action") == "open_docs" and type(result.get("target")) is int
+                and result["target"] > 0):
+            result["target"] = None
         if value.get("action") != "tour" and result.get("points") == []:
             result["points"] = None
         for field, actions in needed.items():
@@ -147,7 +153,7 @@ class CoachDecision(BaseModel):
         if self.action not in {"click", "type", "explain"} and self.target is not None:
             raise ValueError("This action must not carry a target.")
         if self.action == "type":
-            if not self.text or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", self.text):
+            if not self.text or not self.text.strip() or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", self.text):
                 raise ValueError("Typing requires literal text without control commands.")
         elif self.text is not None:
             raise ValueError("Only a typing action may include text.")
@@ -319,6 +325,69 @@ def _compact_schema(value):
     return value
 
 
+_TOOL_ARGUMENTS = {
+    "explain": ("speech", "target"),
+    "click": ("speech", "target"),
+    "type": ("speech", "target", "text"),
+    "scroll": ("speech", "direction"),
+    "key": ("speech", "key"),
+    "open_docs": ("speech", "url"),
+    "tour": ("speech", "points"),
+    "done": ("speech",),
+}
+_TOOL_DESCRIPTIONS = {
+    "explain": "Explain current visible evidence and end this request. Optionally highlight one observed control.",
+    "click": "Activate one exact observed control. Never supplies text; use coach_type to fill a field.",
+    "type": "Focus and fill one observed text input with the complete literal text, including Markdown if requested.",
+    "scroll": "Scroll the current page one step up or down, then inspect the new view.",
+    "key": "Press one allowed key; Enter is only for an observed search, never a form submission.",
+    "open_docs": "Open an official H Hub documentation URL in a NEW tab. The URL is the destination; no target ID or text.",
+    "tour": "Present an explicitly requested tour of one to three observed Agents, Sessions or Skills sidebar controls.",
+    "done": "End a completed request after observing its outcome. Empty speech avoids a repeated recap.",
+}
+
+
+def _coach_tools(mode: str, requested_tour: bool) -> list[dict]:
+    """Give Holo disjoint tool contracts instead of nullable action arguments.
+
+    Pydantic's model validators are local and never appeared in the old JSON
+    schema. Separate ordinary object schemas express the action dependencies
+    without relying on provider support for conditional JSON Schema keywords.
+    """
+    model = _compact_schema(CoachDecision.model_json_schema())
+    tools = []
+    for action, arguments in _TOOL_ARGUMENTS.items():
+        if action == "tour" and not requested_tour or action == "open_docs" and mode == "guide":
+            continue
+        properties = {}
+        for argument in arguments:
+            field = model["properties"][argument].copy()
+            if argument == "speech":
+                # The shared voice contract is already in the system message;
+                # repeating its prose for every tool needlessly grows input.
+                field.pop("description", None)
+            elif argument == "target":
+                field["description"] = "Exact observed control ID." + (" Null for no highlight." if action == "explain" else "")
+            elif argument == "text":
+                field["description"] = "Complete literal field value; Markdown may contain line breaks."
+            # Only an explanation may omit its highlighting target. All other
+            # tool arguments have a concrete value, rather than a null spelling.
+            if "anyOf" in field and not (action == "explain" and argument == "target"):
+                variants = [part for part in field.pop("anyOf") if part.get("type") != "null"]
+                field.update(variants[0])
+            if (argument == "speech" and action != "done") or argument in {"text", "url"}:
+                field["minLength"] = 1
+            properties[argument] = field
+        parameters = {"type": "object", "properties": properties,
+                      "required": list(arguments), "additionalProperties": False}
+        if action == "tour":
+            parameters["$defs"] = model["$defs"]
+        tools.append({"type": "function", "function": {
+            "name": "coach_" + action, "strict": True,
+            "description": _TOOL_DESCRIPTIONS[action], "parameters": parameters}})
+    return tools
+
+
 class CoachClient:
     """One bounded, text-only Holo4 call per current AX observation.
 
@@ -358,13 +427,8 @@ class CoachClient:
         for item in (history or [])[-4:]:
             if isinstance(item, dict):
                 recent.append({k: str(item[k])[:600] for k in ("speech", "action", "observation", "question") if k in item})
-        schema = _compact_schema(CoachDecision.model_json_schema())
-        schema["required"] = list(schema["properties"])
         requested_tour = tour_requested(question)
-        if not requested_tour:
-            schema["properties"]["action"]["enum"].remove("tour")
         if mode == "guide":
-            schema["properties"]["action"]["enum"].remove("open_docs")
             mode_rule = ('Current mode is GUIDE: point to observed controls for the person. '
                          'Do not open a documentation tab yourself. If no documentation link is visible, '
                          'explain that they can switch to "Do it, I watch" to have you open it.')
@@ -373,7 +437,8 @@ class CoachClient:
         mode_rule += (' For a form field, action="type" focuses the target and enters its text in ONE step. '
                       'Do not click a field as a separate preparation step while including text: '
                       'action="click" always requires text=null. '
-                      'Use action="tour" only when it is present in the allowed action enum. '
+                      'Call exactly one supplied coach tool with only its declared arguments. '
+                      'Use coach_tour only when it is among the supplied tools. '
                       'All speech and tour-point speech must be English, even when the request, page or recent history is French. '
                       'GUIDE narration tells the user what to do; never promise that you will click or type.')
         # A structured tour has three short speeches; a skill body is payload,
@@ -397,8 +462,7 @@ class CoachClient:
                                         "Companion's API connection, then show Billing & Subscription to check the browser account."
                                         if "account_quota" in observed else ""))
                              }, ensure_ascii=False, separators=(",", ":"))}],
-                "tools": [{"type": "function", "function": {"name": "coach_step", "strict": True,
-                           "description": "One short user-facing explanation and at most one next step.", "parameters": schema}}],
+                "tools": _coach_tools(mode, requested_tour),
                 "tool_choice": "required"}
         start = time.monotonic()
         try:
@@ -414,15 +478,23 @@ class CoachClient:
                 raise CoachProtocolError("Invalid Holo message.")
             calls = message.get("tool_calls") or []
             if (not isinstance(calls, list) or len(calls) != 1
-                    or not isinstance(calls[0], dict) or not isinstance(calls[0].get("function"), dict)
-                    or calls[0]["function"].get("name") != "coach_step"):
+                    or not isinstance(calls[0], dict) or not isinstance(calls[0].get("function"), dict)):
                 raise CoachProtocolError("Holo must return exactly one coach step.")
-            raw = calls[0]["function"]["arguments"]
+            function = calls[0]["function"]
+            name = function.get("name")
+            if name != "coach_step" and name not in {"coach_" + action for action in _TOOL_ARGUMENTS}:
+                raise CoachProtocolError("Holo selected an unknown coach tool.", reason="unknown_tool")
+            raw = function["arguments"]
             self.last_raw = raw
             if not isinstance(raw, str):
                 raise CoachProtocolError("Invalid tool arguments.")
             self.last_raw = json.loads(raw)
-            decision = CoachDecision.model_validate(self.last_raw)
+            arguments = self.last_raw
+            if name != "coach_step":
+                if not isinstance(arguments, dict) or "action" in arguments:
+                    raise CoachProtocolError("A coach tool must not override its action.", reason="invalid_tool_arguments")
+                arguments = {**arguments, "action": name.removeprefix("coach_")}
+            decision = CoachDecision.model_validate(arguments)
             if decision.action == "tour" and not tour_requested(question):
                 raise CoachProtocolError("A tour must be explicitly requested.", kind="policy", reason="unrequested_tour")
             if mode == "guide" and decision.action == "open_docs":

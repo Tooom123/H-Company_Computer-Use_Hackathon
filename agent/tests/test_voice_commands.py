@@ -85,10 +85,11 @@ def test_slow_audio_start_does_not_block_release_delivery(rig):
     assert recorder.entered.wait(1)
     ptt._on_event("combo_up", None)  # must return while microphone start is blocked
     assert ptt._commands.qsize() == 1
+    assert states == ["starting", "released"]  # boundary precedes slow recorder shutdown/startup
     recorder.release.set()
     drain(ptt)
     assert recorder.stops == 1 and not ptt._recording
-    assert states == ["starting", "recording", "too_short"]
+    assert states == ["starting", "released", "recording", "too_short"]
 
 
 def test_microphone_stop_error_does_not_leave_recording_state(rig):

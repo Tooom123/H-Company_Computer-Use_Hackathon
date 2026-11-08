@@ -38,11 +38,15 @@ def step(**changes):
     return decision
 
 
-def envelope(decision):
+def envelope(decision, name="coach_step"):
     return {"choices": [{"message": {"role": "assistant", "content": None,
             "tool_calls": [{"id": "call_1", "type": "function", "function": {
-                "name": "coach_step", "arguments": json.dumps(decision)}}]}}],
+                "name": name, "arguments": json.dumps(decision)}}]}}],
             "usage": {"prompt_tokens": 245, "completion_tokens": 51}}
+
+
+def tool(body, action):
+    return next(item["function"] for item in body["tools"] if item["function"]["name"] == "coach_" + action)
 
 
 @pytest.fixture
@@ -77,10 +81,12 @@ def test_one_bounded_call_uses_current_evidence_and_preserves_question(observati
     assert body["max_tokens"] == 700  # A requested three-point tour has room for three short annotations.
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
     assert body["temperature"] == 0
-    tool = body["tools"][0]["function"]
-    assert tool["strict"] is True
-    assert tool["parameters"]["additionalProperties"] is False
-    assert set(tool["parameters"]["required"]) == set(CoachDecision.model_fields)
+    tools = body["tools"]
+    assert all(item["function"]["strict"] is True for item in tools)
+    assert all(item["function"]["parameters"]["additionalProperties"] is False for item in tools)
+    assert all(set(item["function"]["parameters"]["required"]) ==
+               set(item["function"]["parameters"]["properties"]) for item in tools)
+    assert "coach_step" not in {item["function"]["name"] for item in tools}
     sent = json.loads(body["messages"][1]["content"])
     assert sent["mode"] == "guide"
     assert sent["question"] == "Give me a quick welcome tour of Orkney"
@@ -107,7 +113,7 @@ def test_semantic_ax_payload_preserves_every_target_without_sending_geometry(obs
     assert all("box" not in control for control in controls)
     assert observation == before
     # Compaction neither removes descriptions/constraints nor changes output validation.
-    schema = body["tools"][0]["function"]["parameters"]
+    schema = tool(body, "type")["parameters"]
     assert schema["additionalProperties"] is False
     assert "description" in schema["properties"]["text"]
     assert "title" not in schema and "default" not in schema["properties"]["text"]
@@ -151,8 +157,8 @@ def test_open_docs_cannot_create_a_targetless_guide_wait(observation, client_fac
     with pytest.raises(CoachProtocolError, match="requires act mode"):
         client.decide("Open the profiles documentation", observation, "guide")
     assert client.decide("Open the profiles documentation", observation, "act").action == "open_docs"
-    assert "open_docs" not in requests[0]["tools"][0]["function"]["parameters"]["properties"]["action"]["enum"]
-    assert "open_docs" in requests[1]["tools"][0]["function"]["parameters"]["properties"]["action"]["enum"]
+    assert "coach_open_docs" not in {item["function"]["name"] for item in requests[0]["tools"]}
+    assert tool(requests[1], "open_docs")
 
 
 @pytest.mark.parametrize("url", [
@@ -509,8 +515,8 @@ def test_invalid_account_quota_is_not_sent(changes, observation, client_factory)
 def test_simple_cloud_question_cannot_offer_tour_in_tool_schema(observation, client_factory):
     client, requests = client_factory()
     client.decide('How can I run an agent without taking over my computer? Show me where to configure that.', observation, 'guide')
-    actions = requests[0]['tools'][0]['function']['parameters']['properties']['action']['enum']
-    assert 'tour' not in actions
+    names = {item['function']['name'] for item in requests[0]['tools']}
+    assert 'coach_tour' not in names
     assert requests[0]['max_tokens'] == 320
 
 
@@ -518,7 +524,7 @@ def test_natural_french_asr_request_keeps_tour_available(observation, client_fac
     client, requests = client_factory(tour_step())
     decision = client.decide('Peux-tu me faire une tour de cette nouvelle plateforme ?', observation, 'guide')
     assert decision.action == 'tour'
-    assert 'tour' in requests[0]['tools'][0]['function']['parameters']['properties']['action']['enum']
+    assert tool(requests[0], 'tour')
     assert requests[0]['max_tokens'] == 700
 
 
@@ -530,4 +536,67 @@ def test_field_entry_semantics_are_explicit_and_click_text_is_not_silently_chang
     assert caught.value.reason == 'invalid_step'
     assert client.last_raw == raw
     assert 'action="type" focuses the target and enters its text in ONE step' in requests[0]['messages'][0]['content']
-    assert 'text=null' in requests[0]['tools'][0]['function']['parameters']['properties']['action']['description']
+    assert set(tool(requests[0], 'click')['parameters']['properties']) == {'speech', 'target'}
+
+
+@pytest.mark.parametrize('name,arguments,expected', [
+    ('coach_click', {'speech': "I'll open Sessions.", 'target': 1}, 'click'),
+    ('coach_type', {'speech': "I'll enter the name.", 'target': 4, 'text': 'guided-onboarding'}, 'type'),
+    ('coach_scroll', {'speech': "I'll look further down.", 'direction': 'down'}, 'scroll'),
+    ('coach_key', {'speech': "I'll close this dialog.", 'key': 'escape'}, 'key'),
+    ('coach_open_docs', {'speech': "I'll open the cloud browser documentation.",
+                         'url': 'https://hub.hcompany.ai/agents-api/browser/configuration'}, 'open_docs'),
+    ('coach_explain', {'speech': 'The answer is visible here.', 'target': 7}, 'explain'),
+    ('coach_done', {'speech': ''}, 'done'),
+])
+def test_action_specific_tools_normalize_to_runtime_decisions_without_changing_raw(
+        name, arguments, expected, observation, client_factory):
+    client, _ = client_factory(payload=envelope(arguments, name))
+    decision = client.decide('Show me the requested setting.', observation, 'act')
+    assert decision.action == expected
+    assert client.last_raw == arguments
+    assert 'action' not in client.last_raw
+
+
+def test_tool_contract_exposes_only_usable_arguments(observation, client_factory):
+    client, requests = client_factory()
+    client.decide('Give me a quick tour.', observation, 'act')
+    body = requests[0]
+    assert set(tool(body, 'open_docs')['parameters']['properties']) == {'speech', 'url'}
+    assert set(tool(body, 'type')['parameters']['properties']) == {'speech', 'target', 'text'}
+    assert tool(body, 'type')['parameters']['properties']['target']['type'] == 'integer'
+    assert tool(body, 'type')['parameters']['properties']['text']['minLength'] == 1
+    assert tool(body, 'type')['parameters']['properties']['text']['type'] == 'string'
+    assert set(tool(body, 'tour')['parameters']['$defs']['TourPoint']['required']) == {'speech', 'target'}
+    assert not any('action' in item['function']['parameters']['properties'] for item in body['tools'])
+
+
+@pytest.mark.parametrize('name,arguments', [
+    ('coach_delete', {'speech': 'Delete this.'}),
+    ('coach_click', {'speech': 'Click this.', 'target': 1, 'action': 'type'}),
+    ('coach_type', {'speech': 'Enter the text.', 'target': 4}),
+    ('coach_type', {'speech': 'Enter the text.', 'target': 4, 'text': ' \n\t'}),
+    ('coach_type', {'speech': 'Enter the text.', 'target': 4, 'text': '',
+                    'url': 'https://hub.hcompany.ai/agents-api/browser/configuration'}),
+    ('coach_click', {'speech': 'Enter the text.', 'target': 4, 'text': 'unexpected'}),
+])
+def test_tools_never_invent_missing_text_or_change_actions(name, arguments, observation, client_factory):
+    client, _ = client_factory(payload=envelope(arguments, name))
+    with pytest.raises(CoachProtocolError):
+        client.decide('Show me cloud browsers.', observation, 'act')
+    assert client.last_raw in (None, arguments)
+
+
+@pytest.mark.parametrize('name', ['coach_step', 'coach_open_docs'])
+def test_docs_redundant_target_is_ignored_without_clicking_or_rewriting_raw(name, observation, client_factory):
+    arguments = {'speech': "I'll open the cloud browser documentation.", 'target': 4,
+                 'url': 'https://hub.hcompany.ai/agents-api/browser/configuration'}
+    if name == 'coach_step':
+        arguments['action'] = 'open_docs'
+    client, _ = client_factory(payload=envelope(arguments, name))
+    decision = client.decide('Show me cloud browsers.', observation, 'act')
+    assert decision.action == 'open_docs' and decision.target is None
+    assert client.last_raw == arguments
+    assert client.last_raw['target'] == 4
+    with pytest.raises(CoachProtocolError, match='requires act mode'):
+        client.decide('Show me cloud browsers.', observation, 'guide')

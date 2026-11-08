@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import queue
 import threading
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -307,7 +307,7 @@ def test_unicode_multiline_typing_uses_literal_field_writer(monkeypatch):
     decision = CoachDecision(action="type", target=1, text=text, speech="I'll write the coaching instructions.")
     runtime.perform(decision, target, URL, desktop)
     desktop.click.assert_called_once_with(*target.center)
-    writer.assert_called_once_with(target, text, desktop)
+    writer.assert_called_once_with(target, text, desktop, cancelled=ANY)
     desktop.write.assert_not_called()
 
 
@@ -333,12 +333,16 @@ def test_act_executes_one_effect_then_observes_before_another(rt, monkeypatch):
     monkeypatch.setattr(runtime, "perform", action)
     monkeypatch.setattr(runtime.time, "monotonic", lambda: 101.0)
     rt.tick()
-    action.assert_called_once_with(decision, target, URL, rt.desktop, None)
+    action.assert_called_once_with(decision, target, URL, rt.desktop, None, cancelled=ANY)
+    cancelled = action.call_args.kwargs['cancelled']
+    assert cancelled() is False
     assert rt.pending is None and rt.due[1] == "observe"
     assert rt.history[-1]["event"] == "agent_action_executed"
     assert rt.current.report is None
     rt.tick()
     assert action.call_count == 1
+    rt.cancel()
+    assert cancelled() is True
 
 
 def test_model_completion_is_not_a_verified_or_human_label(rt):
@@ -509,15 +513,23 @@ def test_key_form_opener_acts_with_current_list_evidence_despite_reused_ids(rt, 
     assert rt.pending[1] is target
 
 
-def prepare_key_confirmation(rt, monkeypatch):
+def key_form(name='h-hackathon', expiry='24 hours'):
+    return {'kind': 'api_key', 'fields': [
+        {'field': 'name', 'label': 'Name *', 'value': name, 'redacted': False},
+        {'field': 'expiry', 'label': 'Expiry', 'value': expiry, 'redacted': False},
+    ]}
+
+
+def prepare_key_confirmation(rt, monkeypatch, *, name='h-hackathon', expiry='24 hours'):
     url = 'https://platform.hcompany.ai/api-keys'
     monkeypatch.setattr(runtime, 'foreground_url', lambda: url)
-    rt.current = CoachRun(rt.runs_dir, 'Create h-hackathon for one day.', 'act')
+    rt.current = CoachRun(rt.runs_dir, 'Create an API key named h-hackathon that expires in 24 hours.', 'act')
     decision = CoachDecision(action='click', target=1, speech="I'll create the API key.")
     target = Target('Create API key')
     obs = observation(target, url=url)
     # The current frame's ID1 is unrelated. Runtime must use rebound target label.
     obs.data['controls'] = [{'id': 1, 'label': 'Sessions', 'role': 'AXButton'}]
+    obs.data['form'] = key_form(name, expiry)
     rt.accept_decision(1, decision, obs, target)
     return decision, target, obs
 
@@ -536,6 +548,7 @@ def test_key_creation_waits_for_human_confirmation_then_refreshes_before_one_cli
     assert submitted[0] == rt.approved_action_worker
     moved = Target('Create API key', box=(200, 300, 80, 40))
     fresh = observation(moved, url=obs.data['url'])
+    fresh.data['form'] = key_form()
     monkeypatch.setattr(runtime, 'observe', lambda: fresh)
     submitted[0](*submitted[1:])
     rt.tick()
@@ -544,7 +557,7 @@ def test_key_creation_waits_for_human_confirmation_then_refreshes_before_one_cli
     monkeypatch.setattr(runtime, 'perform', action)
     monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.0)
     rt.tick()
-    action.assert_called_once_with(decision, moved, obs.data['url'], rt.desktop, None)
+    action.assert_called_once_with(decision, moved, obs.data['url'], rt.desktop, None, cancelled=ANY)
     rt.tick()
     assert action.call_count == 1
     text = (rt.current.runs_dir / 'events.jsonl').read_text()
@@ -563,6 +576,97 @@ def test_key_confirmation_rejects_changed_form(rt, monkeypatch):
     assert not rt.desktop.mock_calls
 
 
+@pytest.mark.parametrize('expiry', ['9 November 2026', '2026-11-09', 'No expiry', '30 days'])
+def test_24_hour_key_creation_requires_observed_duration_not_a_date_or_substitute(rt, monkeypatch, expiry):
+    prepare_key_confirmation(rt, monkeypatch, expiry=expiry)
+    assert rt.current.state.value == 'blocked'
+    assert rt.pending is None and not rt.requires_confirmation
+    assert not rt.next_step(rt.current.session_id, rt.step, True)
+    assert not rt.desktop.mock_calls
+    import json
+    events = [json.loads(line) for line in (rt.current.runs_dir / 'events.jsonl').read_text().splitlines()]
+    review = next(e['payload'] for e in events if e['type'] == 'key_form_review')
+    assert review['verified'] is False
+    assert not any(e['type'] == 'human_confirmation' for e in events)
+
+
+def test_key_confirmation_rechecks_name_even_with_same_url_and_create_button(rt, monkeypatch):
+    decision, target, obs = prepare_key_confirmation(rt, monkeypatch)
+    assert rt.next_step(rt.current.session_id, rt.step, True)
+    rt.tick()
+    changed = observation(target, url=obs.data['url'])
+    changed.data['form'] = key_form(name='another-key')
+    monkeypatch.setattr(runtime, 'observe', lambda: changed)
+    rt.approved_action_worker(rt.current, 1, rt.step, decision, target, obs.data['url'])
+    rt.tick()
+    assert rt.current.state.value == 'failed'
+    assert rt.pending is None and rt.due is None
+    assert not rt.desktop.mock_calls
+    import json
+    events = [json.loads(line) for line in (rt.current.runs_dir / 'events.jsonl').read_text().splitlines()]
+    reviews = [e['payload'] for e in events if e['type'] == 'key_form_review']
+    assert reviews[-1]['reason'] == 'name_mismatch'
+    assert not any(e['type'] == 'human_confirmation' for e in events)
+
+
+DOCS_URL = 'https://hub.hcompany.ai/agents-api/browser/configuration'
+
+
+def prepare_documentation_navigation(rt, monkeypatch):
+    rt.current = CoachRun(rt.runs_dir, 'Show me the cloud browser documentation.', 'act')
+    decision = CoachDecision(action='open_docs', url=DOCS_URL, speech="I'll open the cloud browser documentation.")
+    rt.accept_decision(1, decision, observation(), None)
+    action = Mock()
+    monkeypatch.setattr(runtime, 'perform', action)
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.0)
+    rt.tick()
+    assert action.call_count == 1 and rt.due[1] == 'docs_arrival'
+    assert rt.pending is None and not rt.current.state.terminal
+    return action
+
+
+@pytest.mark.parametrize('pending_url', [URL, 'chrome://newtab/', 'https://hub.hcompany.ai/agents-api/overview'])
+def test_documentation_waits_for_requested_url_before_inspecting_or_claiming_navigation(rt, monkeypatch, pending_url):
+    prepare_documentation_navigation(rt, monkeypatch)
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.2)
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: pending_url)
+    rt.tick()
+    assert rt.due[1] == 'docs_arrival' and not rt.current.state.terminal
+    rt.pool.submit.assert_not_called()
+    log = rt.current.runs_dir / 'events.jsonl'
+    assert 'documentation_navigation' not in log.read_text()
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.4)
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: DOCS_URL + '/')
+    rt.tick()
+    assert rt.pool.submit.call_count == 1
+    assert rt.pool.submit.call_args.args[0] == rt.decide_worker
+    assert '"navigation_verified": true' in log.read_text()
+    assert rt.current.report is None  # opening docs is not a completed answer
+
+
+def test_documentation_arrival_timeout_does_not_claim_success(rt, monkeypatch):
+    prepare_documentation_navigation(rt, monkeypatch)
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 110.0)
+    rt.tick()
+    assert rt.current.state.value == 'blocked'
+    rt.pool.submit.assert_not_called()
+    assert 'documentation_navigation' not in (rt.current.runs_dir / 'events.jsonl').read_text()
+
+
+def test_stop_cancels_documentation_arrival_even_when_page_then_loads(rt, monkeypatch):
+    action = prepare_documentation_navigation(rt, monkeypatch)
+    cancelled = action.call_args.kwargs['cancelled']
+    assert cancelled() is False
+    rt.cancel()
+    assert cancelled() is True
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.2)
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: DOCS_URL)
+    rt.tick()
+    assert rt.current.state.value == 'stopped' and rt.due is None
+    rt.pool.submit.assert_not_called()
+    assert 'documentation_navigation' not in (rt.current.runs_dir / 'events.jsonl').read_text()
+
+
 def test_delayed_confirmed_key_action_refreshes_without_repeating_approval(rt, monkeypatch):
     decision, target, obs = prepare_key_confirmation(rt, monkeypatch)
     rt.next_step(rt.current.session_id, rt.step, True)
@@ -578,6 +682,7 @@ def test_delayed_confirmed_key_action_refreshes_without_repeating_approval(rt, m
     assert submitted[0] == rt.approved_action_worker
     assert not rt.requires_confirmation
     fresh = observation(target, captured_at=120.0, url=obs.data['url'])
+    fresh.data['form'] = key_form()
     monkeypatch.setattr(runtime, 'observe', lambda: fresh)
     submitted[0](*submitted[1:])
     rt.tick()
@@ -673,3 +778,135 @@ def test_paste_fallback_does_not_overwrite_a_new_human_copy(monkeypatch):
     desktop = Mock(); desktop.hotkey.side_effect = key
     runtime.set_literal_text(target, text, desktop)
     assert board.items[0].data == {'text': b'new human copy'}
+
+
+def test_stop_during_hit_test_prevents_click(monkeypatch):
+    from hcs_agent import a11y
+    stopped = [False]
+
+    def hit(_):
+        stopped[0] = True
+        return True
+
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: URL)
+    monkeypatch.setattr(a11y, 'visible_at_point', hit)
+    desktop = Mock()
+    with pytest.raises(CoachProtocolError, match='cancelled'):
+        runtime.perform(CoachDecision(action='click', target=1, speech='Open Sessions.'),
+                        Target(), URL, desktop, cancelled=lambda: stopped[0])
+    assert not desktop.mock_calls
+
+
+def test_stop_during_field_click_prevents_typing(monkeypatch):
+    from hcs_agent import a11y
+    stopped = [False]
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: URL)
+    monkeypatch.setattr(a11y, 'visible_at_point', lambda _: True)
+    writer = Mock()
+    monkeypatch.setattr(runtime, 'set_literal_text', writer)
+    desktop = Mock()
+    desktop.click.side_effect = lambda *_: stopped.__setitem__(0, True)
+    with pytest.raises(CoachProtocolError, match='cancelled'):
+        runtime.perform(CoachDecision(action='type', target=1, text='demo', speech='Enter the name.'),
+                        Target('Name', 'AXTextField'), URL, desktop, cancelled=lambda: stopped[0])
+    writer.assert_not_called()
+    desktop.click.assert_called_once()
+
+
+@pytest.mark.parametrize('action', ['scroll', 'key'])
+def test_stop_during_preparation_prevents_scroll_or_enter(monkeypatch, action):
+    stopped = [False]
+    monkeypatch.setattr(runtime, 'foreground_url', lambda: URL)
+    desktop = Mock()
+
+    def stop(*_):
+        stopped[0] = True
+        return True
+
+    desktop.moveTo.side_effect = stop
+    monkeypatch.setattr(runtime, 'focused_search', stop)
+    decision = (CoachDecision(action='scroll', direction='down', speech='Read further down.') if action == 'scroll'
+                else CoachDecision(action='key', key='enter', speech='Submit the search.'))
+    with pytest.raises(CoachProtocolError, match='cancelled'):
+        runtime.perform(decision, None, URL, desktop, (0, 0, 100, 100), cancelled=lambda: stopped[0])
+    desktop.scroll.assert_not_called()
+    desktop.press.assert_not_called()
+
+
+def test_stop_during_ax_focus_lookup_prevents_value_write(monkeypatch):
+    from hcs_agent import a11y
+    board, _, setter = fake_text_frameworks(monkeypatch)
+    stopped = [False]
+
+    def focus(*_):
+        stopped[0] = True
+        return 'field'
+
+    monkeypatch.setattr(a11y, '_attr', focus)
+    target = Target('Name', 'AXTextField'); target.ref = 'field'
+    with pytest.raises(CoachProtocolError, match='cancelled'):
+        runtime.set_literal_text(target, 'demo', Mock(), cancelled=lambda: stopped[0])
+    setter.assert_not_called()
+    assert board.count == 0
+
+
+def test_stop_during_select_all_prevents_paste_and_restores_clipboard(monkeypatch):
+    board, _, _ = fake_text_frameworks(monkeypatch, ax_result=-25205)
+    stopped = [False]
+    target = Target('Name', 'AXTextField'); target.ref = 'field'
+    desktop = Mock()
+    desktop.hotkey.side_effect = lambda *_: stopped.__setitem__(0, True)
+    with pytest.raises(CoachProtocolError, match='cancelled'):
+        runtime.set_literal_text(target, 'demo', desktop, cancelled=lambda: stopped[0])
+    desktop.hotkey.assert_called_once_with('command', 'a')
+    assert board.items[0].data == {'text': b'old text', 'image': b'old image'}
+
+
+@pytest.mark.parametrize('failure', [None, CoachProtocolError('cancelled'), RuntimeError('cancelled')])
+def test_stop_inside_documentation_helper_never_restarts_voice_or_followup(rt, monkeypatch, failure):
+    from hcs_agent import coach_v2_browser
+    rt.current = CoachRun(rt.runs_dir, 'Show cloud browser documentation.', 'act')
+    rt.show = lambda speech, *args, **kwargs: rt.speaker.say(speech)
+    rt.accept_decision(1, CoachDecision(action='open_docs', url=DOCS_URL, speech='Open the documentation.'),
+                       observation(), None)
+    rt.speaker.say.reset_mock()
+
+    def cancelled_helper(*args, cancelled):
+        assert not cancelled()
+        rt.cancel()
+        assert cancelled()
+        if failure:
+            raise failure
+
+    monkeypatch.setattr(coach_v2_browser, 'open_documentation_tab', cancelled_helper)
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: 101.0)
+    rt.tick()
+    rt.speaker.say.assert_not_called()
+    assert rt.history == []
+    rt.tick()
+    assert rt.current.state.value == 'stopped' and rt.due is None
+    rt.speaker.say.assert_not_called()
+    rt.pool.submit.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', [None, CoachProtocolError('cancelled')])
+def test_stop_inside_tour_effect_never_restarts_voice_or_navigation(rt, monkeypatch, failure):
+    rt.current = CoachRun(rt.runs_dir, 'Give me a tour.', 'act')
+    rt.tour = {'visit': True, 'phase': 'preparing', 'index': 0, 'url': URL}
+    rt.show = lambda speech, *args, **kwargs: rt.speaker.say(speech)
+    point = tour_decision().points[0]
+    target = Target('Agents')
+
+    def cancelled_effect(*args, cancelled):
+        assert not cancelled()
+        rt.cancel()
+        assert cancelled()
+        if failure:
+            raise failure
+
+    monkeypatch.setattr(runtime, 'perform', cancelled_effect)
+    rt.events.put(('tour_ready', 1, 0, point, observation(target), target))
+    rt.tick()
+    assert rt.current.state.value == 'stopped' and rt.due is None
+    rt.speaker.say.assert_not_called()
+    assert 'tour_navigation' not in (rt.current.runs_dir / 'events.jsonl').read_text()

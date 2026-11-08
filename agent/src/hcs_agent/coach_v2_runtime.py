@@ -33,11 +33,12 @@ class Observation:
 
 
 def observe() -> Observation:
-    from .coach_v2_screen import read_page
+    from .coach_v2_screen import read_page, observation_context
     page = read_page()
     if not page or not page.is_front or not allowed_page(page.url):
         raise CoachProtocolError("Bring H Platform or its documentation to the front, then ask me again.")
-    controls, targets, texts = [], {}, []
+    context = observation_context(page)
+    controls, targets, texts = [], {}, list(context["text"])
     roles = {"AXButton", "AXLink", "AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXPopUpButton",
              "AXMenuItem", "AXCheckBox", "AXRadioButton", "AXTab", "AXDisclosureTriangle"}
     seen = set()
@@ -61,6 +62,7 @@ def observe() -> Observation:
         targets[ident] = c
     texts.extend(page.readable_text)
     return Observation({"url": page.url, "title": page.title, "controls": controls,
+                        "clock": context["clock"], "form": context["form"],
                         "text": list(dict.fromkeys(texts))[:100]}, targets, time.monotonic(), page.app, page.viewport)
 
 
@@ -124,6 +126,17 @@ def inside(point, box) -> bool:
     return bx <= x <= bx + width and by <= y <= by + height
 
 
+def requested_key_review(question, observation):
+    """An exact one-day request needs more evidence than a calendar date."""
+    if not re.search(r"\b(?:24\s*(?:hours?|hrs?|heures?|h)|(?:one|1)\s+day)\b", question, re.I):
+        return None
+    name = re.search(r"\b(?:named|called|nommée?|appelée?)\s+[\"']?([\w.-]+)", question, re.I)
+    if not name:
+        return {"verified": False, "reason": "requested_name_unknown"}
+    from .coach_v2_screen import verify_api_key_form
+    return verify_api_key_form(observation, name[1], requested_hours=24)
+
+
 def failure_message(exc: Exception, stage: str) -> str:
     """Explain the actual failure stage; a rejected reply is not a screen failure."""
     if isinstance(exc, CoachProtocolError):
@@ -172,7 +185,12 @@ def focused_search() -> bool:
     return role == "AXSearchField" or (role in {"AXTextField", "AXComboBox"} and bool(re.search(r"\bsearch\b", label, re.I)))
 
 
-def set_literal_text(target, text: str, desktop) -> None:
+def _check_cancelled(cancelled):
+    if cancelled():
+        raise CoachProtocolError("The action was cancelled.", reason="cancelled")
+
+
+def set_literal_text(target, text: str, desktop, *, cancelled=lambda: False) -> None:
     """Set the exact field, with Unicode/newlines and no pasted keyboard shortcuts.
 
     AX's acknowledged set-value avoids the system clipboard when supported.
@@ -183,6 +201,7 @@ def set_literal_text(target, text: str, desktop) -> None:
     import ApplicationServices as AS
     from AppKit import NSWorkspace, NSPasteboard, NSPasteboardItem, NSPasteboardTypeString
     from Foundation import NSData, NSDate, NSRunLoop
+    _check_cancelled(cancelled)
     front = NSWorkspace.sharedWorkspace().frontmostApplication()
     app = AS.AXUIElementCreateApplication(front.processIdentifier()) if front else None
     focused = a11y._attr(app, "AXFocusedUIElement") if app is not None else None
@@ -190,7 +209,9 @@ def set_literal_text(target, text: str, desktop) -> None:
     if (ref is None or focused is None or not AS.CFEqual(ref, focused)
             or target.role not in {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"}):
         raise CoachProtocolError("Please click directly inside the text field and ask again.")
+    _check_cancelled(cancelled)
     result = AS.AXUIElementSetAttributeValue(ref, "AXValue", text)
+    _check_cancelled(cancelled)
     if result == 0:
         return
     board = NSPasteboard.generalPasteboard()
@@ -202,16 +223,20 @@ def set_literal_text(target, text: str, desktop) -> None:
             if data is not None:
                 contents[str(kind)] = bytes(data)
         previous.append(contents)
+    _check_cancelled(cancelled)
     board.clearContents()
     board.setString_forType_(text, NSPasteboardTypeString)
     owned_count = board.changeCount()
     try:
+        _check_cancelled(cancelled)
         desktop.hotkey("command", "a")
+        _check_cancelled(cancelled)
         desktop.hotkey("command", "v")
         # Pump AppKit until the application acknowledges the value, bounded to
         # avoid a long blocked main loop. This is local evidence, never logged.
         deadline = time.monotonic() + .65
         while time.monotonic() < deadline:
+            _check_cancelled(cancelled)
             if str(a11y._attr(ref, "AXValue") or "") == text:
                 return
             NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(.025))
@@ -229,32 +254,45 @@ def set_literal_text(target, text: str, desktop) -> None:
                 board.writeObjects_(restored)
 
 
-def perform(decision: CoachDecision, target, expected_url: str, desktop, viewport=None) -> None:
+def perform(decision: CoachDecision, target, expected_url: str, desktop, viewport=None, *, cancelled=lambda: False) -> None:
     """One effect on the page just checked, never an unattended script."""
+    _check_cancelled(cancelled)
     if not allowed_page(expected_url) or foreground_url() != expected_url:
         raise CoachProtocolError("The page changed. Ask me again on the page you want help with.")
+    if os.environ.get("HCS_V2_READONLY_REHEARSAL") == "1":
+        read_only = (decision.action in {"explain", "done", "scroll", "open_docs"}
+                     or decision.action == "key" and decision.key == "escape"
+                     or decision.action == "click" and target is not None
+                     and target.role in {"AXButton", "AXLink", "AXTab"}
+                     and target.name in {"Agents", "Sessions", "Skills", "Environments", "Billing & Subscription"})
+        if not read_only:
+            raise CoachProtocolError("This rehearsal only opens read-only sections; form changes are disabled.",
+                                     kind="policy", reason="readonly_rehearsal")
     if decision.action in {"click", "type"}:
         from .a11y import visible_at_point
         if target is None or not visible_at_point(target):
             raise CoachProtocolError("I can't see that control clearly. Bring the page forward and ask again.")
+        _check_cancelled(cancelled)
         desktop.click(*target.center)
         if decision.action == "type":
-            set_literal_text(target, decision.text, desktop)
+            _check_cancelled(cancelled)
+            set_literal_text(target, decision.text, desktop, cancelled=cancelled)
     elif decision.action == "scroll":
         if viewport is None:
             raise CoachProtocolError("Please scroll this page a little, then ask me again.")
         x, y, width, height = viewport
+        _check_cancelled(cancelled)
         desktop.moveTo(x + width * .8, y + height * .6)
+        _check_cancelled(cancelled)
         desktop.scroll(-4 if decision.direction == "down" else 4)
     elif decision.action == "key":
         if decision.key == "enter" and not focused_search():
             raise CoachProtocolError("Please press Enter yourself here; I only submit searches automatically.")
+        _check_cancelled(cancelled)
         desktop.press(decision.key)
     elif decision.action == "open_docs":
-        # URL has already passed CoachDecision's strict official-docs allowlist.
-        desktop.hotkey("command", "t")
-        desktop.write(decision.url, interval=0.001)
-        desktop.press("enter")
+        from .coach_v2_browser import open_documentation_tab
+        open_documentation_tab(decision.url, expected_url, cancelled=cancelled)
 
 
 class Runtime:
@@ -265,8 +303,19 @@ class Runtime:
         from .desktop_feedback import DesktopFeedback
         from .inputs import InputHub
         from .voice import PushToTalk
+        runtime = self
         class LocalController(Controller):
             def handle(self, method, path, body):
+                if path.split("?", 1)[0].rstrip("/") == "/rehearse":
+                    if os.environ.get("HCS_V2_REHEARSAL") != "1":
+                        return 404, {"error": "Rehearsal input is disabled."}
+                    question = body.get("question")
+                    if method != "POST" or not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
+                        return 400, {"error": "A question of 1–2000 characters is required."}
+                    with runtime.lock:
+                        runtime.cancel("Interrupted by a text rehearsal.")
+                        runtime.events.put(("rehearse", runtime.generation, question.strip()))
+                    return 202, {"accepted": True, "source": "text_rehearsal", "voice_validated": False}
                 if path.split("?", 1)[0].rstrip("/") == "/rate":
                     return 409, {"error": "Use the explicit session feedback form for V2."}
                 return super().handle(method, path, body)
@@ -281,6 +330,10 @@ class Runtime:
         self.runs_dir, self.api_key = runs_dir, api_key
         self.tour_cache = make_tour_cache(runs_dir)
         self.overlay, self.speaker, self.desktop = overlay, speaker, desktop
+        self.overlay.hold_reveal = lambda: bool(self.speaker and self.response_mode != "text"
+                                                and self.speaker.holding())
+        self._dictation_released_at = None
+        self._speech_timing = None
         self.events = queue.Queue()
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="h-coach-v2")
         self.lock = threading.RLock()
@@ -325,7 +378,10 @@ class Runtime:
 
     def voice_event(self, state):
         if state == "starting":
+            self._dictation_released_at = None
             self.cancel("Interrupted by a new request.")
+        elif state == "released":
+            self._dictation_released_at = time.monotonic()
         self.events.put(("voice", state))
 
     def input_event(self, event, payload):
@@ -376,7 +432,10 @@ class Runtime:
                        "cost_usd": None, "started_at": self.started_at,
                        "status": (run.report or {}).get("status"), "verified": False}
         speaker = self.speaker
-        return {"engine": "coach-v2", "agent": {"command": "coach-v2", "pid": os.getpid(),
+        return {"engine": "coach-v2",
+                "runtime_profile": {"read_only_rehearsal": os.environ.get("HCS_V2_READONLY_REHEARSAL") == "1",
+                                    "text_rehearsal": os.environ.get("HCS_V2_REHEARSAL") == "1"},
+                "agent": {"command": "coach-v2", "pid": os.getpid(),
                 "since": self.started_at, "simulated": False, "observe_only": False, "engine": "coach-v2"},
                 "autonomy": self.autonomy, "voice": {"state": self.voice_state, "last_text": self.last_text,
                                                       "ptt_key": self.ptt.key_name,
@@ -393,10 +452,28 @@ class Runtime:
         from .overlay import Scene
         self.dismiss_notice = None
         self.overlay.badge(None)
-        self.overlay.show_scene(Scene(text=speech, target=target.center if target else None,
-                                      target_box=target.box if target else None, why=""), animate=False)
         if speak and speech and self.speaker and self.response_mode != "text":
-            self.speaker.say(speech)
+            timing = getattr(self, "_speech_timing", None)
+            requested_at = time.monotonic()
+            step = self.step
+
+            def started(playback_at):
+                if (not timing or timing["run"] is not self.current
+                        or timing["generation"] != self.generation):
+                    return
+                first = not timing["first_recorded"]
+                timing["first_recorded"] = True
+                payload = {"step": step, "first": first, "boundary": "playback_process_started",
+                           "speech_request_to_playback_ms": round((playback_at - requested_at) * 1000),
+                           "request_to_playback_ms": round((playback_at - timing["request_at"]) * 1000)}
+                if first and timing["released_at"] is not None:
+                    payload["dictation_release_to_playback_ms"] = round((playback_at - timing["released_at"]) * 1000)
+                timing["run"].record("speech_started", payload)
+
+            self.speaker.max_hold_s = 1.5
+            self.speaker.say(speech, on_started=started)
+        self.overlay.show_scene(Scene(text=speech, target=target.center if target else None,
+                                      target_box=target.box if target else None, why=""), animate=True)
 
     def start_request(self, question):
         if self.feedback.consume_transcript(question):
@@ -410,6 +487,14 @@ class Runtime:
         self.generation += 1
         self.active_generation = self.generation
         self.current = CoachRun(self.runs_dir, question, "act" if self.autonomy == 2 else "guide")
+        request_at = time.monotonic()
+        released_at = getattr(self, "_dictation_released_at", None)
+        self._dictation_released_at = None
+        self._speech_timing = {"run": self.current, "generation": self.generation, "request_at": request_at,
+                               "released_at": released_at, "first_recorded": False}
+        self.current.record("request_timing", {"input": "voice" if released_at is not None else "text",
+                            "dictation_release_to_request_ms": round((request_at - released_at) * 1000)
+                            if released_at is not None else None})
         self.feedback.register(self.current)
         self.history, self.step, self.pending, self.due = [], 0, None, None
         self.tour, self.requires_confirmation, self.confirmation_pending = None, False, False
@@ -528,6 +613,13 @@ class Runtime:
             guard_decision = decision.model_copy(update={"target": guard_id})
         needs_confirmation = (self.current.request.mode == "act"
                               and sensitive_key_creation(guard_decision, guard_observation))
+        if needs_confirmation:
+            review = requested_key_review(self.current.request.goal, observation.data)
+            if review is not None:
+                self.current.record("key_form_review", review)
+                if not review["verified"]:
+                    self.finish("blocked", "I can't verify an exact 24-hour expiry in this form. I haven't created a key.")
+                    return
         if not needs_confirmation:
             self.show(decision.speech, target)
         if decision.action == "tour":
@@ -632,6 +724,10 @@ class Runtime:
             target = matching_target(original, fresh) if original else None
             if fresh.data["url"] != url or (original is not None and target is None):
                 raise CoachProtocolError("The key form changed before confirmation.")
+            review = requested_key_review(run.request.goal, fresh.data)
+            if review is not None and not review["verified"]:
+                run.record("key_form_review", review)
+                raise CoachProtocolError("The requested name or expiry is no longer verified.")
             if generation == self.generation:
                 self.events.put(("approved_action", generation, step, decision, fresh, target))
         except Exception as exc:
@@ -698,6 +794,12 @@ class Runtime:
                 if args[0] in {"starting", "recording", "transcribing"}:
                     self.overlay.badge({"starting": "Listening…", "recording": "Listening…",
                                         "transcribing": "Understanding…"}[args[0]], pulsing=True)
+            elif kind == "rehearse" and args[0] == self.generation:
+                previous = self.current
+                self._dictation_released_at = None
+                self.start_request(args[1])
+                if self.current is not None and self.current is not previous:
+                    self.current.record("input_source", {"source": "text_rehearsal", "voice_validated": False})
             elif kind == "voice_settings":
                 body = args[0]
                 self.response_mode = body.get("response_mode", ("both" if body["enabled"] else "text")
@@ -727,16 +829,20 @@ class Runtime:
                 self.present_tour_point(point, target, url)
             elif (kind == "tour_ready" and args[0] == self.generation and self.tour
                   and self.tour["visit"] and self.tour["phase"] == "preparing" and args[1] == self.tour["index"]):
-                _, index, point, fresh, target = args
+                expected_generation, index, point, fresh, target = args
                 try:
                     if (foreground_url() != fresh.data["url"] or fresh.data["url"] != self.tour["url"]
                             or time.monotonic() - fresh.captured_at > 3):
                         raise CoachProtocolError("The tour page changed.")
                     if tour_destination_ready(target, fresh):
+                        _check_cancelled(lambda: self.generation != expected_generation)
                         self.present_tour_point(point, target, fresh.data["url"], visited=True)
                         continue
                     perform(CoachDecision(action="click", target=point.target, speech=point.speech), target,
-                            fresh.data["url"], self.desktop, fresh.viewport)
+                            fresh.data["url"], self.desktop, fresh.viewport,
+                            cancelled=lambda: self.generation != expected_generation)
+                    if self.generation != expected_generation:
+                        continue
                     self.current.record("tour_navigation", {"index": index + 1, "target_label": target.name,
                                                             "from_url": fresh.data["url"]})
                     self.tour["phase"] = "navigating"
@@ -744,7 +850,8 @@ class Runtime:
                                "index": index, "url": fresh.data["url"], "deadline": time.monotonic() + 8}
                     self.due = (time.monotonic() + .15, "tour_arrival", payload)
                 except Exception:
-                    self.finish("blocked", "I couldn't open that section safely. Let's pause the tour here.")
+                    if self.generation == expected_generation:
+                        self.finish("blocked", "I couldn't open that section safely. Let's pause the tour here.")
             elif (kind == "tour_arrival" and args[0] == self.generation and self.tour
                   and self.tour["phase"] == "navigating" and args[1]["index"] == self.tour["index"]):
                 _, payload, fresh, target, ready = args
@@ -790,6 +897,14 @@ class Runtime:
             _, kind, payload = self.due
             if kind == "observe":
                 self.request_decision()
+            elif kind == "docs_arrival":
+                if foreground_url().rstrip("/") == payload["url"].rstrip("/"):
+                    self.current.record("documentation_navigation", {"url": payload["url"], "navigation_verified": True})
+                    self.request_decision()
+                elif time.monotonic() >= payload["deadline"]:
+                    self.finish("blocked", "I couldn't confirm that the documentation opened. Let's pause here.")
+                else:
+                    self.due = (time.monotonic() + .1, "docs_arrival", payload)
             elif kind == "tour" and self.tour:
                 if self.speaker and self.response_mode != "text" and self.speaker.speaking:
                     return
@@ -820,6 +935,7 @@ class Runtime:
                 if self.speaker and self.speaker.speaking:
                     return
                 decision, target, observed = self.pending
+                expected_generation = self.active_generation
                 try:
                     # Refresh a stale target before actions; old model output is not a license to click later.
                     if time.monotonic() - observed.captured_at > 12:
@@ -832,13 +948,20 @@ class Runtime:
                         else:
                             self.request_decision()
                     else:
-                        perform(decision, target, observed.data["url"], self.desktop, observed.viewport)
-                        self.schedule_observation("agent_action_executed")
+                        perform(decision, target, observed.data["url"], self.desktop, observed.viewport,
+                                cancelled=lambda: self.generation != expected_generation)
+                        if self.generation == expected_generation:
+                            self.schedule_observation("agent_action_executed")
+                            if decision.action == "open_docs":
+                                self.due = (time.monotonic() + .1, "docs_arrival",
+                                            {"url": decision.url, "deadline": time.monotonic() + 8})
                 except CoachProtocolError as exc:
-                    self.finish("blocked", str(exc))
+                    if self.generation == expected_generation:
+                        self.finish("blocked", str(exc))
                 except Exception as exc:
-                    self.current.record("action_error", {"type": type(exc).__name__})
-                    self.finish("failed", "I couldn't complete that action. You can stop here and try another request.")
+                    if self.generation == expected_generation:
+                        self.current.record("action_error", {"type": type(exc).__name__})
+                        self.finish("failed", "I couldn't complete that action. You can stop here and try another request.")
         notice = getattr(self, "dismiss_notice", None)
         if notice:
             generation, earliest, latest = notice
