@@ -118,6 +118,18 @@ inversement : coordonner la mise à jour du récepteur avec celle du client.
 La publication suivante utilise le lien `current` existant ; elle ne nécessite
 aucune modification de Caddy ni de DNS.
 
+Publication corrective du 10 novembre 2026 : la route `companion-demo.js`
+renvoyait 404 avant intervention. Le récepteur a été sauvegardé puis remplacé
+après contrôle de son SHA-256 ; son unique changement est l'ajout de ce fichier
+à la liste autorisée. Le client restreint a publié les huit assets de la release
+`d86436eeddee3fb0dd6272339b18d42b534b0e43abd100f78c32ed5c0eaa5adc`,
+puis vérifié leur identité octet par octet sur HTTPS. La release précédente
+`751f67ce41ce729ae09e99051db2ae7cb1a98aacb06a01d9fb71a8fc1d422e10`
+est conservée. Les dix tests du récepteur et les cinq tests de la homepage
+passent ; le test de dépendances échoue bien avec l'ancienne liste à sept fichiers.
+Le code de la scène de Tom est celui déjà fusionné sur main ; la correction de
+publication est préparée séparément pour revue.
+
 Retour arrière : restaurer les fichiers de la release voulue dans une PR vers
 main, puis fusionner après revue. Le workflow republie ce contenu et réutilise
 sa release si elle existe déjà. En urgence, l'opérateur peut remplacer `current`
