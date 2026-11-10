@@ -1,6 +1,8 @@
 import base64
+from html.parser import HTMLParser
 import importlib.util
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 import pytest
 
@@ -57,3 +59,31 @@ def test_package_never_includes_other_repository_files(release):
     (source / 'main.js').unlink()
     (source / 'main.js').symlink_to(source / '.env')
     with pytest.raises(ValueError): cd.package(source, 'b' * 40)
+
+
+def test_package_includes_same_origin_html_assets():
+    class AssetParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.urls = []
+
+        def handle_starttag(self, tag, attributes):
+            attrs = dict(attributes)
+            if attrs.get('src'):
+                self.urls.append(attrs['src'])
+            resource_links = {'stylesheet', 'icon', 'preload', 'modulepreload', 'manifest'}
+            if tag == 'link' and resource_links.intersection(attrs.get('rel', '').split()) and attrs.get('href'):
+                self.urls.append(attrs['href'])
+
+    source = Path(__file__).resolve().parents[1] / 'landing'
+    payload = cd.package(source, 'b' * 40)
+    parser = AssetParser()
+    parser.feed((source / 'index.html').read_text())
+    origin = 'https://hcompanion.help/'
+    dependencies = {
+        url.path.removeprefix('/')
+        for asset in parser.urls
+        if (url := urlsplit(urljoin(origin, asset))).netloc == urlsplit(origin).netloc
+    }
+    assert dependencies, 'The HTML dependency check must discover local assets'
+    assert not (missing := dependencies - payload['files'].keys()), f'Unpublished HTML assets: {sorted(missing)}'
