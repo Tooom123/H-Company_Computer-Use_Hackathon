@@ -6,6 +6,7 @@ on:
     paths:
       - 'landing/**'
       - 'scripts/landing_cd.py'
+      - 'scripts/test_landing_cd.py'
       - '.github/workflows/deploy-landing.yml'
   workflow_dispatch:
 
@@ -30,6 +31,11 @@ jobs:
           node-version: '22'
       - name: Test the public homepage
         run: node --test landing/test/*.test.mjs
+      - name: Test the release receiver and HTML asset coverage
+        run: |
+          python3 -m venv "$RUNNER_TEMP/landing-tests"
+          "$RUNNER_TEMP/landing-tests/bin/python" -m pip install pytest==9.2.0
+          "$RUNNER_TEMP/landing-tests/bin/python" -m pytest -q scripts/test_landing_cd.py
       - name: Deploy allowlisted assets and verify HTTPS
         env:
           LANDING_DEPLOY_KEY: ${{ secrets.LANDING_DEPLOY_KEY }}

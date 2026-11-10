@@ -19,7 +19,7 @@ import sys
 import tempfile
 import uuid
 
-ASSETS = ('index.html', 'style.css', 'main.js', 'annotate.js', 'margin.js', 'billing.js', 'favicon.svg')
+ASSETS = ('index.html', 'style.css', 'main.js', 'annotate.js', 'margin.js', 'billing.js', 'favicon.svg', 'companion-demo.js')
 PUBLIC = Path('/var/lib/docker/volumes/dejabu-edge_data/_data/hcompanion/landing')
 MAX_ASSET = 2_000_000
 MAX_PAYLOAD = 20_000_000

@@ -27,10 +27,10 @@ redirection HTTP vers HTTPS sont gérés par Caddy.
 
 ## Release et isolation
 
-Release SHA-256 :
+Release initiale du 8 novembre, SHA-256 :
 `647060eea65275774aa6fbca996721126327f1a5f08a37cc2a835573b91d5722`.
 
-Les sept fichiers publiés, pour **44 612 octets**, sont `index.html`, `style.css`,
+Les sept fichiers publiés initialement, pour **44 612 octets**, sont `index.html`, `style.css`,
 `main.js`, `annotate.js`, `margin.js`, `billing.js` et `favicon.svg`.
 Le dossier de tests n'est pas publié.
 
@@ -70,15 +70,17 @@ ce n'est pas une valeur à réutiliser sans vérifier l'état courant.
 ## Déploiement continu après merge
 
 Le workflow `.github/workflows/deploy-landing.yml` publie depuis **main uniquement**,
-après modification de `landing/**`, du client de publication ou du workflow.
+après modification de `landing/**`, du client de publication, de ses tests ou du workflow.
 Un lancement manuel est également possible depuis GitHub Actions sur main.
 La règle du dépôt reste PR + revue par un coéquipier avant fusion.
 
-1. Les cinq tests de la homepage doivent passer.
-2. `scripts/landing_cd.py` transmet exclusivement les sept assets autorisés.
+1. Les tests de la homepage et du récepteur doivent passer. Un test lit les
+   dépendances locales de `landing/index.html` et vérifie leur présence dans la release.
+2. `scripts/landing_cd.py` transmet exclusivement les huit assets autorisés :
+   les sept fichiers initiaux et `companion-demo.js`.
 3. Le récepteur vérifie les noms, tailles et SHA-256, crée une release immuable,
    puis remplace `current` atomiquement. Les anciennes releases sont conservées.
-4. Le client relit les sept fichiers par HTTPS, avec validation TLS, et compare
+4. Le client relit les huit fichiers par HTTPS, avec validation TLS, et compare
    leur contenu octet par octet. Le job échoue si une vérification diffère.
 
 Le compte VPS `hcompanion-deploy` utilise une clé distincte du compte opérateur.
@@ -98,6 +100,35 @@ Elle conserve les autres blocs et l'inode du fichier monté dans Caddy. Le SHA
 après installation le 8 novembre est
 `a8d960f386a574f0d57d46a8cba712e13efb09521c869fc37bd5e8e848ead632`.
 Les sauvegardes restent privées sous `/opt/hcompanion/landing-cd/`.
+
+### Animation « In action » et liste des assets
+
+La scène de création d'une clé API ajoutée par Tom dans la PR #13 est animée par
+`landing/companion-demo.js`. Le HTML de main le charge, mais l'ancienne liste de
+publication ne l'incluait pas. Le GIF `h-companion.gif`, à la racine du dépôt,
+illustre le titre du site dans le README ; il n'est pas utilisé par cette scène.
+
+La liste autorisée compte désormais huit fichiers. Avant de publier avec ce
+client, l'opérateur doit mettre à jour le récepteur root
+`/opt/hcompanion/landing-cd/receiver.py` avec la même version de
+`scripts/landing_cd.py`, en vérifiant le digest du récepteur courant et en gardant
+une sauvegarde privée. La clé de déploiement restreinte ne permet pas cette mise
+à jour. Un récepteur à sept fichiers rejette une release à huit fichiers, et
+inversement : coordonner la mise à jour du récepteur avec celle du client.
+La publication suivante utilise le lien `current` existant ; elle ne nécessite
+aucune modification de Caddy ni de DNS.
+
+Publication corrective du 10 novembre 2026 : la route `companion-demo.js`
+renvoyait 404 avant intervention. Le récepteur a été sauvegardé puis remplacé
+après contrôle de son SHA-256 ; son unique changement est l'ajout de ce fichier
+à la liste autorisée. Le client restreint a publié les huit assets de la release
+`d86436eeddee3fb0dd6272339b18d42b534b0e43abd100f78c32ed5c0eaa5adc`,
+puis vérifié leur identité octet par octet sur HTTPS. La release précédente
+`751f67ce41ce729ae09e99051db2ae7cb1a98aacb06a01d9fb71a8fc1d422e10`
+est conservée. Les dix tests du récepteur et les cinq tests de la homepage
+passent ; le test de dépendances échoue bien avec l'ancienne liste à sept fichiers.
+Le code de la scène de Tom est celui déjà fusionné sur main ; la correction de
+publication est préparée séparément pour revue.
 
 Retour arrière : restaurer les fichiers de la release voulue dans une PR vers
 main, puis fusionner après revue. Le workflow republie ce contenu et réutilise
